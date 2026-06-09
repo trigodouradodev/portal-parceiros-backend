@@ -4,6 +4,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
+import { HealthModule } from './health/health.module';
 import configuration from './config/configuration';
 import { envValidationSchema } from './config/env.validation';
 
@@ -19,6 +20,7 @@ import { envValidationSchema } from './config/env.validation';
     }),
     PrismaModule,
     AuthModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
