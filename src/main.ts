@@ -17,6 +17,13 @@ async function bootstrap() {
   app.enableShutdownHooks();
 
   const configService = app.get(ConfigService);
+
+  const corsOrigins = configService.get<string[]>('app.corsOrigins', []);
+  app.enableCors({
+    origin: corsOrigins.length > 0 ? corsOrigins : false,
+    credentials: true,
+  });
+
   const port = configService.get<number>('app.port', 3000);
 
   await app.listen(port);
