@@ -16,7 +16,11 @@ export class PrismaService
     );
 
     const adapter = new PrismaPg({
-      connectionString: configService.getOrThrow<string>('database.url'),
+      host: configService.getOrThrow<string>('database.host'),
+      port: configService.get<number>('database.port', 5432),
+      user: configService.getOrThrow<string>('database.user'),
+      password: configService.getOrThrow<string>('database.password'),
+      database: configService.getOrThrow<string>('database.name'),
       ssl: useSsl ? { rejectUnauthorized } : false,
     });
     super({ adapter });

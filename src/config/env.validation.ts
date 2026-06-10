@@ -6,7 +6,9 @@ export const envValidationSchema = Joi.object({
     .default('development'),
   PORT: Joi.number().default(3000),
 
-  DATABASE_URL: Joi.string().uri().required(),
+  // Usado apenas pelo Prisma CLI (db pull, studio) via prisma.config.ts.
+  // Em runtime, a conexão é montada a partir das variáveis DB_* abaixo.
+  DATABASE_URL: Joi.string().uri().optional(),
   DB_HOST: Joi.string().required(),
   DB_PORT: Joi.number().default(5432),
   DB_USER: Joi.string().required(),
