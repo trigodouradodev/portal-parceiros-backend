@@ -3,7 +3,7 @@ name: Deploy Homolog
 on:
   workflow_dispatch:
   push:
-    branches: [homolog, main]
+    branches: [homolog]
 
 env:
   AWS_REGION: sa-east-1

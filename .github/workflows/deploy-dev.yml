@@ -2,6 +2,8 @@ name: Deploy Dev
 
 on:
   workflow_dispatch:
+  push:
+    branches: [dev]
 
 env:
   AWS_REGION: sa-east-1
