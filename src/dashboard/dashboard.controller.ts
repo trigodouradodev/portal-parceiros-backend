@@ -1,9 +1,11 @@
 import { Controller, Get } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
@@ -15,6 +17,8 @@ import { MonthPerformance } from './interfaces/month-performance.interface';
 
 @ApiTags('dashboard')
 @ApiBearerAuth('access-token')
+@ApiUnauthorizedResponse({ description: 'Token ausente ou inválido.' })
+@ApiForbiddenResponse({ description: 'Permissão insuficiente.' })
 @Controller('dashboard')
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}

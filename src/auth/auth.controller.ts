@@ -9,11 +9,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiBody,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -37,6 +39,8 @@ export class AuthController {
     summary: 'Login por email/senha; retorna access + refresh token.',
   })
   @ApiOkResponse({ type: LoginResponseDto })
+  @ApiBadRequestResponse({ description: 'Payload inválido.' })
+  @ApiUnauthorizedResponse({ description: 'Credenciais inválidas.' })
   @Public()
   @HttpCode(HttpStatus.OK)
   @Post('login')
@@ -55,6 +59,9 @@ export class AuthController {
     },
   })
   @ApiOkResponse({ type: TokensDto })
+  @ApiUnauthorizedResponse({
+    description: 'Refresh token ausente ou inválido.',
+  })
   @Public()
   @UseGuards(JwtRefreshGuard)
   @HttpCode(HttpStatus.OK)
@@ -65,6 +72,7 @@ export class AuthController {
 
   @ApiOperation({ summary: 'Perfil do usuário autenticado.' })
   @ApiOkResponse({ type: ProfileResponseDto })
+  @ApiUnauthorizedResponse({ description: 'Token ausente ou inválido.' })
   @ApiBearerAuth('access-token')
   @Get('me')
   me(@CurrentUser('sub') userId: string) {

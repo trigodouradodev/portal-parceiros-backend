@@ -1,9 +1,11 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
@@ -15,6 +17,8 @@ import { OverdueCollectionPage } from './interfaces/overdue-collection.interface
 
 @ApiTags('collections')
 @ApiBearerAuth('access-token')
+@ApiUnauthorizedResponse({ description: 'Token ausente ou inválido.' })
+@ApiForbiddenResponse({ description: 'Permissão insuficiente.' })
 @Controller('collections')
 export class CollectionsController {
   constructor(private readonly collectionsService: CollectionsService) {}
