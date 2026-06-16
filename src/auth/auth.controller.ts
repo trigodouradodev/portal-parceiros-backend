@@ -19,6 +19,7 @@ import { AuthService } from './auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
 import { LoginDto } from './dto/login.dto';
+import { LoginResponseDto, TokensDto } from './dto/auth-response.dto';
 import { ProfileResponseDto } from './dto/profile-response.dto';
 import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
@@ -35,6 +36,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Login por email/senha; retorna access + refresh token.',
   })
+  @ApiOkResponse({ type: LoginResponseDto })
   @Public()
   @HttpCode(HttpStatus.OK)
   @Post('login')
@@ -52,6 +54,7 @@ export class AuthController {
       properties: { refreshToken: { type: 'string' } },
     },
   })
+  @ApiOkResponse({ type: TokensDto })
   @Public()
   @UseGuards(JwtRefreshGuard)
   @HttpCode(HttpStatus.OK)
