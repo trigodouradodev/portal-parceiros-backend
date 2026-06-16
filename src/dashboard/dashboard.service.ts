@@ -71,7 +71,7 @@ function emptyPerformance(): MonthPerformance {
 }
 
 @Injectable()
-export class InstallmentsService {
+export class DashboardService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly scope: ScopeService,
@@ -275,26 +275,13 @@ export class InstallmentsService {
   }
 
   /**
-   * Fragmento SQL do filtro de scope aplicado sobre `contracts c`.
-   *   - `TRUE` quando o viewer vê tudo (ROLE_ADMIN / INSTALLMENT_VIEW_ALL)
-   *   - filtro por árvore de hierarquia caso contrário
-   *   - `null` quando o viewer não tem árvore (caller deve render dashboard
-   *     zerado sem ir ao banco)
+   * Fragmento SQL do filtro de scope aplicado sobre `contracts c`
+   * (ROLE_ADMIN / INSTALLMENT_VIEW_ALL veem tudo; sem árvore → `null`).
+   * Delega ao `ScopeService.buildContractScopeSql` (lógica compartilhada).
    */
-  private async buildScopeClause(
-    viewer: ScopeViewer,
-  ): Promise<Prisma.Sql | null> {
-    const canViewAll =
-      viewer.permissions.includes(PermissionKey.ROLE_ADMIN) ||
-      viewer.permissions.includes(PermissionKey.INSTALLMENT_VIEW_ALL);
-    if (canViewAll) return Prisma.sql`TRUE`;
-
-    const scope = await this.scope.getViewerScopeIds(viewer.userId);
-    if (scope.userIds.length === 0) return null;
-
-    return Prisma.sql`(
-      c.consultant_id = ANY(${scope.userIds}::uuid[])
-      OR c.current_collection_agent_id = ANY(${scope.userIds}::uuid[])
-    )`;
+  private buildScopeClause(viewer: ScopeViewer): Promise<Prisma.Sql | null> {
+    return this.scope.buildContractScopeSql(viewer, [
+      PermissionKey.INSTALLMENT_VIEW_ALL,
+    ]);
   }
 }
