@@ -3,11 +3,11 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
-import { InstallmentsService } from './installments.service';
+import { DashboardService } from './dashboard.service';
 
-@Controller('installments')
-export class InstallmentsController {
-  constructor(private readonly installmentsService: InstallmentsService) {}
+@Controller('dashboard')
+export class DashboardController {
+  constructor(private readonly dashboardService: DashboardService) {}
 
   /**
    * KPIs de carteira para o Resumo Home (contratos ativos, vencendo hoje,
@@ -19,9 +19,9 @@ export class InstallmentsController {
     PermissionKey.INSTALLMENT_VIEW,
     PermissionKey.INSTALLMENT_VIEW_ALL,
   )
-  @Get('dashboard')
+  @Get()
   getDashboard(@CurrentUser() user: JwtPayload) {
-    return this.installmentsService.getDashboard({
+    return this.dashboardService.getDashboard({
       userId: user.sub,
       permissions: user.permissions,
     });
@@ -37,7 +37,7 @@ export class InstallmentsController {
   )
   @Get('performance')
   getPerformance(@CurrentUser() user: JwtPayload) {
-    return this.installmentsService.getMonthPerformance({
+    return this.dashboardService.getMonthPerformance({
       userId: user.sub,
       permissions: user.permissions,
     });

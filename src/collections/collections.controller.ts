@@ -6,7 +6,7 @@ import { PermissionKey } from '../auth/permissions/permission-keys';
 import { CollectionsService } from './collections.service';
 import { OverdueCollectionQueryDto } from './dto/overdue-collection-query.dto';
 
-@Controller('installments/collections')
+@Controller('collections')
 export class CollectionsController {
   constructor(private readonly collectionsService: CollectionsService) {}
 

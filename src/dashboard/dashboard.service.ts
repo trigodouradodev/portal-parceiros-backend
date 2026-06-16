@@ -71,7 +71,7 @@ function emptyPerformance(): MonthPerformance {
 }
 
 @Injectable()
-export class InstallmentsService {
+export class DashboardService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly scope: ScopeService,
