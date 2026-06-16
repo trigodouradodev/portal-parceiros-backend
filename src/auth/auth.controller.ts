@@ -8,11 +8,18 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
 import { LoginDto } from './dto/login.dto';
+import { ProfileResponseDto } from './dto/profile-response.dto';
 import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
 
@@ -54,6 +61,7 @@ export class AuthController {
   }
 
   @ApiOperation({ summary: 'Perfil do usuário autenticado.' })
+  @ApiOkResponse({ type: ProfileResponseDto })
   @ApiBearerAuth('access-token')
   @Get('me')
   me(@CurrentUser('sub') userId: string) {
