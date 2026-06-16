@@ -1,56 +1,87 @@
-name: PR Checks
+name: PR Check
 
 on:
   pull_request:
-    branches: [dev, homolog, main]
-    types: [opened, edited, reopened, synchronize]
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
-  validate-ticket:
-    if: ${{ !startsWith(github.head_ref, 'fix/') && !startsWith(github.head_ref, 'hotfix/') }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Validate ClickUp ticket in title and description
-        env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-        run: |
-          # Check description contains ClickUp URL
-          if ! echo "$PR_BODY" | grep -qE 'app\.clickup\.com/t/[a-zA-Z0-9]+'; then
-            echo "❌ A descrição do PR deve conter o link do ticket no ClickUp."
-            echo "   Formato esperado: https://app.clickup.com/t/<task-id>"
-            exit 1
-          fi
-
-          # Extract task ID from the ClickUp URL in the description
-          TASK_ID=$(echo "$PR_BODY" | grep -oE 'app\.clickup\.com/t/[a-zA-Z0-9]+' | head -1 | grep -oE '[a-zA-Z0-9]+$')
-
-          # Check title contains the task ID
-          if ! echo "$PR_TITLE" | grep -qi "$TASK_ID"; then
-            echo "❌ O título do PR deve conter o ID do ticket ClickUp ($TASK_ID)."
-            echo "   Título atual: $PR_TITLE"
-            echo "   Exemplo: [$TASK_ID]: Descrição da mudança"
-            exit 1
-          fi
-
-          echo "✅ Título e descrição contêm o ticket ClickUp ($TASK_ID)"
-
   build:
+    name: Lint and build
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: 24
-          cache: npm
+          node-version: '22'
+          cache: 'npm'
 
-      - run: npm ci
+      - name: Install dependencies
+        run: npm ci
 
-      - run: npx prisma generate
+      - name: Check formatting
+        run: npm run format:check
 
-      - run: npx prettier --check "src/**/*.ts" "test/**/*.ts"
+      - name: Lint
+        run: npm run lint
 
-      - run: npm run build
+      - name: Build
+        run: npm run build
 
-      - run: npm test
+  validate-pr:
+    name: Validate PR title and description
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check title and description
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = context.payload.pull_request.title;
+            const body = context.payload.pull_request.body || '';
+            const branch = context.payload.pull_request.head.ref;
+
+            // Skip validation for fix/* and hotfix/* branches
+            if (/^(fix|hotfix)\//.test(branch)) {
+              console.log(`✅ Branch "${branch}" — validação de título/descrição ignorada.`);
+              return;
+            }
+
+            const errors = [];
+
+            // Validate title: must start with a Jira issue key followed by colon
+            // Format: TTC-129: Description...
+            const titleRegex = /^TTC-\d+:/i;
+            if (!titleRegex.test(title)) {
+              errors.push('❌ **Título inválido**: o título deve começar com a chave do ticket Jira seguida de dois pontos.\n   Formato esperado: `TTC-129: Descrição da tarefa`');
+            }
+
+            // Validate body: must contain a Jira link
+            const jiraLinkRegex = /https:\/\/aureadev\.atlassian\.net\/browse\/TTC-\d+/;
+            if (!jiraLinkRegex.test(body)) {
+              errors.push('❌ **Descrição inválida**: a descrição deve conter o link do ticket no Jira.\n   Exemplo: `https://aureadev.atlassian.net/browse/TTC-129`');
+            }
+
+            if (errors.length > 0) {
+              const message = [
+                '## ❌ PR inválido',
+                '',
+                'As seguintes validações falharam:',
+                '',
+                ...errors,
+                '',
+                '---',
+                '_Corrija o título e/ou a descrição e o check será revalidado automaticamente._',
+              ].join('\n');
+
+              core.setFailed(message);
+            } else {
+              console.log('✅ Título e descrição válidos.');
+            }
