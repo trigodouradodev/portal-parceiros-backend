@@ -13,7 +13,9 @@ import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { CollectionsService } from './collections.service';
 import { OverdueCollectionQueryDto } from './dto/overdue-collection-query.dto';
+import { PreventiveCollectionQueryDto } from './dto/preventive-collection-query.dto';
 import { OverdueCollectionPage } from './interfaces/overdue-collection.interface';
+import { PreventiveCollectionPage } from './interfaces/preventive-collection.interface';
 
 @ApiTags('collections')
 @ApiBearerAuth('access-token')
@@ -45,6 +47,33 @@ export class CollectionsController {
       { userId: user.sub, permissions: user.permissions },
       query.page,
       query.limit,
+    );
+  }
+
+  /**
+   * Aba Preventivo: contratos com parcela a vencer nos próximos `withinDays`
+   * dias (default 15), do vencimento mais próximo primeiro. Mesmo acesso/scope
+   * da Cobrança.
+   */
+  @ApiOperation({
+    summary:
+      'Aba Preventivo: contratos a vencer (vencimento mais próximo primeiro).',
+  })
+  @ApiOkResponse({ type: PreventiveCollectionPage })
+  @RequirePermissions(
+    PermissionKey.INSTALLMENT_VIEW,
+    PermissionKey.INSTALLMENT_VIEW_ALL,
+  )
+  @Get('preventive')
+  getPreventive(
+    @CurrentUser() user: JwtPayload,
+    @Query() query: PreventiveCollectionQueryDto,
+  ) {
+    return this.collectionsService.getPreventive(
+      { userId: user.sub, permissions: user.permissions },
+      query.page,
+      query.limit,
+      query.withinDays,
     );
   }
 }
