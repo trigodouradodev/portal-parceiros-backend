@@ -8,6 +8,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
@@ -19,10 +20,14 @@ interface RefreshRequest {
   user: JwtPayload;
 }
 
+@ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @ApiOperation({
+    summary: 'Login por email/senha; retorna access + refresh token.',
+  })
   @Public()
   @HttpCode(HttpStatus.OK)
   @Post('login')
@@ -30,6 +35,16 @@ export class AuthController {
     return this.authService.login(dto);
   }
 
+  @ApiOperation({
+    summary: 'Renova os tokens a partir de um refresh token válido.',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['refreshToken'],
+      properties: { refreshToken: { type: 'string' } },
+    },
+  })
   @Public()
   @UseGuards(JwtRefreshGuard)
   @HttpCode(HttpStatus.OK)
@@ -38,6 +53,8 @@ export class AuthController {
     return this.authService.refreshTokens(req.user.sub);
   }
 
+  @ApiOperation({ summary: 'Perfil do usuário autenticado.' })
+  @ApiBearerAuth('access-token')
   @Get('me')
   me(@CurrentUser('sub') userId: string) {
     return this.authService.getProfile(userId);

@@ -1,33 +1,60 @@
-export interface MonthPerformance {
-  /** Mês de referência (mês corrente) no formato 'YYYY-MM'. */
+import { ApiProperty } from '@nestjs/swagger';
+
+export class OriginationSummary {
+  @ApiProperty({ example: 12 })
+  count: number;
+
+  @ApiProperty({ example: 350000.0, description: 'Soma de total_amount.' })
+  amount: number;
+}
+
+export class DelinquencySummary {
+  @ApiProperty({
+    example: 7.35,
+    description: 'Percentual 0–100 (regra de arrasto).',
+  })
+  rate: number;
+
+  @ApiProperty({
+    example: 42000.0,
+    description: 'Valor inadimplente ponderado.',
+  })
+  overdueAmount: number;
+
+  @ApiProperty({
+    example: 571000.0,
+    description: 'Saldo total em aberto da carteira.',
+  })
+  portfolioOpenAmount: number;
+}
+
+export class MonthPerformance {
+  @ApiProperty({
+    example: '2026-06',
+    description: "Mês de referência (mês corrente) no formato 'YYYY-MM'.",
+  })
   month: string;
-  /** Contratos desembolsados no mês. */
-  origination: {
-    count: number;
-    amount: number;
-  };
-  /**
-   * Média simples da interest_rate (loan_terms) dos contratos originados no
-   * mês, em percentual (0–100, 2 casas). Ex.: 10.43 = 10,43%. `null` quando
-   * não houve originação no período.
-   */
+
+  @ApiProperty({
+    type: OriginationSummary,
+    description: 'Contratos desembolsados no mês.',
+  })
+  origination: OriginationSummary;
+
+  @ApiProperty({
+    example: 10.43,
+    nullable: true,
+    description:
+      'Taxa média em percentual (interest_rate × 100, 2 casas). null se não houve originação.',
+  })
   averageRate: number | null;
-  /**
-   * Inadimplência da carteira (snapshot atual) pela regra de arrasto:
-   * contratos com atraso > 30d entram com o saldo devedor TOTAL; com atraso
-   * 1–30d entram só com as parcelas vencidas; razão sobre o saldo em aberto.
-   */
-  delinquency: {
-    /** Percentual (0–100). */
-    rate: number;
-    /** Valor inadimplente ponderado pela regra de arrasto. */
-    overdueAmount: number;
-    /** Saldo total em aberto da carteira (denominador). */
-    portfolioOpenAmount: number;
-  };
-  /**
-   * Contratos originados no mês de clientes que já tiveram pelo menos um
-   * contrato com status 'closed' (novo ciclo de crédito — renovação).
-   */
+
+  @ApiProperty({ type: DelinquencySummary })
+  delinquency: DelinquencySummary;
+
+  @ApiProperty({
+    example: 3,
+    description: "Contratos do mês de clientes com contrato anterior 'closed'.",
+  })
   renewals: number;
 }

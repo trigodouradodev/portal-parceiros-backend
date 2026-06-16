@@ -1,41 +1,111 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
 /** Parcela vencida mais antiga de um contrato (driver do atraso). */
-export interface OverdueInstallmentSummary {
+export class OverdueInstallmentSummary {
+  @ApiProperty()
   id: string;
+
+  @ApiProperty({ example: 1 })
   installmentNumber: number;
-  /** Vencimento da parcela (data, sem hora). */
+
+  @ApiProperty({
+    type: String,
+    format: 'date',
+    example: '2025-10-16',
+    description: 'Vencimento da parcela (data, sem hora).',
+  })
   dueDate: Date;
-  /** Dias de atraso = CURRENT_DATE - due_date. */
+
+  @ApiProperty({
+    example: 243,
+    description: 'Dias de atraso = CURRENT_DATE - due_date.',
+  })
   daysOverdue: number;
+
+  @ApiProperty({ example: 592.37 })
   pendingAmount: number;
+
+  @ApiProperty({ example: 1000.0 })
   totalAmount: number;
+
+  @ApiProperty({ example: 'not_paid' })
   status: string;
-  /** Nº de followups registrados para essa parcela. */
+
+  @ApiProperty({
+    example: 2,
+    description: 'Nº de followups registrados para a parcela.',
+  })
   followupCount: number;
-  /** Status do followup mais recente da parcela (se houver). */
+
+  @ApiPropertyOptional({
+    example: 'promise_to_pay',
+    description: 'Status do followup mais recente.',
+  })
   latestFollowupStatus?: string;
 }
 
+export class CollectionAgentRef {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  name: string;
+}
+
 /** Contrato atrasado, representado pela sua parcela vencida mais antiga. */
-export interface OverdueContract {
+export class OverdueContract {
+  @ApiProperty()
   contractId: string;
+
+  @ApiProperty()
   contractNumber: string;
-  /** Total de parcelas do contrato (para "parcela X de Y"). */
+
+  @ApiProperty({
+    example: 12,
+    description: 'Total de parcelas do contrato (para "parcela X de Y").',
+  })
   totalInstallments: number;
+
+  @ApiProperty()
   clientName: string;
+
+  @ApiProperty()
   clientTaxId: string;
+
+  @ApiPropertyOptional()
   consultantName?: string;
+
+  @ApiPropertyOptional()
   companyName?: string;
-  collectionAgent?: { id: string; name: string };
+
+  @ApiPropertyOptional({ type: CollectionAgentRef })
+  collectionAgent?: CollectionAgentRef;
+
+  @ApiProperty({ type: OverdueInstallmentSummary })
   firstOverdueInstallment: OverdueInstallmentSummary;
 }
 
-export interface OverdueCollectionPage {
+export class OverduePagination {
+  @ApiProperty({ example: 1 })
+  page: number;
+
+  @ApiProperty({ example: 30 })
+  limit: number;
+
+  @ApiProperty({ example: 248 })
+  totalContracts: number;
+
+  @ApiProperty({ example: 9 })
+  totalPages: number;
+
+  @ApiProperty({ example: true })
+  hasNextPage: boolean;
+}
+
+export class OverdueCollectionPage {
+  @ApiProperty({ type: [OverdueContract] })
   contracts: OverdueContract[];
-  pagination: {
-    page: number;
-    limit: number;
-    totalContracts: number;
-    totalPages: number;
-    hasNextPage: boolean;
-  };
+
+  @ApiProperty({ type: OverduePagination })
+  pagination: OverduePagination;
 }

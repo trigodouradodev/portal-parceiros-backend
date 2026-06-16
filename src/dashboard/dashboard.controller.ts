@@ -1,10 +1,20 @@
 import { Controller, Get } from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { DashboardService } from './dashboard.service';
+import { PortfolioDashboard } from './interfaces/portfolio-dashboard.interface';
+import { MonthPerformance } from './interfaces/month-performance.interface';
 
+@ApiTags('dashboard')
+@ApiBearerAuth('access-token')
 @Controller('dashboard')
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
@@ -15,6 +25,8 @@ export class DashboardController {
    * INSTALLMENT_VIEW_ALL (ROLE_ADMIN passa por bypass). O scope por hierarquia
    * é aplicado no service para quem não tem visão global.
    */
+  @ApiOperation({ summary: 'Summary cards da Home (KPIs de carteira).' })
+  @ApiOkResponse({ type: PortfolioDashboard })
   @RequirePermissions(
     PermissionKey.INSTALLMENT_VIEW,
     PermissionKey.INSTALLMENT_VIEW_ALL,
@@ -31,6 +43,11 @@ export class DashboardController {
    * "Meu Desempenho do Mês": originação, taxa média, inadimplência e
    * renovações do mês corrente, no scope de hierarquia do viewer.
    */
+  @ApiOperation({
+    summary:
+      'Meu Desempenho do Mês (originação, taxa, inadimplência, renovações).',
+  })
+  @ApiOkResponse({ type: MonthPerformance })
   @RequirePermissions(
     PermissionKey.INSTALLMENT_VIEW,
     PermissionKey.INSTALLMENT_VIEW_ALL,

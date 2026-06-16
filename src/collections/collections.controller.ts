@@ -1,11 +1,20 @@
 import { Controller, Get, Query } from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { CollectionsService } from './collections.service';
 import { OverdueCollectionQueryDto } from './dto/overdue-collection-query.dto';
+import { OverdueCollectionPage } from './interfaces/overdue-collection.interface';
 
+@ApiTags('collections')
+@ApiBearerAuth('access-token')
 @Controller('collections')
 export class CollectionsController {
   constructor(private readonly collectionsService: CollectionsService) {}
@@ -15,6 +24,10 @@ export class CollectionsController {
    * para o menos. Acesso: INSTALLMENT_VIEW ou INSTALLMENT_VIEW_ALL (ROLE_ADMIN
    * por bypass); scope por hierarquia aplicado no service.
    */
+  @ApiOperation({
+    summary: 'Aba Cobrança: contratos atrasados (mais atrasado primeiro).',
+  })
+  @ApiOkResponse({ type: OverdueCollectionPage })
   @RequirePermissions(
     PermissionKey.INSTALLMENT_VIEW,
     PermissionKey.INSTALLMENT_VIEW_ALL,
