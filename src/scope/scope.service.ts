@@ -148,6 +148,39 @@ export class ScopeService {
   }
 
   /**
+   * Fragmento SQL do filtro de scope por hierarquia aplicado sobre `contracts`
+   * (alias `c` por padrão), para uso em `$queryRaw`:
+   *   - `TRUE` quando o viewer vê tudo (ROLE_ADMIN ou alguma das
+   *     `viewAllPermissions` informadas pelo caller — ex.: INSTALLMENT_VIEW_ALL)
+   *   - `null` quando o viewer não tem árvore (caller deve render vazio/zerado
+   *     sem ir ao banco)
+   *   - senão, OR de `consultant_id` / `current_collection_agent_id` na árvore
+   *
+   * `alias` é constante interna do caller (nunca input do usuário), então é
+   * seguro interpolar via `Prisma.raw`.
+   */
+  async buildContractScopeSql(
+    viewer: ScopeViewer,
+    viewAllPermissions: string[] = [],
+    alias = 'c',
+  ): Promise<Prisma.Sql | null> {
+    const canViewAll =
+      viewer.permissions.includes('ROLE_ADMIN') ||
+      viewAllPermissions.some((perm) => viewer.permissions.includes(perm));
+    if (canViewAll) return Prisma.sql`TRUE`;
+
+    const scope = await this.getViewerScopeIds(viewer.userId);
+    if (scope.userIds.length === 0) return null;
+
+    const consultantCol = Prisma.raw(`${alias}.consultant_id`);
+    const agentCol = Prisma.raw(`${alias}.current_collection_agent_id`);
+    return Prisma.sql`(
+      ${consultantCol} = ANY(${scope.userIds}::uuid[])
+      OR ${agentCol} = ANY(${scope.userIds}::uuid[])
+    )`;
+  }
+
+  /**
    * Verifica se o viewer tem acesso a um contrato específico.
    *
    * Regra:
