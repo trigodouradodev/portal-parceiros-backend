@@ -978,17 +978,19 @@ model installment_boletos {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model installment_followups {
-  id                 String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  contract_id        String      @db.Uuid
+  id                 String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  contract_id        String        @db.Uuid
   installment_number Int?
   status             String
   note               String?
-  user_id            String      @db.Uuid
-  created_at         DateTime    @default(now()) @db.Timestamptz(6)
-  updated_at         DateTime    @default(now()) @db.Timestamptz(6)
-  payment_forecast   DateTime?   @db.Timestamp(6)
-  contracts          contracts   @relation(fields: [contract_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  trigo_users        trigo_users @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "installment_followups_user_id_foreign")
+  user_id            String        @db.Uuid
+  created_at         DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime      @default(now()) @db.Timestamptz(6)
+  payment_forecast   DateTime?     @db.Timestamp(6)
+  expected_result    String?
+  geolocations       geolocations?
+  contracts          contracts     @relation(fields: [contract_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  trigo_users        trigo_users   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "installment_followups_user_id_foreign")
 }
 
 model installment_qr_codes {
@@ -1870,6 +1872,16 @@ model whatsapp_messages_sent {
   installments   installments? @relation(fields: [installment_id], references: [id], onUpdate: SetNull, map: "whatsapp_sent_messages_installments_fk")
 
   @@index([sid], map: "whatsapp_sent_messages_sid_idx")
+}
+
+model geolocations {
+  id                      String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  installment_followup_id String?                @unique(map: "geolocations_installment_followup_id_unique") @db.Uuid
+  latitude                Decimal                @db.Decimal(10, 7)
+  longitude               Decimal                @db.Decimal(10, 7)
+  created_at              DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime               @default(now()) @db.Timestamptz(6)
+  installment_followups   installment_followups? @relation(fields: [installment_followup_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "geolocations_installment_followup_id_foreign")
 }
 
 enum message_status_enum {
