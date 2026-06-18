@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { HealthModule } from './health/health.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { CollectionsModule } from './collections/collections.module';
+import { FollowUpModule } from './follow-up/follow-up.module';
 import configuration from './config/configuration';
 import { envValidationSchema } from './config/env.validation';
 
@@ -25,6 +26,7 @@ import { envValidationSchema } from './config/env.validation';
     HealthModule,
     DashboardModule,
     CollectionsModule,
+    FollowUpModule,
   ],
   controllers: [AppController],
   providers: [AppService],
