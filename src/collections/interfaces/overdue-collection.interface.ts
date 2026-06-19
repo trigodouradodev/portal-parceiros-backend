@@ -52,6 +52,30 @@ export class CollectionAgentRef {
   name: string;
 }
 
+/** Endereço do cliente (endereço primário; fallback para o mais recente). */
+export class ClientAddress {
+  @ApiProperty({ example: 'Rua das Flores' })
+  street: string;
+
+  @ApiProperty({ example: '123' })
+  number: string;
+
+  @ApiPropertyOptional({ example: 'Apto 4' })
+  complement?: string;
+
+  @ApiProperty({ example: 'Centro' })
+  neighborhood: string;
+
+  @ApiProperty({ example: 'São Paulo' })
+  city: string;
+
+  @ApiPropertyOptional({ example: 'SP' })
+  state?: string;
+
+  @ApiProperty({ example: '01001000' })
+  zipCode: string;
+}
+
 /** Contrato atrasado, representado pela sua parcela vencida mais antiga. */
 export class OverdueContract {
   @ApiProperty()
@@ -71,6 +95,12 @@ export class OverdueContract {
 
   @ApiProperty()
   clientTaxId: string;
+
+  @ApiPropertyOptional({ example: '11987654321' })
+  clientPhone?: string;
+
+  @ApiPropertyOptional({ type: ClientAddress })
+  address?: ClientAddress;
 
   @ApiPropertyOptional()
   consultantName?: string;

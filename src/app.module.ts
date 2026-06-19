@@ -8,6 +8,7 @@ import { HealthModule } from './health/health.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { CollectionsModule } from './collections/collections.module';
 import { FollowUpModule } from './follow-up/follow-up.module';
+import { LocationCheckModule } from './location-check/location-check.module';
 import configuration from './config/configuration';
 import { envValidationSchema } from './config/env.validation';
 
@@ -27,6 +28,7 @@ import { envValidationSchema } from './config/env.validation';
     DashboardModule,
     CollectionsModule,
     FollowUpModule,
+    LocationCheckModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -63,14 +63,20 @@ export class CreateFollowUpDto {
   @ApiPropertyOptional({
     description: 'Latitude da visita. Obrigatória junto com longitude.',
   })
-  @ValidateIf((o) => o.longitude !== undefined || o.latitude !== undefined)
+  @ValidateIf(
+    (o: CreateFollowUpDto) =>
+      o.longitude !== undefined || o.latitude !== undefined,
+  )
   @IsLatitude()
   latitude?: number;
 
   @ApiPropertyOptional({
     description: 'Longitude da visita. Obrigatória junto com latitude.',
   })
-  @ValidateIf((o) => o.latitude !== undefined || o.longitude !== undefined)
+  @ValidateIf(
+    (o: CreateFollowUpDto) =>
+      o.latitude !== undefined || o.longitude !== undefined,
+  )
   @IsLongitude()
   longitude?: number;
 }
