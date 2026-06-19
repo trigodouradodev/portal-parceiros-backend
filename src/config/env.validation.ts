@@ -26,6 +26,6 @@ export const envValidationSchema = Joi.object({
   // (responde 503), sem impedir o boot da aplicação.
   GOOGLE_MAPS_API_KEY: Joi.string().allow('').optional(),
   // Raio máximo (metros) aceito no location-check. Geocoding raramente atinge
-  // 15m em endereço BR; ajuste conforme a precisão observada.
-  LOCATION_CHECK_RADIUS_METERS: Joi.number().positive().default(15),
+  // 100m em endereço BR; ajuste conforme a precisão observada.
+  LOCATION_CHECK_RADIUS_METERS: Joi.number().positive().default(100),
 });

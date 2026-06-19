@@ -23,7 +23,7 @@ export class LocationCheckController {
   constructor(private readonly locationCheckService: LocationCheckService) {}
 
   /**
-   * Verifica se a coordenada capturada pelo agente está a até 15m do endereço
+   * Verifica se a coordenada capturada pelo agente está a até 100m do endereço
    * cadastrado do cliente. Acesso: CONTRACT_FOLLOW_UP (ROLE_ADMIN por bypass).
    */
   @ApiOperation({

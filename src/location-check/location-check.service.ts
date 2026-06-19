@@ -12,7 +12,7 @@ import { LocationCheckResult } from './interfaces/location-check-result.interfac
 /** Raio médio da Terra em metros (para a fórmula de Haversine). */
 const EARTH_RADIUS_METERS = 6_371_000;
 /** Raio default (metros) quando LOCATION_CHECK_RADIUS_METERS não está setado. */
-const DEFAULT_RADIUS_METERS = 15;
+const DEFAULT_RADIUS_METERS = 100;
 
 interface AddressForGeocoding {
   street: string;

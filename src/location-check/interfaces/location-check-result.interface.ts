@@ -26,7 +26,7 @@ export class LocationCheckResult {
   distanceMeters: number;
 
   @ApiProperty({
-    example: 15,
+    example: 100,
     description: 'Raio máximo aceito para considerar a visita válida (metros).',
   })
   radiusMeters: number;
@@ -53,7 +53,7 @@ export class LocationCheckResult {
     example: 'ROOFTOP',
     description:
       'Precisão do geocoding: ROOFTOP (exato) é confiável; APPROXIMATE/' +
-      'GEOMETRIC_CENTER indicam ponto aproximado (raio de 15m não confiável).',
+      'GEOMETRIC_CENTER indicam ponto aproximado (raio de 100m não confiável).',
   })
   locationType: string;
 

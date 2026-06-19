@@ -64,7 +64,7 @@ export default (): Configuration => ({
   geocoding: {
     apiKey: process.env.GOOGLE_MAPS_API_KEY ?? '',
     radiusMeters: parseInt(
-      process.env.LOCATION_CHECK_RADIUS_METERS ?? '15',
+      process.env.LOCATION_CHECK_RADIUS_METERS ?? '100',
       10,
     ),
   },

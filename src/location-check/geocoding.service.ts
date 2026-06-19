@@ -13,7 +13,7 @@ export interface GeocodeResult {
   /**
    * Precisão do ponto segundo o Google: ROOFTOP (exato), RANGE_INTERPOLATED,
    * GEOMETRIC_CENTER ou APPROXIMATE (centroide da via/bairro — não confiável
-   * para o raio de 15m).
+   * para o raio de 100m).
    */
   locationType: string;
   /** True quando o Google não casou o endereço exato (ex.: ignorou o número). */
