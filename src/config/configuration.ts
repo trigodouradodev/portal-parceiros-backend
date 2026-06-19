@@ -22,10 +22,18 @@ export interface JwtConfig {
   refreshExpiresIn: string;
 }
 
+export interface GeocodingConfig {
+  /** Chave da Google Maps Geocoding API. Vazia desabilita o location-check. */
+  apiKey: string;
+  /** Raio máximo (metros) aceito no location-check. */
+  radiusMeters: number;
+}
+
 export interface Configuration {
   app: AppConfig;
   database: DatabaseConfig;
   jwt: JwtConfig;
+  geocoding: GeocodingConfig;
 }
 
 export default (): Configuration => ({
@@ -52,5 +60,12 @@ export default (): Configuration => ({
     accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '15m',
     refreshSecret: process.env.JWT_REFRESH_SECRET as string,
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
+  },
+  geocoding: {
+    apiKey: process.env.GOOGLE_MAPS_API_KEY ?? '',
+    radiusMeters: parseInt(
+      process.env.LOCATION_CHECK_RADIUS_METERS ?? '15',
+      10,
+    ),
   },
 });

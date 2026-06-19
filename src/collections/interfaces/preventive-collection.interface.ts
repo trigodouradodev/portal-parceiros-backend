@@ -1,5 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { CollectionAgentRef } from './overdue-collection.interface';
+import {
+  ClientAddress,
+  CollectionAgentRef,
+} from './overdue-collection.interface';
 
 /** Próxima parcela a vencer de um contrato (driver do preventivo). */
 export class UpcomingInstallmentSummary {
@@ -64,6 +67,12 @@ export class PreventiveContract {
 
   @ApiProperty()
   clientTaxId: string;
+
+  @ApiPropertyOptional({ example: '11987654321' })
+  clientPhone?: string;
+
+  @ApiPropertyOptional({ type: ClientAddress })
+  address?: ClientAddress;
 
   @ApiPropertyOptional()
   consultantName?: string;

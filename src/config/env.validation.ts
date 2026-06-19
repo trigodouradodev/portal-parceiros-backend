@@ -21,4 +21,11 @@ export const envValidationSchema = Joi.object({
   JWT_ACCESS_EXPIRES_IN: Joi.string().default('15m'),
   JWT_REFRESH_SECRET: Joi.string().required(),
   JWT_REFRESH_EXPIRES_IN: Joi.string().default('7d'),
+
+  // Geocoding (location-check). Opcional: ausente desabilita o endpoint
+  // (responde 503), sem impedir o boot da aplicação.
+  GOOGLE_MAPS_API_KEY: Joi.string().allow('').optional(),
+  // Raio máximo (metros) aceito no location-check. Geocoding raramente atinge
+  // 15m em endereço BR; ajuste conforme a precisão observada.
+  LOCATION_CHECK_RADIUS_METERS: Joi.number().positive().default(15),
 });
