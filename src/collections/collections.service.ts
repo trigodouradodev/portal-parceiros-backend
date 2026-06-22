@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScopeService, ScopeViewer } from '../scope/scope.service';
@@ -12,6 +12,10 @@ import {
   PreventiveCollectionPage,
   PreventiveContract,
 } from './interfaces/preventive-collection.interface';
+import {
+  CollectionDetail,
+  FollowUpHistoryItem,
+} from './interfaces/collection-detail.interface';
 
 /** Status de contrato que compõem a carteira em cobrança. */
 const PORTFOLIO_CONTRACT_STATUSES = ['disbursed', 'active'];
@@ -436,6 +440,115 @@ export class CollectionsService {
         followupCount: Number(row.followup_count ?? 0),
         latestFollowupStatus: row.latest_followup_status ?? undefined,
       },
+    };
+  }
+
+  /**
+   * Detalhe de um contrato a partir de uma parcela selecionada na lista de
+   * Cobrança/Preventivo: dados do contrato (valor total, início/fim), da
+   * parcela (valor, vencimento, posição X de Y) e o histórico de follow-up
+   * registrado para essa parcela específica (mais recente primeiro).
+   *
+   * Scope: mesmo gating das listas — ROLE_ADMIN / INSTALLMENT_VIEW_ALL veem
+   * qualquer contrato; os demais só os da própria árvore de hierarquia.
+   * Fora do escopo ou inexistente → 404 (não revela existência).
+   */
+  async getDetail(
+    viewer: ScopeViewer,
+    contractId: string,
+    installmentNumber: number,
+  ): Promise<CollectionDetail> {
+    const canView = await this.scope.canViewContract(contractId, viewer, [
+      PermissionKey.INSTALLMENT_VIEW_ALL,
+    ]);
+    if (!canView) {
+      throw new NotFoundException('Contrato não encontrado.');
+    }
+
+    const contract = await this.prisma.contracts.findUnique({
+      where: { id: contractId },
+      select: {
+        contract_number: true,
+        total_amount: true,
+        total_installments: true,
+        disbursement_date: true,
+      },
+    });
+    if (!contract) {
+      throw new NotFoundException('Contrato não encontrado.');
+    }
+
+    const installment = await this.prisma.installments.findFirst({
+      where: { contract_id: contractId, installment_number: installmentNumber },
+      select: {
+        id: true,
+        installment_number: true,
+        due_date: true,
+        total_amount: true,
+        pending_amount: true,
+        status: true,
+      },
+    });
+    if (!installment) {
+      throw new NotFoundException('Parcela não encontrada para o contrato.');
+    }
+
+    // Fim do contrato = vencimento da última parcela.
+    const lastInstallment = await this.prisma.installments.aggregate({
+      where: { contract_id: contractId },
+      _max: { due_date: true },
+    });
+
+    const followUps = await this.prisma.installment_followups.findMany({
+      where: { contract_id: contractId, installment_number: installmentNumber },
+      orderBy: { created_at: 'desc' },
+      select: {
+        id: true,
+        status: true,
+        note: true,
+        expected_result: true,
+        payment_forecast: true,
+        created_at: true,
+        trigo_users: { select: { id: true, full_name: true } },
+        geolocations: { select: { latitude: true, longitude: true } },
+      },
+    });
+
+    return {
+      contractId,
+      contractNumber: contract.contract_number,
+      contractTotalAmount: toNum(contract.total_amount),
+      contractStartDate: contract.disbursement_date ?? undefined,
+      contractEndDate: lastInstallment._max.due_date ?? undefined,
+      totalInstallments: Number(contract.total_installments ?? 0),
+      installment: {
+        id: installment.id,
+        installmentNumber: Number(installment.installment_number),
+        dueDate: installment.due_date,
+        totalAmount: toNum(installment.total_amount),
+        pendingAmount: toNum(installment.pending_amount),
+        status: installment.status,
+      },
+      followUps: followUps.map(
+        (f): FollowUpHistoryItem => ({
+          id: f.id,
+          status: f.status,
+          note: f.note ?? undefined,
+          expectedResult: f.expected_result ?? undefined,
+          paymentForecast: f.payment_forecast ?? undefined,
+          createdAt: f.created_at,
+          author: {
+            id: f.trigo_users.id,
+            name: f.trigo_users.full_name,
+          },
+          geolocation: f.geolocations
+            ? {
+                latitude: toNum(f.geolocations.latitude),
+                longitude: toNum(f.geolocations.longitude),
+              }
+            : undefined,
+        }),
+      ),
     };
   }
 }

@@ -1,7 +1,15 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  ParseUUIDPipe,
+  Query,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiForbiddenResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -16,6 +24,7 @@ import { OverdueCollectionQueryDto } from './dto/overdue-collection-query.dto';
 import { PreventiveCollectionQueryDto } from './dto/preventive-collection-query.dto';
 import { OverdueCollectionPage } from './interfaces/overdue-collection.interface';
 import { PreventiveCollectionPage } from './interfaces/preventive-collection.interface';
+import { CollectionDetail } from './interfaces/collection-detail.interface';
 
 @ApiTags('collections')
 @ApiBearerAuth('access-token')
@@ -74,6 +83,34 @@ export class CollectionsController {
       query.page,
       query.limit,
       query.withinDays,
+    );
+  }
+
+  /**
+   * Detalhe de um item da lista: dados do contrato (valor total, início/fim)
+   * e da parcela selecionada (valor, vencimento, posição X de Y), mais o
+   * histórico de follow-up dessa parcela. Mesmo acesso/scope das listas;
+   * contrato fora do escopo ou inexistente → 404.
+   */
+  @ApiOperation({
+    summary: 'Detalhe do contrato/parcela + histórico de follow-up da parcela.',
+  })
+  @ApiOkResponse({ type: CollectionDetail })
+  @ApiNotFoundResponse({ description: 'Contrato ou parcela não encontrados.' })
+  @RequirePermissions(
+    PermissionKey.INSTALLMENT_VIEW,
+    PermissionKey.INSTALLMENT_VIEW_ALL,
+  )
+  @Get(':contractId/installments/:installmentNumber')
+  getDetail(
+    @CurrentUser() user: JwtPayload,
+    @Param('contractId', ParseUUIDPipe) contractId: string,
+    @Param('installmentNumber', ParseIntPipe) installmentNumber: number,
+  ) {
+    return this.collectionsService.getDetail(
+      { userId: user.sub, permissions: user.permissions },
+      contractId,
+      installmentNumber,
     );
   }
 }

@@ -185,7 +185,8 @@ export class ScopeService {
    *
    * Regra:
    *   - Sem viewer → true (fail-open pra callers internos sistêmicos)
-   *   - ROLE_ADMIN ou CONTRACT_VIEW_ALL → true (vê tudo)
+   *   - ROLE_ADMIN, CONTRACT_VIEW_ALL ou alguma das `viewAllPermissions`
+   *     informadas pelo caller (ex.: INSTALLMENT_VIEW_ALL) → true (vê tudo)
    *   - Caso contrário, verifica se o contrato está na árvore do viewer:
    *     contracts.consultant_id ∈ scope.consultantIds OU
    *     contracts.current_collection_agent_id ∈ scope.collectionAgentIds
@@ -201,11 +202,13 @@ export class ScopeService {
   async canViewContract(
     contractId: string,
     viewer?: ScopeViewer,
+    viewAllPermissions: string[] = [],
   ): Promise<boolean> {
     if (!viewer) return true;
     const canViewAll =
       viewer.permissions.includes('ROLE_ADMIN') ||
-      viewer.permissions.includes('CONTRACT_VIEW_ALL');
+      viewer.permissions.includes('CONTRACT_VIEW_ALL') ||
+      viewAllPermissions.some((perm) => viewer.permissions.includes(perm));
     if (canViewAll) {
       // Ainda precisa verificar existência? Não — se ID inválido a query
       // posterior do caller falha naturalmente. Aqui só validamos permissão.
