@@ -1,4 +1,29 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ClientAddress } from './overdue-collection.interface';
+
+/** Origem do responsável pela parcela. */
+export enum ResponsibleType {
+  COLLECTION_AGENT = 'COLLECTION_AGENT',
+  CONSULTANT = 'CONSULTANT',
+}
+
+/**
+ * Responsável pela parcela: o agente de cobrança do contrato; na ausência,
+ * cai para o consultor. `type` indica qual dos dois foi retornado.
+ */
+export class ContractResponsible {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ example: 'Maria Souza' })
+  name: string;
+
+  @ApiProperty({
+    enum: ResponsibleType,
+    example: ResponsibleType.COLLECTION_AGENT,
+  })
+  type: ResponsibleType;
+}
 
 export class FollowUpAuthor {
   @ApiProperty()
@@ -80,6 +105,29 @@ export class CollectionDetail {
 
   @ApiProperty()
   contractNumber: string;
+
+  @ApiProperty({ example: 'Maria Souza', description: 'Nome do cliente.' })
+  clientName: string;
+
+  @ApiProperty({
+    example: '12345678900',
+    description: 'Documento do cliente (CPF/CNPJ).',
+  })
+  clientTaxId: string;
+
+  @ApiPropertyOptional({
+    type: ClientAddress,
+    description:
+      'Endereço do cliente (primário; fallback para o mais recente).',
+  })
+  address?: ClientAddress;
+
+  @ApiPropertyOptional({
+    type: ContractResponsible,
+    description:
+      'Responsável pela parcela: agente de cobrança ou, na ausência, o consultor (ver `type`).',
+  })
+  responsible?: ContractResponsible;
 
   @ApiProperty({ example: 12000.0, description: 'Valor total do contrato.' })
   contractTotalAmount: number;

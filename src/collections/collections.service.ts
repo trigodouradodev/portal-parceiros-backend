@@ -15,6 +15,7 @@ import {
 import {
   CollectionDetail,
   FollowUpHistoryItem,
+  ResponsibleType,
 } from './interfaces/collection-detail.interface';
 
 /** Status de contrato que compõem a carteira em cobrança. */
@@ -472,6 +473,35 @@ export class CollectionsService {
         total_amount: true,
         total_installments: true,
         disbursement_date: true,
+        clients: {
+          select: {
+            name: true,
+            tax_id: true,
+            // Endereço primário; fallback para o mais recente (mesma regra das listas).
+            addresses: {
+              select: {
+                street: true,
+                number: true,
+                complement: true,
+                neighborhood: true,
+                city: true,
+                state: true,
+                zip_code: true,
+              },
+              orderBy: [
+                { is_primary: { sort: 'desc', nulls: 'last' } },
+                { created_at: 'desc' },
+              ],
+              take: 1,
+            },
+          },
+        },
+        trigo_users_contracts_current_collection_agent_idTotrigo_users: {
+          select: { id: true, full_name: true },
+        },
+        trigo_users_contracts_consultant_idTotrigo_users: {
+          select: { id: true, full_name: true },
+        },
       },
     });
     if (!contract) {
@@ -514,9 +544,41 @@ export class CollectionsService {
       },
     });
 
+    const addr = contract.clients.addresses[0];
+    // Responsável pela parcela: agente de cobrança; na ausência, cai para o
+    // consultor do contrato. `type` indica a origem.
+    const agent =
+      contract.trigo_users_contracts_current_collection_agent_idTotrigo_users;
+    const consultant =
+      contract.trigo_users_contracts_consultant_idTotrigo_users;
+    const responsibleUser = agent ?? consultant;
+    const responsible = responsibleUser
+      ? {
+          id: responsibleUser.id,
+          name: responsibleUser.full_name,
+          type: agent
+            ? ResponsibleType.COLLECTION_AGENT
+            : ResponsibleType.CONSULTANT,
+        }
+      : undefined;
+
     return {
       contractId,
       contractNumber: contract.contract_number,
+      clientName: contract.clients.name,
+      clientTaxId: contract.clients.tax_id,
+      address: addr
+        ? {
+            street: addr.street,
+            number: addr.number ?? '',
+            complement: addr.complement ?? undefined,
+            neighborhood: addr.neighborhood ?? '',
+            city: addr.city ?? '',
+            state: addr.state ?? undefined,
+            zipCode: addr.zip_code ?? '',
+          }
+        : undefined,
+      responsible,
       contractTotalAmount: toNum(contract.total_amount),
       contractStartDate: contract.disbursement_date ?? undefined,
       contractEndDate: lastInstallment._max.due_date ?? undefined,
