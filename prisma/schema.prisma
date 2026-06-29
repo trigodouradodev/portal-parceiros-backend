@@ -7,179 +7,6 @@ datasource db {
   provider = "postgresql"
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model activity_contract_workflows {
-  id                  String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  contract_id         String               @unique(map: "uq_contract_workflow_active") @db.Uuid
-  workflow_id         String               @db.Uuid
-  status              String?              @default("active") @db.VarChar(50)
-  started_at          DateTime?            @default(now()) @db.Timestamp(6)
-  completed_at        DateTime?            @db.Timestamp(6)
-  cancellation_reason String?
-  created_by          String               @db.Uuid
-  created_at          DateTime?            @default(now()) @db.Timestamp(6)
-  updated_at          DateTime?            @default(now()) @db.Timestamp(6)
-  contracts           contracts            @relation(fields: [contract_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  trigo_users         trigo_users          @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  activity_workflows  activity_workflows   @relation(fields: [workflow_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  activity_instances  activity_instances[]
-
-  @@index([contract_id], map: "idx_activity_contract_workflows_contract_id")
-  @@index([status], map: "idx_activity_contract_workflows_status")
-  @@index([workflow_id], map: "idx_activity_contract_workflows_workflow_id")
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
-model activity_instances {
-  id                                                               String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  contract_workflow_id                                             String                      @db.Uuid
-  workflow_step_id                                                 String                      @db.Uuid
-  status                                                           String?                     @default("pending") @db.VarChar(50)
-  scheduled_at                                                     DateTime?                   @db.Timestamp(6)
-  started_at                                                       DateTime?                   @db.Timestamp(6)
-  completed_at                                                     DateTime?                   @db.Timestamp(6)
-  assigned_to                                                      String?                     @db.Uuid
-  due_date_reference                                               String?                     @db.VarChar(10)
-  retry_count                                                      Int?                        @default(0)
-  error_message                                                    String?
-  result                                                           String?                     @db.VarChar(50)
-  result_notes                                                     String?
-  result_registered_by                                             String?                     @db.Uuid
-  result_registered_at                                             DateTime?                   @db.Timestamp(6)
-  execution_data                                                   Json?
-  created_at                                                       DateTime?                   @default(now()) @db.Timestamp(6)
-  updated_at                                                       DateTime?                   @default(now()) @db.Timestamp(6)
-  contract_id                                                      String?                     @db.Uuid
-  installment_id                                                   String?                     @db.Uuid
-  trigo_users_activity_instances_assigned_toTotrigo_users          trigo_users?                @relation("activity_instances_assigned_toTotrigo_users", fields: [assigned_to], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  contracts                                                        contracts?                  @relation(fields: [contract_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  activity_contract_workflows                                      activity_contract_workflows @relation(fields: [contract_workflow_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  installments                                                     installments?               @relation(fields: [installment_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  trigo_users_activity_instances_result_registered_byTotrigo_users trigo_users?                @relation("activity_instances_result_registered_byTotrigo_users", fields: [result_registered_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  activity_workflow_steps                                          activity_workflow_steps     @relation(fields: [workflow_step_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@index([assigned_to], map: "idx_activity_instances_assigned_to")
-  @@index([contract_workflow_id], map: "idx_activity_instances_contract_workflow_id")
-  @@index([due_date_reference], map: "idx_activity_instances_due_date_reference")
-  @@index([scheduled_at], map: "idx_activity_instances_scheduled_at")
-  @@index([status], map: "idx_activity_instances_status")
-  @@index([workflow_step_id], map: "idx_activity_instances_workflow_step_id")
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model activity_message_templates {
-  id               String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name             String      @unique(map: "uq_message_templates_name") @db.VarChar(255)
-  channel          String      @db.VarChar(50)
-  subject          String?     @db.VarChar(255)
-  body             String
-  variables_schema Json?
-  is_active        Boolean?    @default(true)
-  created_by       String      @db.Uuid
-  created_at       DateTime?   @default(now()) @db.Timestamp(6)
-  updated_at       DateTime?   @default(now()) @db.Timestamp(6)
-  deleted_at       DateTime?   @db.Timestamp(6)
-  trigo_users      trigo_users @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@index([channel], map: "idx_activity_message_templates_channel")
-  @@index([is_active], map: "idx_activity_message_templates_is_active")
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model activity_workflow_change_log {
-  id                        String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  workflow_id               String                   @db.Uuid
-  changed_by                String                   @db.Uuid
-  change_type               String                   @db.VarChar(50)
-  affected_step_id          String?                  @db.Uuid
-  change_detail             Json?
-  contracts_count_at_change Int?                     @default(0)
-  created_at                DateTime?                @default(now()) @db.Timestamp(6)
-  activity_workflow_steps   activity_workflow_steps? @relation(fields: [affected_step_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  trigo_users               trigo_users              @relation(fields: [changed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  activity_workflows        activity_workflows       @relation(fields: [workflow_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@index([changed_by], map: "idx_activity_workflow_change_log_changed_by")
-  @@index([created_at], map: "idx_activity_workflow_change_log_created_at")
-  @@index([workflow_id], map: "idx_activity_workflow_change_log_workflow_id")
-}
-
-model activity_workflow_filters {
-  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  workflow_id        String             @db.Uuid
-  field              String             @db.VarChar(100)
-  operator           String             @db.VarChar(30)
-  value              Json
-  logical_operator   String             @default("AND") @db.VarChar(3)
-  created_at         DateTime?          @default(now()) @db.Timestamptz(6)
-  activity_workflows activity_workflows @relation(fields: [workflow_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "activity_workflow_filters_workflow_id_foreign")
-
-  @@index([workflow_id, field], map: "activity_workflow_filters_workflow_id_field_index")
-  @@index([workflow_id], map: "activity_workflow_filters_workflow_id_index")
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model activity_workflow_steps {
-  id                            String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  workflow_id                   String                         @db.Uuid
-  name                          String                         @db.VarChar(255)
-  description                   String?
-  action_type                   String                         @db.VarChar(50)
-  execution_order               Int
-  trigger_reference             String                         @db.VarChar(50)
-  trigger_offset_days           Int?                           @default(0)
-  trigger_offset_hours          Int?                           @default(0)
-  prerequisite_step_id          String?                        @db.Uuid
-  prerequisite_condition        String?                        @db.VarChar(500)
-  blocks_workflow_on_fail       Boolean?                       @default(false)
-  action_config                 Json?
-  is_active                     Boolean?                       @default(true)
-  is_system_default             Boolean?                       @default(false)
-  created_by                    String                         @db.Uuid
-  created_at                    DateTime?                      @default(now()) @db.Timestamp(6)
-  updated_at                    DateTime?                      @default(now()) @db.Timestamp(6)
-  scope                         String                         @default("installment") @db.VarChar(255)
-  activity_instances            activity_instances[]
-  activity_workflow_change_log  activity_workflow_change_log[]
-  trigo_users                   trigo_users                    @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  activity_workflow_steps       activity_workflow_steps?       @relation("activity_workflow_stepsToactivity_workflow_steps", fields: [prerequisite_step_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  other_activity_workflow_steps activity_workflow_steps[]      @relation("activity_workflow_stepsToactivity_workflow_steps")
-  activity_workflows            activity_workflows             @relation(fields: [workflow_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@unique([workflow_id, execution_order], map: "uq_workflow_step_order")
-  @@index([execution_order], map: "idx_activity_workflow_steps_execution_order")
-  @@index([is_active], map: "idx_activity_workflow_steps_is_active")
-  @@index([workflow_id], map: "idx_activity_workflow_steps_workflow_id")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model activity_workflows {
-  id                           String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name                         String                         @db.VarChar(255)
-  description                  String?
-  is_active                    Boolean?                       @default(true)
-  is_default                   Boolean?                       @default(false)
-  created_by                   String                         @db.Uuid
-  created_at                   DateTime?                      @default(now()) @db.Timestamp(6)
-  updated_at                   DateTime?                      @default(now()) @db.Timestamp(6)
-  deleted_at                   DateTime?                      @db.Timestamp(6)
-  is_deleted                   Boolean                        @default(false)
-  activity_contract_workflows  activity_contract_workflows[]
-  activity_workflow_change_log activity_workflow_change_log[]
-  activity_workflow_filters    activity_workflow_filters[]
-  activity_workflow_steps      activity_workflow_steps[]
-  trigo_users                  trigo_users                    @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@index([is_active], map: "idx_activity_workflows_is_active")
-  @@index([is_default], map: "idx_activity_workflows_is_default")
-}
-
 model addresses {
   id           String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   client_id    String?  @db.Uuid
@@ -639,8 +466,8 @@ model contracts {
   financial_status                                               String?                            @default("settled") @db.VarChar(20)
   disable_messaging                                              Boolean?                           @default(false)
   cobransaas_contract_number                                     String?                            @db.VarChar(50)
-  activity_contract_workflows                                    activity_contract_workflows?
-  activity_instances                                             activity_instances[]
+  activity_interactions                                          activity_interactions[]
+  activity_tasks                                                 activity_tasks[]
   celcoin_cobransaas_contract                                    celcoin_cobransaas_contract[]      @ignore
   collaterals                                                    collaterals[]
   contract_amortization                                          contract_amortization[]
@@ -1043,7 +870,8 @@ model installments {
   max_discount_allowed                                                      Decimal?                     @db.Decimal(15, 2)
   cobransaas_installment_id                                                 String?                      @unique(map: "installments_cobransaas_installment_id_ux") @db.VarChar(255)
   cobransaas_agreement_id                                                   String?                      @db.VarChar(255)
-  activity_instances                                                        activity_instances[]
+  activity_interactions                                                     activity_interactions[]
+  activity_tasks                                                            activity_tasks?
   installment_boletos                                                       installment_boletos[]
   installment_qr_codes_installment_qr_codes_installment_idToinstallments    installment_qr_codes[]       @relation("installment_qr_codes_installment_idToinstallments")
   installment_qr_codes_installments_active_qr_code_idToinstallment_qr_codes installment_qr_codes?        @relation("installments_active_qr_code_idToinstallment_qr_codes", fields: [active_qr_code_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "installments_active_qr_code_id_foreign")
@@ -1681,13 +1509,10 @@ model trigo_users {
   is_deleted                                                                     Boolean                        @default(false)
   profile_picture_id                                                             String?                        @db.Uuid
   company_id                                                                     String?                        @db.Uuid
-  activity_contract_workflows                                                    activity_contract_workflows[]
-  activity_instances_activity_instances_assigned_toTotrigo_users                 activity_instances[]           @relation("activity_instances_assigned_toTotrigo_users")
-  activity_instances_activity_instances_result_registered_byTotrigo_users        activity_instances[]           @relation("activity_instances_result_registered_byTotrigo_users")
-  activity_message_templates                                                     activity_message_templates[]
-  activity_workflow_change_log                                                   activity_workflow_change_log[]
-  activity_workflow_steps                                                        activity_workflow_steps[]
-  activity_workflows                                                             activity_workflows[]
+  activity_interactions                                                          activity_interactions[]
+  activity_tasks_activity_tasks_assigned_toTotrigo_users                         activity_tasks[]               @relation("activity_tasks_assigned_toTotrigo_users")
+  activity_tasks_activity_tasks_completed_by_user_idTotrigo_users                activity_tasks[]               @relation("activity_tasks_completed_by_user_idTotrigo_users")
+  activity_tasks_activity_tasks_created_by_user_idTotrigo_users                  activity_tasks[]               @relation("activity_tasks_created_by_user_idTotrigo_users")
   batch_payment_jobs                                                             batch_payment_jobs[]
   collection_agents_collection_agents_manager_idTotrigo_users                    collection_agents[]            @relation("collection_agents_manager_idTotrigo_users")
   collection_agents_collection_agents_user_idTotrigo_users                       collection_agents[]            @relation("collection_agents_user_idTotrigo_users")
@@ -1882,6 +1707,93 @@ model geolocations {
   created_at              DateTime               @default(now()) @db.Timestamptz(6)
   updated_at              DateTime               @default(now()) @db.Timestamptz(6)
   installment_followups   installment_followups? @relation(fields: [installment_followup_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "geolocations_installment_followup_id_foreign")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model activity_interactions {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  task_id        String         @unique(map: "activity_interactions_task_id_unique") @db.Uuid
+  installment_id String         @db.Uuid
+  contract_id    String         @db.Uuid
+  channel        String         @db.VarChar(255)
+  result         String         @db.VarChar(255)
+  promise_date   DateTime?      @db.Date
+  observation    String?
+  user_id        String         @db.Uuid
+  created_at     DateTime       @default(now()) @db.Timestamptz(6)
+  contracts      contracts      @relation(fields: [contract_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_contract_id_foreign")
+  installments   installments   @relation(fields: [installment_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_installment_id_foreign")
+  activity_tasks activity_tasks @relation(fields: [task_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_task_id_foreign")
+  trigo_users    trigo_users    @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_user_id_foreign")
+
+  @@index([contract_id, created_at], map: "idx_activity_interactions_contract")
+  @@index([installment_id, created_at], map: "idx_activity_interactions_installment")
+}
+
+model activity_ruler_stages {
+  id                   String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                 String                 @unique(map: "activity_ruler_stages_code_unique") @db.VarChar(255)
+  name                 String                 @db.VarChar(255)
+  min_days_overdue     Int
+  sort_order           Int
+  badge_label          String?                @db.VarChar(255)
+  is_active            Boolean                @default(true)
+  created_at           DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime               @default(now()) @db.Timestamptz(6)
+  activity_ruler_steps activity_ruler_steps[]
+  activity_tasks       activity_tasks[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model activity_ruler_steps {
+  id                    String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  stage_id              String                @db.Uuid
+  channel               String                @db.VarChar(255)
+  sort_order            Int
+  activity_ruler_stages activity_ruler_stages @relation(fields: [stage_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "activity_ruler_steps_stage_id_foreign")
+
+  @@unique([stage_id, channel], map: "activity_ruler_steps_stage_id_channel_unique")
+  @@unique([stage_id, sort_order], map: "activity_ruler_steps_stage_id_sort_order_unique")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model activity_tasks {
+  id                                                           String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  installment_id                                               String                 @unique(map: "idx_activity_tasks_one_pending_per_installment", where: raw("((status)::text = 'pending'::text)")) @db.Uuid
+  contract_id                                                  String                 @db.Uuid
+  ruler_stage_id                                               String?                @db.Uuid
+  stage_code                                                   String                 @db.VarChar(255)
+  channel                                                      String                 @db.VarChar(255)
+  status                                                       String                 @default("pending") @db.VarChar(255)
+  created_at                                                   DateTime               @default(now()) @db.Timestamptz(6)
+  created_by                                                   String                 @db.VarChar(255)
+  created_by_user_id                                           String?                @db.Uuid
+  assigned_to                                                  String?                @db.Uuid
+  completed_at                                                 DateTime?              @db.Timestamptz(6)
+  completed_by_user_id                                         String?                @db.Uuid
+  cancelled_at                                                 DateTime?              @db.Timestamptz(6)
+  cancellation_reason                                          String?                @db.VarChar(255)
+  parent_task_id                                               String?                @db.Uuid
+  activity_interactions                                        activity_interactions?
+  trigo_users_activity_tasks_assigned_toTotrigo_users          trigo_users?           @relation("activity_tasks_assigned_toTotrigo_users", fields: [assigned_to], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_assigned_to_foreign")
+  trigo_users_activity_tasks_completed_by_user_idTotrigo_users trigo_users?           @relation("activity_tasks_completed_by_user_idTotrigo_users", fields: [completed_by_user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_completed_by_user_id_foreign")
+  contracts                                                    contracts              @relation(fields: [contract_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_contract_id_foreign")
+  trigo_users_activity_tasks_created_by_user_idTotrigo_users   trigo_users?           @relation("activity_tasks_created_by_user_idTotrigo_users", fields: [created_by_user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_created_by_user_id_foreign")
+  installments                                                 installments           @relation(fields: [installment_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_installment_id_foreign")
+  activity_tasks                                               activity_tasks?        @relation("activity_tasksToactivity_tasks", fields: [parent_task_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_parent_task_id_foreign")
+  other_activity_tasks                                         activity_tasks[]       @relation("activity_tasksToactivity_tasks")
+  activity_ruler_stages                                        activity_ruler_stages? @relation(fields: [ruler_stage_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_ruler_stage_id_foreign")
+
+  @@index([assigned_to], map: "idx_activity_tasks_assigned_pending", where: raw("((status)::text = 'pending'::text)"))
+  @@index([contract_id, created_at], map: "idx_activity_tasks_contract")
+  @@index([installment_id, created_at], map: "idx_activity_tasks_installment")
+  @@index([status], map: "idx_activity_tasks_pending", where: raw("((status)::text = 'pending'::text)"))
+}
+
+model client_auth_blacklist {
+  cpf        String   @id
+  reason     String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
 }
 
 enum message_status_enum {
