@@ -1,55 +1,34 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-/** Parcela vencida mais antiga de um contrato (driver do atraso). */
-export class OverdueInstallmentSummary {
+/** Tarefa de cobrança (activity) pendente vinculada à parcela. */
+export class ActivityTaskSummary {
   @ApiProperty()
   id: string;
 
-  @ApiProperty({ example: 1 })
-  installmentNumber: number;
+  @ApiProperty({
+    example: 'warning',
+    description:
+      'Estágio da régua: friendly | assertive | warning | defaulted.',
+  })
+  stageCode: string;
 
   @ApiProperty({
-    type: String,
-    format: 'date',
-    example: '2025-10-16',
-    description: 'Vencimento da parcela (data, sem hora).',
+    example: 'Advertência',
+    description: 'Label do estágio para exibição (badge).',
   })
-  dueDate: Date;
+  stageBadgeLabel: string;
 
   @ApiProperty({
-    example: 243,
-    description: 'Dias de atraso = CURRENT_DATE - due_date.',
+    example: 'whatsapp_message',
+    description: 'Canal: whatsapp_message | client_call | client_visit.',
   })
-  daysOverdue: number;
+  channel: string;
 
-  @ApiProperty({ example: 592.37 })
-  pendingAmount: number;
-
-  @ApiProperty({ example: 1000.0 })
-  totalAmount: number;
-
-  @ApiProperty({ example: 'not_paid' })
+  @ApiProperty({ example: 'pending' })
   status: string;
 
-  @ApiProperty({
-    example: 2,
-    description: 'Nº de followups registrados para a parcela.',
-  })
-  followupCount: number;
-
-  @ApiPropertyOptional({
-    example: 'promise_to_pay',
-    description: 'Status do followup mais recente.',
-  })
-  latestFollowupStatus?: string;
-}
-
-export class CollectionAgentRef {
-  @ApiProperty()
-  id: string;
-
-  @ApiProperty()
-  name: string;
+  @ApiProperty({ type: String, format: 'date-time' })
+  createdAt: Date;
 }
 
 /** Endereço do cliente (endereço primário; fallback para o mais recente). */
@@ -76,43 +55,125 @@ export class ClientAddress {
   zipCode: string;
 }
 
-/** Contrato atrasado, representado pela sua parcela vencida mais antiga. */
-export class OverdueContract {
+/**
+ * Referência a um agente de cobrança. Mantida para o Preventivo; na Cobrança o
+ * responsável é representado por `ResponsibleInfo`.
+ */
+export class CollectionAgentRef {
   @ApiProperty()
-  contractId: string;
+  id: string;
 
   @ApiProperty()
-  contractNumber: string;
+  name: string;
+}
 
-  @ApiProperty({
-    example: 12,
-    description: 'Total de parcelas do contrato (para "parcela X de Y").',
-  })
+/** A parcela atrasada — sujeito de cada item da lista. */
+export class InstallmentInfo {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ example: 3 })
+  number: number;
+
+  @ApiProperty({ example: '3/12', description: 'number/totalInstallments.' })
+  label: string;
+
+  @ApiProperty({ type: String, format: 'date', example: '2025-10-16' })
+  dueDate: Date;
+
+  @ApiProperty({ example: 243, description: 'CURRENT_DATE - due_date.' })
+  daysOverdue: number;
+
+  @ApiProperty({ example: 592.37 })
+  pendingAmount: number;
+
+  @ApiProperty({ example: 1000.0 })
+  totalAmount: number;
+
+  @ApiProperty({ example: 'not_paid' })
+  status: string;
+}
+
+/** Contrato da parcela. */
+export class ContractInfo {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  number: string;
+
+  @ApiProperty({ example: 12 })
   totalInstallments: number;
-
-  @ApiProperty()
-  clientName: string;
-
-  @ApiProperty()
-  clientTaxId: string;
-
-  @ApiPropertyOptional({ example: '11987654321' })
-  clientPhone?: string;
-
-  @ApiPropertyOptional({ type: ClientAddress })
-  address?: ClientAddress;
-
-  @ApiPropertyOptional()
-  consultantName?: string;
 
   @ApiPropertyOptional()
   companyName?: string;
+}
 
-  @ApiPropertyOptional({ type: CollectionAgentRef })
-  collectionAgent?: CollectionAgentRef;
+/** Cliente (devedor). */
+export class ClientInfo {
+  @ApiProperty()
+  name: string;
 
-  @ApiProperty({ type: OverdueInstallmentSummary })
-  firstOverdueInstallment: OverdueInstallmentSummary;
+  @ApiProperty()
+  taxId: string;
+
+  @ApiPropertyOptional({ example: '11987654321' })
+  phone?: string;
+
+  @ApiPropertyOptional({ type: ClientAddress })
+  address?: ClientAddress;
+}
+
+/** Responsável pela cobrança: agente de cobrança se houver, senão o consultor. */
+export class ResponsibleInfo {
+  @ApiProperty({
+    enum: ['collection_agent', 'consultant'],
+    nullable: true,
+    example: 'collection_agent',
+    description:
+      'Qual papel é o responsável; null se o contrato não tiver nenhum.',
+  })
+  type: 'collection_agent' | 'consultant' | null;
+
+  @ApiPropertyOptional()
+  id?: string;
+
+  @ApiPropertyOptional()
+  name?: string;
+}
+
+/** Resumo de follow-up (Preventivo) registrado para a parcela. */
+export class FollowupSummary {
+  @ApiProperty({ example: 2 })
+  count: number;
+
+  @ApiPropertyOptional({ example: 'promise_to_pay' })
+  latestStatus?: string;
+}
+
+/** Um item da lista da Cobrança = uma parcela atrasada e seu contexto. */
+export class OverdueCollectionItem {
+  @ApiProperty({ type: InstallmentInfo })
+  installment: InstallmentInfo;
+
+  @ApiProperty({ type: ContractInfo })
+  contract: ContractInfo;
+
+  @ApiProperty({ type: ClientInfo })
+  client: ClientInfo;
+
+  @ApiProperty({ type: ResponsibleInfo })
+  responsible: ResponsibleInfo;
+
+  @ApiProperty({
+    type: ActivityTaskSummary,
+    nullable: true,
+    description: 'Tarefa de cobrança pendente da parcela; null se não houver.',
+  })
+  task: ActivityTaskSummary | null;
+
+  @ApiProperty({ type: FollowupSummary })
+  followup: FollowupSummary;
 }
 
 export class OverduePagination {
@@ -122,10 +183,10 @@ export class OverduePagination {
   @ApiProperty({ example: 30 })
   limit: number;
 
-  @ApiProperty({ example: 248 })
-  totalContracts: number;
+  @ApiProperty({ example: 25603, description: 'Total de parcelas atrasadas.' })
+  total: number;
 
-  @ApiProperty({ example: 9 })
+  @ApiProperty({ example: 854 })
   totalPages: number;
 
   @ApiProperty({ example: true })
@@ -133,8 +194,8 @@ export class OverduePagination {
 }
 
 export class OverdueCollectionPage {
-  @ApiProperty({ type: [OverdueContract] })
-  contracts: OverdueContract[];
+  @ApiProperty({ type: [OverdueCollectionItem] })
+  items: OverdueCollectionItem[];
 
   @ApiProperty({ type: OverduePagination })
   pagination: OverduePagination;

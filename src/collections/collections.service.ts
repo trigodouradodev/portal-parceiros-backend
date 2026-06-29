@@ -5,8 +5,8 @@ import { ScopeService, ScopeViewer } from '../scope/scope.service';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import {
   ClientAddress,
+  OverdueCollectionItem,
   OverdueCollectionPage,
-  OverdueContract,
 } from './interfaces/overdue-collection.interface';
 import {
   PreventiveCollectionPage,
@@ -73,15 +73,31 @@ interface OverdueRow {
   addr_city: string | null;
   addr_state: string | null;
   addr_zip_code: string | null;
+  consultant_id: string | null;
   consultant_name: string | null;
   collection_agent_id: string | null;
   collection_agent_name: string | null;
   company_name: string | null;
   followup_count: number;
   latest_followup_status: string | null;
+  task_id: string | null;
+  task_stage_code: string | null;
+  task_stage_badge_label: string | null;
+  task_channel: string | null;
+  task_status: string | null;
+  task_created_at: Date | null;
 }
 
-interface UpcomingRow extends Omit<OverdueRow, 'days_overdue'> {
+interface UpcomingRow extends Omit<
+  OverdueRow,
+  | 'days_overdue'
+  | 'task_id'
+  | 'task_stage_code'
+  | 'task_stage_badge_label'
+  | 'task_channel'
+  | 'task_status'
+  | 'task_created_at'
+> {
   days_until_due: number;
 }
 
@@ -126,14 +142,18 @@ export class CollectionsService {
   ) {}
 
   /**
-   * Aba Cobrança: contratos com parcela vencida em aberto, do mais atrasado
-   * para o menos atrasado. Uma linha por contrato, representada pela parcela
-   * vencida mais antiga (driver do atraso). Paginado.
+   * Aba Cobrança: **uma linha por parcela vencida em aberto**, do mais atrasado
+   * para o menos atrasado (parcelas do mesmo contrato podem se intercalar). Cada
+   * linha traz a tarefa de cobrança (activity) pendente daquela parcela, quando
+   * houver. Paginado por parcela.
    *
    * Carteira = contratos `disbursed`/`active`; parcela em aberto =
    * `not_paid`/`partially_paid` com `due_date < CURRENT_DATE`. Scope por
    * hierarquia (ROLE_ADMIN / INSTALLMENT_VIEW_ALL veem tudo; sem árvore →
    * página vazia sem ir ao banco).
+   *
+   * Obs: o shape do response foi mantido — `contracts`/`totalContracts`/
+   * `firstOverdueInstallment` agora representam parcelas (1 row por parcela).
    */
   async getOverdue(
     viewer: ScopeViewer,
@@ -141,11 +161,11 @@ export class CollectionsService {
     limit = 30,
   ): Promise<OverdueCollectionPage> {
     const emptyPage: OverdueCollectionPage = {
-      contracts: [],
+      items: [],
       pagination: {
         page,
         limit,
-        totalContracts: 0,
+        total: 0,
         totalPages: 0,
         hasNextPage: false,
       },
@@ -159,9 +179,9 @@ export class CollectionsService {
     const statuses = Prisma.join(PORTFOLIO_CONTRACT_STATUSES);
     const openStatuses = Prisma.join(OPEN_INSTALLMENT_STATUSES);
 
-    // Total de contratos atrasados (para paginação).
+    // Total de parcelas atrasadas (para paginação).
     const [countRow] = await this.prisma.$queryRaw<{ total: number }[]>`
-      SELECT COUNT(DISTINCT i.contract_id)::int AS total
+      SELECT COUNT(*)::int AS total
       FROM installments i
       JOIN contracts c ON c.id = i.contract_id
       WHERE i.status IN (${openStatuses})
@@ -169,46 +189,30 @@ export class CollectionsService {
         AND c.status IN (${statuses})
         AND ${scopeClause}
     `;
-    const totalContracts = toNum(countRow?.total);
-    if (totalContracts === 0) return emptyPage;
+    const total = toNum(countRow?.total);
+    if (total === 0) return emptyPage;
 
     const offset = (page - 1) * limit;
 
-    // first_overdue: parcela vencida mais antiga por contrato (DISTINCT ON
-    // ordenado por due_date asc). A página externa reordena pelo maior atraso.
+    // Uma linha por parcela atrasada (sem DISTINCT ON), do maior atraso para o
+    // menor; `i.id` no ORDER BY garante paginação estável em empates. O LATERAL
+    // traz a tarefa de cobrança pendente da parcela (no máx. 1, pela invariante).
     const rows = await this.prisma.$queryRaw<OverdueRow[]>`
-      WITH first_overdue AS (
-        SELECT DISTINCT ON (i.contract_id)
-          i.id,
-          i.contract_id,
-          i.installment_number,
-          i.due_date,
-          i.pending_amount,
-          i.total_amount,
-          i.status,
-          (CURRENT_DATE - i.due_date)::int AS days_overdue
-        FROM installments i
-        JOIN contracts c ON c.id = i.contract_id
-        WHERE i.status IN (${openStatuses})
-          AND i.due_date < CURRENT_DATE
-          AND c.status IN (${statuses})
-          AND ${scopeClause}
-        ORDER BY i.contract_id, i.due_date ASC, i.installment_number ASC
-      )
       SELECT
-        fo.id,
-        fo.contract_id,
-        fo.installment_number,
-        fo.due_date,
-        fo.pending_amount,
-        fo.total_amount,
-        fo.status,
-        fo.days_overdue,
+        i.id,
+        i.contract_id,
+        i.installment_number,
+        i.due_date,
+        i.pending_amount,
+        i.total_amount,
+        i.status,
+        (CURRENT_DATE - i.due_date)::int AS days_overdue,
         c.contract_number,
         c.total_installments,
         cl.name AS client_name,
         cl.tax_id AS client_tax_id,
         ${CLIENT_CONTACT_COLUMNS},
+        c.consultant_id AS consultant_id,
         cons.full_name AS consultant_name,
         ca.id AS collection_agent_id,
         ca.full_name AS collection_agent_name,
@@ -216,68 +220,111 @@ export class CollectionsService {
         (
           SELECT COUNT(*)::int
           FROM installment_followups f
-          WHERE f.contract_id = fo.contract_id
-            AND f.installment_number = fo.installment_number
+          WHERE f.contract_id = i.contract_id
+            AND f.installment_number = i.installment_number
         ) AS followup_count,
         (
           SELECT f.status
           FROM installment_followups f
-          WHERE f.contract_id = fo.contract_id
-            AND f.installment_number = fo.installment_number
+          WHERE f.contract_id = i.contract_id
+            AND f.installment_number = i.installment_number
           ORDER BY f.created_at DESC
           LIMIT 1
-        ) AS latest_followup_status
-      FROM first_overdue fo
-      JOIN contracts c ON c.id = fo.contract_id
+        ) AS latest_followup_status,
+        task.id AS task_id,
+        task.stage_code AS task_stage_code,
+        task.badge_label AS task_stage_badge_label,
+        task.channel AS task_channel,
+        task.status AS task_status,
+        task.created_at AS task_created_at
+      FROM installments i
+      JOIN contracts c ON c.id = i.contract_id
       JOIN clients cl ON cl.id = c.client_id
       ${CLIENT_ADDRESS_JOIN}
       LEFT JOIN trigo_users cons ON cons.id = c.consultant_id
       LEFT JOIN trigo_users ca ON ca.id = c.current_collection_agent_id
       LEFT JOIN companies comp ON comp.id = c.company_id
-      ORDER BY fo.days_overdue DESC, fo.pending_amount DESC
+      LEFT JOIN LATERAL (
+        SELECT at.id, at.stage_code, at.channel, at.status, at.created_at, rs.badge_label
+        FROM activity_tasks at
+        LEFT JOIN activity_ruler_stages rs ON rs.id = at.ruler_stage_id
+        WHERE at.installment_id = i.id AND at.status = 'pending'
+        LIMIT 1
+      ) task ON true
+      WHERE i.status IN (${openStatuses})
+        AND i.due_date < CURRENT_DATE
+        AND c.status IN (${statuses})
+        AND ${scopeClause}
+      ORDER BY days_overdue DESC, i.pending_amount DESC, i.id
       LIMIT ${limit} OFFSET ${offset}
     `;
 
-    const totalPages = Math.ceil(totalContracts / limit);
+    const totalPages = Math.ceil(total / limit);
     return {
-      contracts: rows.map((row) => this.mapRow(row)),
+      items: rows.map((row) => this.mapItem(row)),
       pagination: {
         page,
         limit,
-        totalContracts,
+        total,
         totalPages,
         hasNextPage: page < totalPages,
       },
     };
   }
 
-  private mapRow(row: OverdueRow): OverdueContract {
+  private mapItem(row: OverdueRow): OverdueCollectionItem {
+    const totalInstallments = Number(row.total_installments ?? 0);
+    const installmentNumber = Number(row.installment_number);
+
     return {
-      contractId: row.contract_id,
-      contractNumber: row.contract_number,
-      totalInstallments: Number(row.total_installments ?? 0),
-      clientName: row.client_name,
-      clientTaxId: row.client_tax_id,
-      clientPhone: row.client_phone ?? undefined,
-      address: mapAddress(row),
-      consultantName: row.consultant_name ?? undefined,
-      companyName: row.company_name ?? undefined,
-      collectionAgent: row.collection_agent_id
-        ? {
-            id: row.collection_agent_id,
-            name: row.collection_agent_name ?? '',
-          }
-        : undefined,
-      firstOverdueInstallment: {
+      installment: {
         id: row.id,
-        installmentNumber: Number(row.installment_number),
+        number: installmentNumber,
+        label: `${installmentNumber}/${totalInstallments}`,
         dueDate: row.due_date,
         daysOverdue: Number(row.days_overdue),
         pendingAmount: toNum(row.pending_amount),
         totalAmount: toNum(row.total_amount),
         status: row.status,
-        followupCount: Number(row.followup_count ?? 0),
-        latestFollowupStatus: row.latest_followup_status ?? undefined,
+      },
+      contract: {
+        id: row.contract_id,
+        number: row.contract_number,
+        totalInstallments,
+        companyName: row.company_name ?? undefined,
+      },
+      client: {
+        name: row.client_name,
+        taxId: row.client_tax_id,
+        phone: row.client_phone ?? undefined,
+        address: mapAddress(row),
+      },
+      responsible: row.collection_agent_id
+        ? {
+            type: 'collection_agent',
+            id: row.collection_agent_id,
+            name: row.collection_agent_name ?? undefined,
+          }
+        : row.consultant_id
+          ? {
+              type: 'consultant',
+              id: row.consultant_id,
+              name: row.consultant_name ?? undefined,
+            }
+          : { type: null },
+      task: row.task_id
+        ? {
+            id: row.task_id,
+            stageCode: row.task_stage_code ?? '',
+            stageBadgeLabel: row.task_stage_badge_label ?? '',
+            channel: row.task_channel ?? '',
+            status: row.task_status ?? '',
+            createdAt: row.task_created_at as Date,
+          }
+        : null,
+      followup: {
+        count: Number(row.followup_count ?? 0),
+        latestStatus: row.latest_followup_status ?? undefined,
       },
     };
   }
