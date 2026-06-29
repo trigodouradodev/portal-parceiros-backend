@@ -1204,6 +1204,9 @@ model quotes {
   vaas_validation_borrower                                    Json?
   birth_date                                                  DateTime?                    @db.Date
   ai_analysis_result                                          Json?
+  serasa_kyc_status                                           String?                      @default("pending") @db.VarChar(20)
+  serasa_result                                               Json?
+  serasa_kyc_response_message                                 String?                      @db.VarChar(255)
   celcoin_integration_status                                  celcoin_integration_status[]
   contracts                                                   contracts[]
   contracts_ccbs                                              contracts_ccbs[]
@@ -1215,6 +1218,7 @@ model quotes {
   quote_edit_history                                          quote_edit_history[]
   quote_lemit_analysis                                        quote_lemit_analysis[]
   quote_lemit_validation                                      quote_lemit_validation[]
+  quote_serasa_analysis                                       quote_serasa_analysis[]
   trigo_users_quotes_current_collection_agent_idTotrigo_users trigo_users?                 @relation("quotes_current_collection_agent_idTotrigo_users", fields: [current_collection_agent_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "quotes_current_collection_agent_id_foreign")
   trigo_users_quotes_current_sales_agent_idTotrigo_users      trigo_users                  @relation("quotes_current_sales_agent_idTotrigo_users", fields: [current_sales_agent_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "quotes_current_sales_agent_id_foreign")
   finance_products                                            finance_products             @relation(fields: [finance_product_id], references: [id], onDelete: SetNull)
@@ -1706,6 +1710,8 @@ model geolocations {
   longitude               Decimal                @db.Decimal(10, 7)
   created_at              DateTime               @default(now()) @db.Timestamptz(6)
   updated_at              DateTime               @default(now()) @db.Timestamptz(6)
+  activity_interaction_id String?                @unique(map: "geolocations_activity_interaction_id_unique") @db.Uuid
+  activity_interactions   activity_interactions? @relation(fields: [activity_interaction_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "geolocations_activity_interaction_id_foreign")
   installment_followups   installment_followups? @relation(fields: [installment_followup_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "geolocations_installment_followup_id_foreign")
 }
 
@@ -1725,6 +1731,7 @@ model activity_interactions {
   installments   installments   @relation(fields: [installment_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_installment_id_foreign")
   activity_tasks activity_tasks @relation(fields: [task_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_task_id_foreign")
   trigo_users    trigo_users    @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_user_id_foreign")
+  geolocations   geolocations?
 
   @@index([contract_id, created_at], map: "idx_activity_interactions_contract")
   @@index([installment_id, created_at], map: "idx_activity_interactions_installment")
@@ -1794,6 +1801,25 @@ model client_auth_blacklist {
   cpf        String   @id
   reason     String?
   created_at DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model quote_serasa_analysis {
+  id            String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  quote_id      String   @db.Uuid
+  serasa_result Json
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @default(now()) @db.Timestamptz(6)
+  quotes        quotes   @relation(fields: [quote_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "quote_serasa_analysis_quote_id_foreign")
+}
+
+model serasa_cache {
+  id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  document   String   @db.VarChar(11)
+  result     Json
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([document], map: "serasa_cache_document_index")
 }
 
 enum message_status_enum {

@@ -1,8 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ClientAddress } from './overdue-collection.interface';
+import {
+  ActivityTaskSummary,
+  ClientInfo,
+} from './overdue-collection.interface';
 import { ContractResponsible } from './responsible.interface';
 
-export class FollowUpAuthor {
+/** Autor de um registro (follow-up ou interação de cobrança). */
+export class HistoryAuthor {
   @ApiProperty()
   id: string;
 
@@ -10,7 +14,8 @@ export class FollowUpAuthor {
   name: string;
 }
 
-export class FollowUpGeolocation {
+/** Ponto de geolocalização (visita) — usado em follow-ups e interações. */
+export class Geolocation {
   @ApiProperty({ example: -23.55052 })
   latitude: number;
 
@@ -18,6 +23,7 @@ export class FollowUpGeolocation {
   longitude: number;
 }
 
+/** Item do histórico de follow-up (Preventivo) da parcela. */
 export class FollowUpHistoryItem {
   @ApiProperty()
   id: string;
@@ -44,78 +50,77 @@ export class FollowUpHistoryItem {
   @ApiProperty({ type: String, format: 'date-time' })
   createdAt: Date;
 
-  @ApiProperty({ type: FollowUpAuthor })
-  author: FollowUpAuthor;
+  @ApiProperty({ type: HistoryAuthor })
+  author: HistoryAuthor;
 
-  @ApiPropertyOptional({ type: FollowUpGeolocation })
-  geolocation?: FollowUpGeolocation;
+  @ApiPropertyOptional({ type: Geolocation })
+  geolocation?: Geolocation;
 }
 
-export class CollectionInstallmentDetail {
+/** Item do histórico de interações (Cobrança) da parcela. */
+export class ActivityInteractionHistoryItem {
   @ApiProperty()
   id: string;
 
-  @ApiProperty({ example: 3 })
-  installmentNumber: number;
+  @ApiProperty({ example: 'client_visit' })
+  channel: string;
 
-  @ApiProperty({
-    type: String,
-    format: 'date',
-    example: '2025-10-16',
-    description: 'Vencimento da parcela (data, sem hora).',
-  })
-  dueDate: Date;
+  @ApiProperty({ example: 'no_return' })
+  result: string;
 
-  @ApiProperty({ example: 1000.0, description: 'Valor total da parcela.' })
-  totalAmount: number;
+  @ApiPropertyOptional()
+  observation?: string;
 
-  @ApiProperty({ example: 592.37, description: 'Saldo em aberto da parcela.' })
-  pendingAmount: number;
+  @ApiPropertyOptional({ type: String, format: 'date' })
+  promiseDate?: Date;
 
-  @ApiProperty({ example: 'not_paid' })
-  status: string;
+  @ApiProperty({ type: String, format: 'date-time' })
+  createdAt: Date;
+
+  @ApiProperty({ type: HistoryAuthor })
+  author: HistoryAuthor;
+
+  @ApiPropertyOptional({ type: Geolocation })
+  geolocation?: Geolocation;
 }
 
-export class CollectionDetail {
-  @ApiProperty()
-  contractId: string;
-
-  @ApiProperty()
-  contractNumber: string;
-
-  @ApiProperty({ example: 'Maria Souza', description: 'Nome do cliente.' })
-  clientName: string;
+/** Histórico da régua de cobrança (activity) da parcela. */
+export class ActivityHistory {
+  @ApiProperty({
+    type: [ActivityTaskSummary],
+    description:
+      'Tasks da régua, mais recente primeiro (a 1ª é a tarefa atual).',
+  })
+  tasks: ActivityTaskSummary[];
 
   @ApiProperty({
-    example: '12345678900',
-    description: 'Documento do cliente (CPF/CNPJ).',
+    type: [ActivityInteractionHistoryItem],
+    description: 'Interações registradas, mais recente primeiro.',
   })
-  clientTaxId: string;
+  interactions: ActivityInteractionHistoryItem[];
+}
 
-  @ApiPropertyOptional({
-    type: ClientAddress,
-    description:
-      'Endereço do cliente (primário; fallback para o mais recente).',
-  })
-  address?: ClientAddress;
+/** Dados do contrato no detalhe. */
+export class ContractDetailInfo {
+  @ApiProperty()
+  id: string;
 
-  @ApiPropertyOptional({
-    type: ContractResponsible,
-    description:
-      'Responsável pela parcela: agente de cobrança ou, na ausência, o consultor (ver `type`).',
-  })
-  responsible?: ContractResponsible;
+  @ApiProperty()
+  number: string;
+
+  @ApiProperty({ example: 12 })
+  totalInstallments: number;
 
   @ApiProperty({ example: 12000.0, description: 'Valor total do contrato.' })
-  contractTotalAmount: number;
+  totalAmount: number;
 
   @ApiPropertyOptional({
     type: String,
     format: 'date',
     example: '2025-01-10',
-    description: 'Início do contrato (data de desembolso).',
+    description: 'Início do contrato (desembolso).',
   })
-  contractStartDate?: Date;
+  startDate?: Date;
 
   @ApiPropertyOptional({
     type: String,
@@ -123,17 +128,56 @@ export class CollectionDetail {
     example: '2025-12-10',
     description: 'Fim do contrato (vencimento da última parcela).',
   })
-  contractEndDate?: Date;
+  endDate?: Date;
+}
+
+/** A parcela selecionada, no detalhe. */
+export class InstallmentDetailInfo {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ example: 3 })
+  number: number;
+
+  @ApiProperty({ example: '3/12', description: 'number/totalInstallments.' })
+  label: string;
+
+  @ApiProperty({ type: String, format: 'date', example: '2025-10-16' })
+  dueDate: Date;
+
+  @ApiProperty({ example: 1000.0 })
+  totalAmount: number;
+
+  @ApiProperty({ example: 592.37 })
+  pendingAmount: number;
+
+  @ApiProperty({ example: 'not_paid' })
+  status: string;
+}
+
+/** Detalhe de uma parcela: contrato + cliente + responsável + régua + follow-ups. */
+export class CollectionDetail {
+  @ApiProperty({ type: ContractDetailInfo })
+  contract: ContractDetailInfo;
+
+  @ApiProperty({ type: ClientInfo })
+  client: ClientInfo;
+
+  @ApiPropertyOptional({ type: ContractResponsible })
+  responsible?: ContractResponsible;
+
+  @ApiProperty({ type: InstallmentDetailInfo })
+  installment: InstallmentDetailInfo;
 
   @ApiProperty({
-    example: 12,
-    description: 'Total de parcelas do contrato (para "parcela X de Y").',
+    type: ActivityHistory,
+    description: 'Cobrança: tasks + interações da régua dessa parcela.',
   })
-  totalInstallments: number;
+  activity: ActivityHistory;
 
-  @ApiProperty({ type: CollectionInstallmentDetail })
-  installment: CollectionInstallmentDetail;
-
-  @ApiProperty({ type: [FollowUpHistoryItem] })
-  followUps: FollowUpHistoryItem[];
+  @ApiProperty({
+    type: [FollowUpHistoryItem],
+    description: 'Preventivo: histórico de follow-up da parcela.',
+  })
+  followups: FollowUpHistoryItem[];
 }
