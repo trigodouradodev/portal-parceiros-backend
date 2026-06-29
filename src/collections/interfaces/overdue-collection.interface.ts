@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ContractResponsible } from './responsible.interface';
 
-/** Tarefa de cobrança (activity) pendente vinculada à parcela. */
+/** Tarefa de cobrança (activity) da parcela: a pendente ou a última executada. */
 export class ActivityTaskSummary {
   @ApiProperty()
   id: string;
@@ -24,11 +25,22 @@ export class ActivityTaskSummary {
   })
   channel: string;
 
-  @ApiProperty({ example: 'pending' })
+  @ApiProperty({
+    example: 'pending',
+    description: 'pending (ação a fazer) | completed (última executada).',
+  })
   status: string;
 
   @ApiProperty({ type: String, format: 'date-time' })
   createdAt: Date;
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date-time',
+    description:
+      'Quando a tarefa foi executada (presente quando status=completed).',
+  })
+  completedAt?: Date;
 }
 
 /** Endereço do cliente (endereço primário; fallback para o mais recente). */
@@ -57,7 +69,7 @@ export class ClientAddress {
 
 /**
  * Referência a um agente de cobrança. Mantida para o Preventivo; na Cobrança o
- * responsável é representado por `ResponsibleInfo`.
+ * responsável é representado por `ContractResponsible`.
  */
 export class CollectionAgentRef {
   @ApiProperty()
@@ -124,33 +136,6 @@ export class ClientInfo {
   address?: ClientAddress;
 }
 
-/** Responsável pela cobrança: agente de cobrança se houver, senão o consultor. */
-export class ResponsibleInfo {
-  @ApiProperty({
-    enum: ['collection_agent', 'consultant'],
-    nullable: true,
-    example: 'collection_agent',
-    description:
-      'Qual papel é o responsável; null se o contrato não tiver nenhum.',
-  })
-  type: 'collection_agent' | 'consultant' | null;
-
-  @ApiPropertyOptional()
-  id?: string;
-
-  @ApiPropertyOptional()
-  name?: string;
-}
-
-/** Resumo de follow-up (Preventivo) registrado para a parcela. */
-export class FollowupSummary {
-  @ApiProperty({ example: 2 })
-  count: number;
-
-  @ApiPropertyOptional({ example: 'promise_to_pay' })
-  latestStatus?: string;
-}
-
 /** Um item da lista da Cobrança = uma parcela atrasada e seu contexto. */
 export class OverdueCollectionItem {
   @ApiProperty({ type: InstallmentInfo })
@@ -162,18 +147,16 @@ export class OverdueCollectionItem {
   @ApiProperty({ type: ClientInfo })
   client: ClientInfo;
 
-  @ApiProperty({ type: ResponsibleInfo })
-  responsible: ResponsibleInfo;
+  @ApiPropertyOptional({ type: ContractResponsible })
+  responsible?: ContractResponsible;
 
   @ApiProperty({
     type: ActivityTaskSummary,
     nullable: true,
-    description: 'Tarefa de cobrança pendente da parcela; null se não houver.',
+    description:
+      'Tarefa mais recente da parcela: pendente (ação a fazer) ou a última executada (status=completed, ex.: visita final no defaulted). null só se a parcela ainda não teve tarefa.',
   })
   task: ActivityTaskSummary | null;
-
-  @ApiProperty({ type: FollowupSummary })
-  followup: FollowupSummary;
 }
 
 export class OverduePagination {

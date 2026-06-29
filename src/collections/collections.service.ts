@@ -15,8 +15,11 @@ import {
 import {
   CollectionDetail,
   FollowUpHistoryItem,
-  ResponsibleType,
 } from './interfaces/collection-detail.interface';
+import {
+  ContractResponsible,
+  ResponsibleType,
+} from './interfaces/responsible.interface';
 
 /** Status de contrato que compõem a carteira em cobrança. */
 const PORTFOLIO_CONTRACT_STATUSES = ['disbursed', 'active'];
@@ -78,14 +81,13 @@ interface OverdueRow {
   collection_agent_id: string | null;
   collection_agent_name: string | null;
   company_name: string | null;
-  followup_count: number;
-  latest_followup_status: string | null;
   task_id: string | null;
   task_stage_code: string | null;
   task_stage_badge_label: string | null;
   task_channel: string | null;
   task_status: string | null;
   task_created_at: Date | null;
+  task_completed_at: Date | null;
 }
 
 interface UpcomingRow extends Omit<
@@ -97,8 +99,11 @@ interface UpcomingRow extends Omit<
   | 'task_channel'
   | 'task_status'
   | 'task_created_at'
+  | 'task_completed_at'
 > {
   days_until_due: number;
+  followup_count: number;
+  latest_followup_status: string | null;
 }
 
 /** Coerção robusta de valores numéricos do $queryRaw (Decimal/string/bigint). */
@@ -217,26 +222,13 @@ export class CollectionsService {
         ca.id AS collection_agent_id,
         ca.full_name AS collection_agent_name,
         comp.name AS company_name,
-        (
-          SELECT COUNT(*)::int
-          FROM installment_followups f
-          WHERE f.contract_id = i.contract_id
-            AND f.installment_number = i.installment_number
-        ) AS followup_count,
-        (
-          SELECT f.status
-          FROM installment_followups f
-          WHERE f.contract_id = i.contract_id
-            AND f.installment_number = i.installment_number
-          ORDER BY f.created_at DESC
-          LIMIT 1
-        ) AS latest_followup_status,
         task.id AS task_id,
         task.stage_code AS task_stage_code,
         task.badge_label AS task_stage_badge_label,
         task.channel AS task_channel,
         task.status AS task_status,
-        task.created_at AS task_created_at
+        task.created_at AS task_created_at,
+        task.completed_at AS task_completed_at
       FROM installments i
       JOIN contracts c ON c.id = i.contract_id
       JOIN clients cl ON cl.id = c.client_id
@@ -245,10 +237,11 @@ export class CollectionsService {
       LEFT JOIN trigo_users ca ON ca.id = c.current_collection_agent_id
       LEFT JOIN companies comp ON comp.id = c.company_id
       LEFT JOIN LATERAL (
-        SELECT at.id, at.stage_code, at.channel, at.status, at.created_at, rs.badge_label
+        SELECT at.id, at.stage_code, at.channel, at.status, at.created_at, at.completed_at, rs.badge_label
         FROM activity_tasks at
         LEFT JOIN activity_ruler_stages rs ON rs.id = at.ruler_stage_id
-        WHERE at.installment_id = i.id AND at.status = 'pending'
+        WHERE at.installment_id = i.id
+        ORDER BY at.created_at DESC
         LIMIT 1
       ) task ON true
       WHERE i.status IN (${openStatuses})
@@ -299,33 +292,40 @@ export class CollectionsService {
         phone: row.client_phone ?? undefined,
         address: mapAddress(row),
       },
-      responsible: row.collection_agent_id
-        ? {
-            type: 'collection_agent',
-            id: row.collection_agent_id,
-            name: row.collection_agent_name ?? undefined,
-          }
-        : row.consultant_id
-          ? {
-              type: 'consultant',
-              id: row.consultant_id,
-              name: row.consultant_name ?? undefined,
-            }
-          : { type: null },
-      task: row.task_id
-        ? {
-            id: row.task_id,
-            stageCode: row.task_stage_code ?? '',
-            stageBadgeLabel: row.task_stage_badge_label ?? '',
-            channel: row.task_channel ?? '',
-            status: row.task_status ?? '',
-            createdAt: row.task_created_at as Date,
-          }
-        : null,
-      followup: {
-        count: Number(row.followup_count ?? 0),
-        latestStatus: row.latest_followup_status ?? undefined,
-      },
+      task: this.getTask(row),
+      responsible: this.getResponsible(row),
+    };
+  }
+
+  private getResponsible(row: OverdueRow): ContractResponsible | undefined {
+    if (!row?.consultant_id && !row?.collection_agent_id) return undefined;
+
+    if (row?.collection_agent_id) {
+      return {
+        id: row.collection_agent_id,
+        name: row.collection_agent_name ?? '',
+        type: ResponsibleType.COLLECTION_AGENT,
+      };
+    }
+
+    return {
+      id: row.consultant_id || '',
+      name: row.consultant_name ?? '',
+      type: ResponsibleType.CONSULTANT,
+    };
+  }
+
+  private getTask(row: OverdueRow) {
+    if (!row?.task_id) return null;
+
+    return {
+      id: row.task_id,
+      stageCode: row.task_stage_code ?? '',
+      stageBadgeLabel: row.task_stage_badge_label ?? '',
+      channel: row.task_channel ?? '',
+      status: row.task_status ?? '',
+      createdAt: row.task_created_at as Date,
+      completedAt: row.task_completed_at ?? undefined,
     };
   }
 
