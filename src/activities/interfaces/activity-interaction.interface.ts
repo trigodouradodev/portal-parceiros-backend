@@ -1,4 +1,9 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  ApiExtraModels,
+  ApiProperty,
+  ApiPropertyOptional,
+  getSchemaPath,
+} from '@nestjs/swagger';
 
 /** Ponto de geolocalização capturado numa visita. */
 export class InteractionGeolocation {
@@ -69,13 +74,14 @@ export class CreatedTaskResponse {
   createdAt: Date;
 }
 
+@ApiExtraModels(CreatedTaskResponse)
 export class RegisterInteractionResult {
   @ApiProperty({ type: ActivityInteractionResponse })
   interaction: ActivityInteractionResponse;
 
   @ApiProperty({
-    type: CreatedTaskResponse,
     nullable: true,
+    allOf: [{ $ref: getSchemaPath(CreatedTaskResponse) }],
     description:
       'Próxima tarefa criada; null se a interação foi no último canal do estágio.',
   })
