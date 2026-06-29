@@ -523,6 +523,7 @@ export class CollectionsService {
           select: {
             name: true,
             tax_id: true,
+            phone: true,
             // Endereço primário; fallback para o mais recente (mesma regra das listas).
             addresses: {
               select: {
@@ -590,6 +591,36 @@ export class CollectionsService {
       },
     });
 
+    // Cobrança: a régua (tasks) e as interações registradas dessa parcela.
+    const tasks = await this.prisma.activity_tasks.findMany({
+      where: { installment_id: installment.id },
+      orderBy: { created_at: 'desc' },
+      select: {
+        id: true,
+        stage_code: true,
+        channel: true,
+        status: true,
+        created_at: true,
+        completed_at: true,
+        activity_ruler_stages: { select: { badge_label: true } },
+      },
+    });
+
+    const interactions = await this.prisma.activity_interactions.findMany({
+      where: { installment_id: installment.id },
+      orderBy: { created_at: 'desc' },
+      select: {
+        id: true,
+        channel: true,
+        result: true,
+        observation: true,
+        promise_date: true,
+        created_at: true,
+        trigo_users: { select: { id: true, full_name: true } },
+        geolocations: { select: { latitude: true, longitude: true } },
+      },
+    });
+
     const addr = contract.clients.addresses[0];
     // Responsável pela parcela: agente de cobrança; na ausência, cai para o
     // consultor do contrato. `type` indica a origem.
@@ -608,36 +639,70 @@ export class CollectionsService {
         }
       : undefined;
 
+    const totalInstallments = Number(contract.total_installments ?? 0);
+
     return {
-      contractId,
-      contractNumber: contract.contract_number,
-      clientName: contract.clients.name,
-      clientTaxId: contract.clients.tax_id,
-      address: addr
-        ? {
-            street: addr.street,
-            number: addr.number ?? '',
-            complement: addr.complement ?? undefined,
-            neighborhood: addr.neighborhood ?? '',
-            city: addr.city ?? '',
-            state: addr.state ?? undefined,
-            zipCode: addr.zip_code ?? '',
-          }
-        : undefined,
+      contract: {
+        id: contractId,
+        number: contract.contract_number,
+        totalInstallments,
+        totalAmount: toNum(contract.total_amount),
+        startDate: contract.disbursement_date ?? undefined,
+        endDate: lastInstallment._max.due_date ?? undefined,
+      },
+      client: {
+        name: contract.clients.name,
+        taxId: contract.clients.tax_id,
+        phone: contract.clients.phone ?? undefined,
+        address: addr
+          ? {
+              street: addr.street,
+              number: addr.number ?? '',
+              complement: addr.complement ?? undefined,
+              neighborhood: addr.neighborhood ?? '',
+              city: addr.city ?? '',
+              state: addr.state ?? undefined,
+              zipCode: addr.zip_code ?? '',
+            }
+          : undefined,
+      },
       responsible,
-      contractTotalAmount: toNum(contract.total_amount),
-      contractStartDate: contract.disbursement_date ?? undefined,
-      contractEndDate: lastInstallment._max.due_date ?? undefined,
-      totalInstallments: Number(contract.total_installments ?? 0),
       installment: {
         id: installment.id,
-        installmentNumber: Number(installment.installment_number),
+        number: installmentNumber,
+        label: `${installmentNumber}/${totalInstallments}`,
         dueDate: installment.due_date,
         totalAmount: toNum(installment.total_amount),
         pendingAmount: toNum(installment.pending_amount),
         status: installment.status,
       },
-      followUps: followUps.map(
+      activity: {
+        tasks: tasks.map((t) => ({
+          id: t.id,
+          stageCode: t.stage_code,
+          stageBadgeLabel: t.activity_ruler_stages?.badge_label ?? '',
+          channel: t.channel,
+          status: t.status,
+          createdAt: t.created_at,
+          completedAt: t.completed_at ?? undefined,
+        })),
+        interactions: interactions.map((i) => ({
+          id: i.id,
+          channel: i.channel,
+          result: i.result,
+          observation: i.observation ?? undefined,
+          promiseDate: i.promise_date ?? undefined,
+          createdAt: i.created_at,
+          author: { id: i.trigo_users.id, name: i.trigo_users.full_name },
+          geolocation: i.geolocations
+            ? {
+                latitude: toNum(i.geolocations.latitude),
+                longitude: toNum(i.geolocations.longitude),
+              }
+            : undefined,
+        })),
+      },
+      followups: followUps.map(
         (f): FollowUpHistoryItem => ({
           id: f.id,
           status: f.status,
