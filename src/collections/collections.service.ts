@@ -9,8 +9,8 @@ import {
   OverdueCollectionPage,
 } from './interfaces/overdue-collection.interface';
 import {
+  PreventiveCollectionItem,
   PreventiveCollectionPage,
-  PreventiveContract,
 } from './interfaces/preventive-collection.interface';
 import {
   CollectionDetail,
@@ -123,6 +123,15 @@ type AddressRow = Pick<
   | 'addr_city'
   | 'addr_state'
   | 'addr_zip_code'
+>;
+
+/** Campos usados para resolver o responsável (agente de cobrança senão consultor). */
+type ResponsibleRow = Pick<
+  OverdueRow,
+  | 'collection_agent_id'
+  | 'collection_agent_name'
+  | 'consultant_id'
+  | 'consultant_name'
 >;
 
 /** Monta o endereço do cliente a partir da linha; undefined se não houver. */
@@ -297,7 +306,7 @@ export class CollectionsService {
     };
   }
 
-  private getResponsible(row: OverdueRow): ContractResponsible | undefined {
+  private getResponsible(row: ResponsibleRow): ContractResponsible | undefined {
     if (!row?.consultant_id && !row?.collection_agent_id) return undefined;
 
     if (row?.collection_agent_id) {
@@ -330,9 +339,9 @@ export class CollectionsService {
   }
 
   /**
-   * Aba Preventivo: contratos com parcela a vencer nos próximos `withinDays`
-   * dias (default 15), do vencimento mais próximo para o mais distante. Uma
-   * linha por contrato, representada pela próxima parcela a vencer. Paginado.
+   * Aba Preventivo: **uma linha por parcela a vencer** nos próximos `withinDays`
+   * dias (default 15), do vencimento mais próximo para o mais distante. Paginado
+   * por parcela. Mesmo shape agrupado do overdue, com `followup` no lugar de `task`.
    *
    * Carteira = contratos `disbursed`/`active`; parcela em aberto =
    * `not_paid`/`partially_paid` com `due_date` entre hoje e hoje + N dias. Um
@@ -346,11 +355,11 @@ export class CollectionsService {
     withinDays = 15,
   ): Promise<PreventiveCollectionPage> {
     const emptyPage: PreventiveCollectionPage = {
-      contracts: [],
+      items: [],
       pagination: {
         page,
         limit,
-        totalContracts: 0,
+        total: 0,
         totalPages: 0,
         hasNextPage: false,
       },
@@ -375,49 +384,34 @@ export class CollectionsService {
     `;
 
     const [countRow] = await this.prisma.$queryRaw<{ total: number }[]>`
-      SELECT COUNT(DISTINCT i.contract_id)::int AS total
+      SELECT COUNT(*)::int AS total
       FROM installments i
       JOIN contracts c ON c.id = i.contract_id
       WHERE ${upcomingFilter}
     `;
-    const totalContracts = toNum(countRow?.total);
-    if (totalContracts === 0) return emptyPage;
+    const total = toNum(countRow?.total);
+    if (total === 0) return emptyPage;
 
     const offset = (page - 1) * limit;
 
-    // next_upcoming: próxima parcela a vencer por contrato (DISTINCT ON
-    // ordenado por due_date asc). A página externa ordena pelo vencimento
-    // mais próximo.
+    // Uma linha por parcela a vencer na janela (sem DISTINCT ON), do vencimento
+    // mais próximo para o mais distante; `i.id` no ORDER BY estabiliza empates.
     const rows = await this.prisma.$queryRaw<UpcomingRow[]>`
-      WITH next_upcoming AS (
-        SELECT DISTINCT ON (i.contract_id)
-          i.id,
-          i.contract_id,
-          i.installment_number,
-          i.due_date,
-          i.pending_amount,
-          i.total_amount,
-          i.status,
-          (i.due_date - CURRENT_DATE)::int AS days_until_due
-        FROM installments i
-        JOIN contracts c ON c.id = i.contract_id
-        WHERE ${upcomingFilter}
-        ORDER BY i.contract_id, i.due_date ASC, i.installment_number ASC
-      )
       SELECT
-        nu.id,
-        nu.contract_id,
-        nu.installment_number,
-        nu.due_date,
-        nu.pending_amount,
-        nu.total_amount,
-        nu.status,
-        nu.days_until_due,
+        i.id,
+        i.contract_id,
+        i.installment_number,
+        i.due_date,
+        i.pending_amount,
+        i.total_amount,
+        i.status,
+        (i.due_date - CURRENT_DATE)::int AS days_until_due,
         c.contract_number,
         c.total_installments,
         cl.name AS client_name,
         cl.tax_id AS client_tax_id,
         ${CLIENT_CONTACT_COLUMNS},
+        c.consultant_id AS consultant_id,
         cons.full_name AS consultant_name,
         ca.id AS collection_agent_id,
         ca.full_name AS collection_agent_name,
@@ -425,68 +419,73 @@ export class CollectionsService {
         (
           SELECT COUNT(*)::int
           FROM installment_followups f
-          WHERE f.contract_id = nu.contract_id
-            AND f.installment_number = nu.installment_number
+          WHERE f.contract_id = i.contract_id
+            AND f.installment_number = i.installment_number
         ) AS followup_count,
         (
           SELECT f.status
           FROM installment_followups f
-          WHERE f.contract_id = nu.contract_id
-            AND f.installment_number = nu.installment_number
+          WHERE f.contract_id = i.contract_id
+            AND f.installment_number = i.installment_number
           ORDER BY f.created_at DESC
           LIMIT 1
         ) AS latest_followup_status
-      FROM next_upcoming nu
-      JOIN contracts c ON c.id = nu.contract_id
+      FROM installments i
+      JOIN contracts c ON c.id = i.contract_id
       JOIN clients cl ON cl.id = c.client_id
       ${CLIENT_ADDRESS_JOIN}
       LEFT JOIN trigo_users cons ON cons.id = c.consultant_id
       LEFT JOIN trigo_users ca ON ca.id = c.current_collection_agent_id
       LEFT JOIN companies comp ON comp.id = c.company_id
-      ORDER BY nu.days_until_due ASC, nu.pending_amount DESC
+      WHERE ${upcomingFilter}
+      ORDER BY days_until_due ASC, i.pending_amount DESC, i.id
       LIMIT ${limit} OFFSET ${offset}
     `;
 
-    const totalPages = Math.ceil(totalContracts / limit);
+    const totalPages = Math.ceil(total / limit);
     return {
-      contracts: rows.map((row) => this.mapUpcomingRow(row)),
+      items: rows.map((row) => this.mapUpcomingItem(row)),
       pagination: {
         page,
         limit,
-        totalContracts,
+        total,
         totalPages,
         hasNextPage: page < totalPages,
       },
     };
   }
 
-  private mapUpcomingRow(row: UpcomingRow): PreventiveContract {
+  private mapUpcomingItem(row: UpcomingRow): PreventiveCollectionItem {
+    const totalInstallments = Number(row.total_installments ?? 0);
+    const installmentNumber = Number(row.installment_number);
+
     return {
-      contractId: row.contract_id,
-      contractNumber: row.contract_number,
-      totalInstallments: Number(row.total_installments ?? 0),
-      clientName: row.client_name,
-      clientTaxId: row.client_tax_id,
-      clientPhone: row.client_phone ?? undefined,
-      address: mapAddress(row),
-      consultantName: row.consultant_name ?? undefined,
-      companyName: row.company_name ?? undefined,
-      collectionAgent: row.collection_agent_id
-        ? {
-            id: row.collection_agent_id,
-            name: row.collection_agent_name ?? '',
-          }
-        : undefined,
-      nextInstallment: {
+      installment: {
         id: row.id,
-        installmentNumber: Number(row.installment_number),
+        number: installmentNumber,
+        label: `${installmentNumber}/${totalInstallments}`,
         dueDate: row.due_date,
         daysUntilDue: Number(row.days_until_due),
         pendingAmount: toNum(row.pending_amount),
         totalAmount: toNum(row.total_amount),
         status: row.status,
-        followupCount: Number(row.followup_count ?? 0),
-        latestFollowupStatus: row.latest_followup_status ?? undefined,
+      },
+      contract: {
+        id: row.contract_id,
+        number: row.contract_number,
+        totalInstallments,
+        companyName: row.company_name ?? undefined,
+      },
+      client: {
+        name: row.client_name,
+        taxId: row.client_tax_id,
+        phone: row.client_phone ?? undefined,
+        address: mapAddress(row),
+      },
+      responsible: this.getResponsible(row),
+      followup: {
+        count: Number(row.followup_count ?? 0),
+        latestStatus: row.latest_followup_status ?? undefined,
       },
     };
   }

@@ -67,18 +67,6 @@ export class ClientAddress {
   zipCode: string;
 }
 
-/**
- * Referência a um agente de cobrança. Mantida para o Preventivo; na Cobrança o
- * responsável é representado por `ContractResponsible`.
- */
-export class CollectionAgentRef {
-  @ApiProperty()
-  id: string;
-
-  @ApiProperty()
-  name: string;
-}
-
 /** A parcela atrasada — sujeito de cada item da lista. */
 export class InstallmentInfo {
   @ApiProperty()
