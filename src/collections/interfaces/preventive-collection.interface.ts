@@ -1,29 +1,22 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  ClientAddress,
-  CollectionAgentRef,
-} from './overdue-collection.interface';
+import { ClientInfo, ContractInfo } from './overdue-collection.interface';
+import { ContractResponsible } from './responsible.interface';
 
-/** Próxima parcela a vencer de um contrato (driver do preventivo). */
-export class UpcomingInstallmentSummary {
+/** A parcela a vencer — sujeito de cada item do Preventivo. */
+export class UpcomingInstallmentInfo {
   @ApiProperty()
   id: string;
 
   @ApiProperty({ example: 3 })
-  installmentNumber: number;
+  number: number;
 
-  @ApiProperty({
-    type: String,
-    format: 'date',
-    example: '2026-06-25',
-    description: 'Vencimento da parcela (data, sem hora).',
-  })
+  @ApiProperty({ example: '3/12', description: 'number/totalInstallments.' })
+  label: string;
+
+  @ApiProperty({ type: String, format: 'date', example: '2026-06-25' })
   dueDate: Date;
 
-  @ApiProperty({
-    example: 9,
-    description: 'Dias até vencer = due_date - CURRENT_DATE.',
-  })
+  @ApiProperty({ example: 9, description: 'due_date - CURRENT_DATE.' })
   daysUntilDue: number;
 
   @ApiProperty({ example: 592.37 })
@@ -34,57 +27,33 @@ export class UpcomingInstallmentSummary {
 
   @ApiProperty({ example: 'not_paid' })
   status: string;
-
-  @ApiProperty({
-    example: 0,
-    description: 'Nº de followups registrados para a parcela.',
-  })
-  followupCount: number;
-
-  @ApiPropertyOptional({
-    example: 'contacted',
-    description: 'Status do followup mais recente.',
-  })
-  latestFollowupStatus?: string;
 }
 
-/** Contrato a vencer, representado pela sua próxima parcela. */
-export class PreventiveContract {
-  @ApiProperty()
-  contractId: string;
+/** Resumo de follow-up (Preventivo) registrado para a parcela. */
+export class FollowupSummary {
+  @ApiProperty({ example: 2 })
+  count: number;
 
-  @ApiProperty()
-  contractNumber: string;
+  @ApiPropertyOptional({ example: 'promise_to_pay' })
+  latestStatus?: string;
+}
 
-  @ApiProperty({
-    example: 12,
-    description: 'Total de parcelas do contrato (para "parcela X de Y").',
-  })
-  totalInstallments: number;
+/** Um item da lista do Preventivo = uma parcela a vencer e seu contexto. */
+export class PreventiveCollectionItem {
+  @ApiProperty({ type: UpcomingInstallmentInfo })
+  installment: UpcomingInstallmentInfo;
 
-  @ApiProperty()
-  clientName: string;
+  @ApiProperty({ type: ContractInfo })
+  contract: ContractInfo;
 
-  @ApiProperty()
-  clientTaxId: string;
+  @ApiProperty({ type: ClientInfo })
+  client: ClientInfo;
 
-  @ApiPropertyOptional({ example: '11987654321' })
-  clientPhone?: string;
+  @ApiPropertyOptional({ type: ContractResponsible })
+  responsible?: ContractResponsible;
 
-  @ApiPropertyOptional({ type: ClientAddress })
-  address?: ClientAddress;
-
-  @ApiPropertyOptional()
-  consultantName?: string;
-
-  @ApiPropertyOptional()
-  companyName?: string;
-
-  @ApiPropertyOptional({ type: CollectionAgentRef })
-  collectionAgent?: CollectionAgentRef;
-
-  @ApiProperty({ type: UpcomingInstallmentSummary })
-  nextInstallment: UpcomingInstallmentSummary;
+  @ApiProperty({ type: FollowupSummary })
+  followup: FollowupSummary;
 }
 
 export class PreventivePagination {
@@ -94,8 +63,11 @@ export class PreventivePagination {
   @ApiProperty({ example: 30 })
   limit: number;
 
-  @ApiProperty({ example: 84 })
-  totalContracts: number;
+  @ApiProperty({
+    example: 84,
+    description: 'Total de parcelas a vencer na janela.',
+  })
+  total: number;
 
   @ApiProperty({ example: 3 })
   totalPages: number;
@@ -105,8 +77,8 @@ export class PreventivePagination {
 }
 
 export class PreventiveCollectionPage {
-  @ApiProperty({ type: [PreventiveContract] })
-  contracts: PreventiveContract[];
+  @ApiProperty({ type: [PreventiveCollectionItem] })
+  items: PreventiveCollectionItem[];
 
   @ApiProperty({ type: PreventivePagination })
   pagination: PreventivePagination;
