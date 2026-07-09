@@ -34,6 +34,7 @@ import {
   TaskActionResult,
 } from './interfaces/activity-interaction.interface';
 import { TodayQueue } from './interfaces/task-queue.interface';
+import { InstallmentDetail } from './interfaces/installment-detail.interface';
 
 @ApiTags('activities')
 @ApiBearerAuth('access-token')
@@ -66,6 +67,34 @@ export class ActivitiesController {
       query.page,
       query.limit,
     );
+  }
+
+  /**
+   * Detalhe da parcela: contrato, cliente, responsável e o histórico completo de tarefas
+   * da parcela (cada uma com sua interação). Escopado por hierarquia (os 3 perfis acessam
+   * o que enxergam).
+   */
+  @ApiOperation({
+    summary:
+      'Detalhe da parcela (contrato, cliente, responsável, histórico de tarefas + interações).',
+  })
+  @ApiOkResponse({ type: InstallmentDetail })
+  @ApiNotFoundResponse({
+    description: 'Parcela não encontrada ou fora do escopo.',
+  })
+  @RequirePermissions(
+    PermissionKey.INSTALLMENT_VIEW,
+    PermissionKey.INSTALLMENT_VIEW_ALL,
+  )
+  @Get('installments/:installmentId')
+  getInstallmentDetail(
+    @CurrentUser() user: JwtPayload,
+    @Param('installmentId', ParseUUIDPipe) installmentId: string,
+  ) {
+    return this.activitiesService.getInstallmentDetail(installmentId, {
+      userId: user.sub,
+      permissions: user.permissions,
+    });
   }
 
   /**

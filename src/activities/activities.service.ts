@@ -37,11 +37,57 @@ import {
   SegmentSummary,
   TodayQueue,
 } from './interfaces/task-queue.interface';
+import { InstallmentDetail } from './interfaces/installment-detail.interface';
+import { ClientAddress } from '../collections/interfaces/overdue-collection.interface';
+import { ResponsibleType } from '../collections/interfaces/responsible.interface';
+
+/** Colunas do endereço retornadas pelo select do Prisma. */
+interface RawAddress {
+  street: string;
+  number: string;
+  complement: string | null;
+  neighborhood: string;
+  city: string;
+  state: string | null;
+  zip_code: string;
+}
 
 function toNum(value: unknown): number {
   if (value === null || value === undefined) return 0;
   if (typeof value === 'bigint') return Number(value);
   return Number(value);
+}
+
+/** Dias inteiros de atraso (UTC, consistente com CURRENT_DATE - due_date do banco). */
+function daysOverdue(dueDate: Date): number {
+  const MS = 86400000;
+  const due = Date.UTC(
+    dueDate.getUTCFullYear(),
+    dueDate.getUTCMonth(),
+    dueDate.getUTCDate(),
+  );
+  const now = new Date();
+  const ref = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+  );
+  return Math.floor((ref - due) / MS);
+}
+
+function mapDetailAddress(
+  row: RawAddress | undefined,
+): ClientAddress | undefined {
+  if (!row?.street) return undefined;
+  return {
+    street: row.street,
+    number: row.number ?? '',
+    complement: row.complement ?? undefined,
+    neighborhood: row.neighborhood ?? '',
+    city: row.city ?? '',
+    state: row.state ?? undefined,
+    zipCode: row.zip_code ?? '',
+  };
 }
 
 @Injectable()
@@ -157,6 +203,207 @@ export class ActivitiesService {
       },
       scheduled: scheduledRows.map((row) => this.mapCard(row, 0)),
       completedToday: completedRows.map((row) => this.mapCard(row, 0)),
+    };
+  }
+
+  /**
+   * Detalhe da PARCELA (por installmentId): contrato, cliente, responsável e o histórico
+   * completo de tarefas da parcela — cada uma com a sua interação. Escopado por hierarquia;
+   * fora do escopo ou inexistente → 404 (não revela existência).
+   */
+  async getInstallmentDetail(
+    installmentId: string,
+    viewer: ScopeViewer,
+  ): Promise<InstallmentDetail> {
+    const installment = await this.prisma.installments.findUnique({
+      where: { id: installmentId },
+      select: {
+        installment_number: true,
+        due_date: true,
+        total_amount: true,
+        pending_amount: true,
+        status: true,
+        contract_id: true,
+      },
+    });
+    if (!installment) throw new NotFoundException('installment_not_found');
+    const contractId = installment.contract_id;
+    if (!contractId) throw new NotFoundException('installment_not_found');
+
+    const canView = await this.scope.canViewContract(contractId, viewer, [
+      PermissionKey.INSTALLMENT_VIEW_ALL,
+    ]);
+    if (!canView) throw new NotFoundException('installment_not_found');
+
+    const contract = await this.prisma.contracts.findUnique({
+      where: { id: contractId },
+      select: {
+        contract_number: true,
+        total_amount: true,
+        total_installments: true,
+        disbursement_date: true,
+        current_collection_agent_id: true,
+        companies: { select: { name: true } },
+        clients: {
+          select: {
+            name: true,
+            tax_id: true,
+            phone: true,
+            addresses: {
+              select: {
+                street: true,
+                number: true,
+                complement: true,
+                neighborhood: true,
+                city: true,
+                state: true,
+                zip_code: true,
+              },
+              orderBy: [
+                { is_primary: { sort: 'desc', nulls: 'last' } },
+                { created_at: 'desc' },
+              ],
+              take: 1,
+            },
+          },
+        },
+      },
+    });
+    if (!contract) throw new NotFoundException('installment_not_found');
+
+    // Fim do contrato = vencimento da última parcela.
+    const lastInstallment = await this.prisma.installments.aggregate({
+      where: { contract_id: contractId },
+      _max: { due_date: true },
+    });
+
+    // Histórico completo de tarefas da parcela, cada uma com a sua interação.
+    const tasks = await this.prisma.activity_tasks.findMany({
+      where: { installment_id: installmentId },
+      orderBy: { created_at: 'desc' },
+      select: {
+        id: true,
+        assigned_to: true,
+        segment_code: true,
+        task_type: true,
+        status: true,
+        created_by: true,
+        expire_date: true,
+        was_postponed: true,
+        was_rescheduled: true,
+        created_at: true,
+        completed_at: true,
+        system_closed_at: true,
+        cancelled_at: true,
+        cancellation_reason: true,
+        activity_ruler_stages: {
+          select: { priority: true, tone: true, badge_label: true },
+        },
+        trigo_users_activity_tasks_assigned_toTotrigo_users: {
+          select: { id: true, full_name: true },
+        },
+        activity_interactions: {
+          select: {
+            id: true,
+            channel: true,
+            recipient_type: true,
+            result: true,
+            promise_date: true,
+            observation: true,
+            created_at: true,
+            trigo_users: { select: { id: true, full_name: true } },
+            geolocations: { select: { latitude: true, longitude: true } },
+          },
+        },
+      },
+    });
+
+    const totalInstallments = Number(contract.total_installments ?? 0);
+    const instNumber = Number(installment.installment_number);
+    // Responsável atual = assigned_to da tarefa mais recente.
+    const latest = tasks[0];
+    const assignee =
+      latest?.trigo_users_activity_tasks_assigned_toTotrigo_users;
+
+    return {
+      installment: {
+        id: installmentId,
+        number: instNumber,
+        label: `${instNumber}/${totalInstallments}`,
+        dueDate: installment.due_date,
+        daysOverdue: daysOverdue(installment.due_date),
+        pendingAmount: toNum(installment.pending_amount),
+        totalAmount: toNum(installment.total_amount),
+        status: installment.status,
+      },
+      contract: {
+        id: contractId,
+        number: contract.contract_number,
+        totalInstallments,
+        totalAmount: toNum(contract.total_amount),
+        startDate: contract.disbursement_date ?? undefined,
+        endDate: lastInstallment._max.due_date ?? undefined,
+        companyName: contract.companies?.name ?? undefined,
+      },
+      client: {
+        name: contract.clients.name,
+        taxId: contract.clients.tax_id,
+        phone: contract.clients.phone ?? undefined,
+        address: mapDetailAddress(contract.clients.addresses[0]),
+      },
+      responsible: assignee
+        ? {
+            id: assignee.id,
+            name: assignee.full_name,
+            type:
+              latest?.assigned_to === contract.current_collection_agent_id
+                ? ResponsibleType.COLLECTION_AGENT
+                : ResponsibleType.CONSULTANT,
+          }
+        : null,
+      tasks: tasks.map((t) => ({
+        id: t.id,
+        segmentCode: t.segment_code,
+        segmentBadgeLabel: t.activity_ruler_stages?.badge_label ?? undefined,
+        priority: Number(t.activity_ruler_stages?.priority ?? 0),
+        tone: t.activity_ruler_stages?.tone ?? '',
+        taskType: t.task_type,
+        status: t.status,
+        createdBy: t.created_by,
+        expireDate: t.expire_date,
+        wasPostponed: t.was_postponed,
+        wasRescheduled: t.was_rescheduled,
+        createdAt: t.created_at,
+        completedAt: t.completed_at ?? undefined,
+        systemClosedAt: t.system_closed_at ?? undefined,
+        cancelledAt: t.cancelled_at ?? undefined,
+        cancellationReason: t.cancellation_reason ?? undefined,
+        interaction: t.activity_interactions
+          ? {
+              id: t.activity_interactions.id,
+              channel: t.activity_interactions.channel,
+              recipientType: t.activity_interactions.recipient_type,
+              result: t.activity_interactions.result,
+              promiseDate: t.activity_interactions.promise_date ?? undefined,
+              observation: t.activity_interactions.observation ?? undefined,
+              createdAt: t.activity_interactions.created_at,
+              author: {
+                id: t.activity_interactions.trigo_users.id,
+                name: t.activity_interactions.trigo_users.full_name,
+              },
+              geolocation: t.activity_interactions.geolocations
+                ? {
+                    latitude: toNum(
+                      t.activity_interactions.geolocations.latitude,
+                    ),
+                    longitude: toNum(
+                      t.activity_interactions.geolocations.longitude,
+                    ),
+                  }
+                : undefined,
+            }
+          : null,
+      })),
     };
   }
 
