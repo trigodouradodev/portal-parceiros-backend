@@ -22,7 +22,6 @@ import {
   RESULTS_BY_TASK_TYPE,
 } from './enums/activity.enums';
 import {
-  ActivityInteractionResponse,
   RegisterInteractionResult,
   TaskActionResult,
 } from './interfaces/activity-interaction.interface';
@@ -32,63 +31,16 @@ import {
   QueueRow,
   TaskActionRow,
 } from './interfaces/activity-row.interface';
-import {
-  QueueTaskCard,
-  SegmentSummary,
-  TodayQueue,
-} from './interfaces/task-queue.interface';
+import { SegmentSummary, TodayQueue } from './interfaces/task-queue.interface';
 import { InstallmentDetail } from './interfaces/installment-detail.interface';
-import { ClientAddress } from '../collections/interfaces/overdue-collection.interface';
 import { ResponsibleType } from '../collections/interfaces/responsible.interface';
-
-/** Colunas do endereço retornadas pelo select do Prisma. */
-interface RawAddress {
-  street: string;
-  number: string;
-  complement: string | null;
-  neighborhood: string;
-  city: string;
-  state: string | null;
-  zip_code: string;
-}
-
-function toNum(value: unknown): number {
-  if (value === null || value === undefined) return 0;
-  if (typeof value === 'bigint') return Number(value);
-  return Number(value);
-}
-
-/** Dias inteiros de atraso (UTC, consistente com CURRENT_DATE - due_date do banco). */
-function daysOverdue(dueDate: Date): number {
-  const MS = 86400000;
-  const due = Date.UTC(
-    dueDate.getUTCFullYear(),
-    dueDate.getUTCMonth(),
-    dueDate.getUTCDate(),
-  );
-  const now = new Date();
-  const ref = Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth(),
-    now.getUTCDate(),
-  );
-  return Math.floor((ref - due) / MS);
-}
-
-function mapDetailAddress(
-  row: RawAddress | undefined,
-): ClientAddress | undefined {
-  if (!row?.street) return undefined;
-  return {
-    street: row.street,
-    number: row.number ?? '',
-    complement: row.complement ?? undefined,
-    neighborhood: row.neighborhood ?? '',
-    city: row.city ?? '',
-    state: row.state ?? undefined,
-    zipCode: row.zip_code ?? '',
-  };
-}
+import { daysOverdue, toNum } from './activities.util';
+import {
+  mapAddress,
+  mapCard,
+  mapInteraction,
+  mapTaskAction,
+} from './activities.mapper';
 
 @Injectable()
 export class ActivitiesService {
@@ -186,12 +138,12 @@ export class ActivitiesService {
     );
 
     return {
-      active: activeRow ? this.mapCard(activeRow, 1) : null,
+      active: activeRow ? mapCard(activeRow, 1) : null,
       counter,
       segments,
       locked: {
         items: lockedRows.map((row, i) =>
-          this.mapCard(row, activeOffset + offset + i + 1),
+          mapCard(row, activeOffset + offset + i + 1),
         ),
         pagination: {
           page,
@@ -201,8 +153,8 @@ export class ActivitiesService {
           hasNextPage: page < totalPages,
         },
       },
-      scheduled: scheduledRows.map((row) => this.mapCard(row, 0)),
-      completedToday: completedRows.map((row) => this.mapCard(row, 0)),
+      scheduled: scheduledRows.map((row) => mapCard(row, 0)),
+      completedToday: completedRows.map((row) => mapCard(row, 0)),
     };
   }
 
@@ -349,7 +301,7 @@ export class ActivitiesService {
         name: contract.clients.name,
         taxId: contract.clients.tax_id,
         phone: contract.clients.phone ?? undefined,
-        address: mapDetailAddress(contract.clients.addresses[0]),
+        address: mapAddress(contract.clients.addresses[0]),
       },
       responsible: assignee
         ? {
@@ -594,7 +546,7 @@ export class ActivitiesService {
         RETURNING id, task_id, installment_id, contract_id, task_type, channel, recipient_type,
                   recipient_contact_id, result, promise_date, observation, user_id, created_at
       `;
-      const interaction = this.mapInteraction(rows[0]);
+      const interaction = mapInteraction(rows[0]);
 
       if (dto.latitude !== undefined && dto.longitude !== undefined) {
         await tx.$executeRaw`
@@ -624,7 +576,7 @@ export class ActivitiesService {
         RETURNING id, installment_id, contract_id, segment_code, task_type, status,
                   expire_date, was_postponed, was_rescheduled
       `;
-      return this.mapTaskAction(rows[0]);
+      return mapTaskAction(rows[0]);
     });
   }
 
@@ -650,7 +602,7 @@ export class ActivitiesService {
         RETURNING id, installment_id, contract_id, segment_code, task_type, status,
                   expire_date, was_postponed, was_rescheduled
       `;
-      return this.mapTaskAction(rows[0]);
+      return mapTaskAction(rows[0]);
     });
   }
 
@@ -764,90 +716,5 @@ export class ActivitiesService {
               AND CURRENT_DATE + ${RESCHEDULE_MAX_DAYS}::int) AS ok
     `;
     if (!row?.ok) throw new BadRequestException('reschedule_out_of_window');
-  }
-
-  // ---- mappers (row → DTO) ---------------------------------------------------
-
-  private mapInteraction(row: InteractionRow): ActivityInteractionResponse {
-    return {
-      id: row.id,
-      taskId: row.task_id,
-      installmentId: row.installment_id,
-      contractId: row.contract_id,
-      taskType: row.task_type,
-      channel: row.channel,
-      recipientType: row.recipient_type,
-      recipientContactId: row.recipient_contact_id ?? undefined,
-      result: row.result,
-      promiseDate: row.promise_date ?? undefined,
-      observation: row.observation ?? undefined,
-      userId: row.user_id,
-      createdAt: row.created_at,
-    };
-  }
-
-  private mapTaskAction(row: TaskActionRow): TaskActionResult {
-    return {
-      id: row.id,
-      installmentId: row.installment_id,
-      contractId: row.contract_id,
-      segmentCode: row.segment_code,
-      taskType: row.task_type,
-      status: row.status,
-      expireDate: row.expire_date,
-      wasPostponed: row.was_postponed,
-      wasRescheduled: row.was_rescheduled,
-    };
-  }
-
-  private mapCard(row: QueueRow, position: number): QueueTaskCard {
-    const totalInstallments = Number(row.total_installments ?? 0);
-    const installmentNumber = Number(row.installment_number);
-    const pendingAmount = toNum(row.pending_amount);
-    return {
-      position,
-      taskId: row.task_id,
-      segmentCode: row.segment_code,
-      priority: Number(row.priority ?? 0),
-      tone: row.tone ?? '',
-      taskType: row.task_type,
-      status: row.status,
-      isActive: row.is_active,
-      assignedTo: row.assigned_to_id
-        ? { id: row.assigned_to_id, name: row.assigned_to_name ?? '' }
-        : null,
-      expireDate: row.expire_date,
-      wasPostponed: row.was_postponed,
-      wasRescheduled: row.was_rescheduled,
-      client: {
-        name: row.client_name,
-        taxId: row.client_tax_id,
-        phone: row.client_phone ?? undefined,
-      },
-      contract: {
-        id: row.contract_id,
-        number: row.contract_number,
-        totalInstallments,
-        companyName: row.company_name ?? undefined,
-      },
-      installment: {
-        id: row.installment_id,
-        number: installmentNumber,
-        label: `${installmentNumber}/${totalInstallments}`,
-        dueDate: row.due_date,
-        daysOverdue: Number(row.days_overdue),
-        pendingAmount,
-        // TODO(RN-023): valor corrigido hoje (juros + correção). Sem cálculo no portal ainda.
-        amountOverdue: pendingAmount,
-        totalAmount: toNum(row.total_amount),
-      },
-      lastInteraction: row.last_result
-        ? {
-            result: row.last_result,
-            channel: row.last_channel ?? '',
-            createdAt: row.last_created_at as Date,
-          }
-        : null,
-    };
   }
 }
