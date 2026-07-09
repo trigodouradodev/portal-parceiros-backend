@@ -1,9 +1,4 @@
-import {
-  ApiExtraModels,
-  ApiProperty,
-  ApiPropertyOptional,
-  getSchemaPath,
-} from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /** Ponto de geolocalização capturado numa visita. */
 export class InteractionGeolocation {
@@ -28,10 +23,25 @@ export class ActivityInteractionResponse {
   @ApiProperty()
   contractId: string;
 
-  @ApiProperty({ example: 'whatsapp_message' })
+  @ApiProperty({
+    example: 'contact',
+    description: 'contact | visit (snapshot da tarefa).',
+  })
+  taskType: string;
+
+  @ApiProperty({ example: 'whatsapp', description: 'whatsapp | call | visit.' })
   channel: string;
 
-  @ApiProperty({ example: 'no_return' })
+  @ApiProperty({
+    example: 'client',
+    description: 'client | guarantor | other.',
+  })
+  recipientType: string;
+
+  @ApiPropertyOptional()
+  recipientContactId?: string;
+
+  @ApiProperty({ example: 'payment_promise' })
   result: string;
 
   @ApiPropertyOptional({ type: String, format: 'date' })
@@ -50,8 +60,14 @@ export class ActivityInteractionResponse {
   geolocation?: InteractionGeolocation;
 }
 
-/** Tarefa criada como próximo passo da sequência do estágio. */
-export class CreatedTaskResponse {
+/** Resultado de registrar uma interação. Não cria próxima tarefa (só o job cria). */
+export class RegisterInteractionResult {
+  @ApiProperty({ type: ActivityInteractionResponse })
+  interaction: ActivityInteractionResponse;
+}
+
+/** Estado da tarefa após uma ação (postergar / reagendar). */
+export class TaskActionResult {
   @ApiProperty()
   id: string;
 
@@ -61,29 +77,25 @@ export class CreatedTaskResponse {
   @ApiProperty()
   contractId: string;
 
-  @ApiProperty({ example: 'warning' })
-  stageCode: string;
+  @ApiProperty({ example: 'mid' })
+  segmentCode: string;
 
-  @ApiProperty({ example: 'client_call' })
-  channel: string;
+  @ApiProperty({ example: 'visit' })
+  taskType: string;
 
   @ApiProperty({ example: 'pending' })
   status: string;
 
-  @ApiProperty({ type: String, format: 'date-time' })
-  createdAt: Date;
-}
-
-@ApiExtraModels(CreatedTaskResponse)
-export class RegisterInteractionResult {
-  @ApiProperty({ type: ActivityInteractionResponse })
-  interaction: ActivityInteractionResponse;
-
   @ApiProperty({
-    nullable: true,
-    allOf: [{ $ref: getSchemaPath(CreatedTaskResponse) }],
-    description:
-      'Próxima tarefa criada; null se a interação foi no último canal do estágio.',
+    type: String,
+    format: 'date',
+    description: 'Até quando a tarefa continua ativa.',
   })
-  nextTask: CreatedTaskResponse | null;
+  expireDate: Date;
+
+  @ApiProperty()
+  wasPostponed: boolean;
+
+  @ApiProperty()
+  wasRescheduled: boolean;
 }

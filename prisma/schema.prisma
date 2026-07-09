@@ -1717,50 +1717,44 @@ model geolocations {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model activity_interactions {
-  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  task_id        String         @unique(map: "activity_interactions_task_id_unique") @db.Uuid
-  installment_id String         @db.Uuid
-  contract_id    String         @db.Uuid
-  channel        String         @db.VarChar(255)
-  result         String         @db.VarChar(255)
-  promise_date   DateTime?      @db.Date
-  observation    String?
-  user_id        String         @db.Uuid
-  created_at     DateTime       @default(now()) @db.Timestamptz(6)
-  contracts      contracts      @relation(fields: [contract_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_contract_id_foreign")
-  installments   installments   @relation(fields: [installment_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_installment_id_foreign")
-  activity_tasks activity_tasks @relation(fields: [task_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_task_id_foreign")
-  trigo_users    trigo_users    @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_user_id_foreign")
-  geolocations   geolocations?
+  id                   String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  task_id              String         @unique(map: "activity_interactions_task_id_unique") @db.Uuid
+  installment_id       String         @db.Uuid
+  contract_id          String         @db.Uuid
+  task_type            String         @db.VarChar(255)
+  channel              String         @db.VarChar(255)
+  recipient_type       String         @db.VarChar(255)
+  recipient_contact_id String?        @db.Uuid
+  result               String         @db.VarChar(255)
+  promise_date         DateTime?      @db.Date
+  observation          String?
+  user_id              String         @db.Uuid
+  created_at           DateTime       @default(now()) @db.Timestamptz(6)
+  contracts            contracts      @relation(fields: [contract_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_contract_id_foreign")
+  installments         installments   @relation(fields: [installment_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_installment_id_foreign")
+  activity_tasks       activity_tasks @relation(fields: [task_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_task_id_foreign")
+  trigo_users          trigo_users    @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_user_id_foreign")
+  geolocations         geolocations?
 
   @@index([contract_id, created_at], map: "idx_activity_interactions_contract")
   @@index([installment_id, created_at], map: "idx_activity_interactions_installment")
 }
 
 model activity_ruler_stages {
-  id                   String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code                 String                 @unique(map: "activity_ruler_stages_code_unique") @db.VarChar(255)
-  name                 String                 @db.VarChar(255)
-  min_days_overdue     Int
-  sort_order           Int
-  badge_label          String?                @db.VarChar(255)
-  is_active            Boolean                @default(true)
-  created_at           DateTime               @default(now()) @db.Timestamptz(6)
-  updated_at           DateTime               @default(now()) @db.Timestamptz(6)
-  activity_ruler_steps activity_ruler_steps[]
-  activity_tasks       activity_tasks[]
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model activity_ruler_steps {
-  id                    String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  stage_id              String                @db.Uuid
-  channel               String                @db.VarChar(255)
-  sort_order            Int
-  activity_ruler_stages activity_ruler_stages @relation(fields: [stage_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "activity_ruler_steps_stage_id_foreign")
-
-  @@unique([stage_id, channel], map: "activity_ruler_steps_stage_id_channel_unique")
-  @@unique([stage_id, sort_order], map: "activity_ruler_steps_stage_id_sort_order_unique")
+  id                    String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                  String           @unique(map: "activity_ruler_stages_code_unique") @db.VarChar(255)
+  name                  String           @db.VarChar(255)
+  priority              Int              @unique(map: "activity_ruler_stages_priority_unique")
+  min_days_overdue      Int?
+  max_days_overdue      Int?
+  predicate             String?          @db.VarChar(255)
+  contacts_before_visit Int?
+  tone                  String           @db.VarChar(255)
+  badge_label           String?          @db.VarChar(255)
+  is_active             Boolean          @default(true)
+  created_at            DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime         @default(now()) @db.Timestamptz(6)
+  activity_tasks        activity_tasks[]
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -1769,15 +1763,19 @@ model activity_tasks {
   installment_id                                               String                 @unique(map: "idx_activity_tasks_one_pending_per_installment", where: raw("((status)::text = 'pending'::text)")) @db.Uuid
   contract_id                                                  String                 @db.Uuid
   ruler_stage_id                                               String?                @db.Uuid
-  stage_code                                                   String                 @db.VarChar(255)
-  channel                                                      String                 @db.VarChar(255)
+  segment_code                                                 String                 @db.VarChar(255)
+  task_type                                                    String                 @db.VarChar(255)
   status                                                       String                 @default("pending") @db.VarChar(255)
+  expire_date                                                  DateTime               @db.Date
+  was_postponed                                                Boolean                @default(false)
+  was_rescheduled                                              Boolean                @default(false)
   created_at                                                   DateTime               @default(now()) @db.Timestamptz(6)
   created_by                                                   String                 @db.VarChar(255)
   created_by_user_id                                           String?                @db.Uuid
   assigned_to                                                  String?                @db.Uuid
   completed_at                                                 DateTime?              @db.Timestamptz(6)
   completed_by_user_id                                         String?                @db.Uuid
+  system_closed_at                                             DateTime?              @db.Timestamptz(6)
   cancelled_at                                                 DateTime?              @db.Timestamptz(6)
   cancellation_reason                                          String?                @db.VarChar(255)
   parent_task_id                                               String?                @db.Uuid
@@ -1791,10 +1789,9 @@ model activity_tasks {
   other_activity_tasks                                         activity_tasks[]       @relation("activity_tasksToactivity_tasks")
   activity_ruler_stages                                        activity_ruler_stages? @relation(fields: [ruler_stage_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_ruler_stage_id_foreign")
 
-  @@index([assigned_to], map: "idx_activity_tasks_assigned_pending", where: raw("((status)::text = 'pending'::text)"))
+  @@index([assigned_to, expire_date], map: "idx_activity_tasks_assigned_pending", where: raw("((status)::text = 'pending'::text)"))
   @@index([contract_id, created_at], map: "idx_activity_tasks_contract")
   @@index([installment_id, created_at], map: "idx_activity_tasks_installment")
-  @@index([status], map: "idx_activity_tasks_pending", where: raw("((status)::text = 'pending'::text)"))
 }
 
 model client_auth_blacklist {

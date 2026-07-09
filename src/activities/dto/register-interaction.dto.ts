@@ -6,21 +6,54 @@ import {
   IsLongitude,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   ValidateIf,
 } from 'class-validator';
-import { ActivityInteractionResult } from '../enums/activity.enums';
+import {
+  ActivityChannel,
+  ActivityInteractionResult,
+  ActivityRecipientType,
+} from '../enums/activity.enums';
 
-/** Payload para registrar o resultado (interação) de uma tarefa de cobrança. */
+/**
+ * Payload para registrar a execução (interação) de uma tarefa de cobrança.
+ * `channel`/`result` são validados contra o `task_type` da tarefa no service.
+ */
 export class RegisterInteractionDto {
   @ApiProperty({
+    enum: ActivityChannel,
+    description: 'Canal usado: whatsapp/call (contato) ou visit (visita).',
+  })
+  @IsEnum(ActivityChannel)
+  channel: ActivityChannel;
+
+  @ApiProperty({
+    enum: ActivityRecipientType,
+    description: 'Destinatário: cliente, avalista ou outro contato.',
+  })
+  @IsEnum(ActivityRecipientType)
+  recipientType: ActivityRecipientType;
+
+  @ApiPropertyOptional({
+    description:
+      'ID do contato enriquecido (quando recipientType=other). Stub por ora.',
+  })
+  @IsOptional()
+  @IsUUID()
+  recipientContactId?: string;
+
+  @ApiProperty({
     enum: ActivityInteractionResult,
-    description: 'Resultado do contato (espelha o enum do banco).',
+    description: 'Resultado do desfecho (validado conforme o tipo da tarefa).',
   })
   @IsEnum(ActivityInteractionResult)
   result: ActivityInteractionResult;
 
-  @ApiPropertyOptional({ maxLength: 2000, description: 'Observações livres.' })
+  @ApiPropertyOptional({
+    maxLength: 2000,
+    description: 'Observações livres. Obrigatória quando result=other.',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(2000)
@@ -28,14 +61,15 @@ export class RegisterInteractionDto {
 
   @ApiPropertyOptional({
     format: 'date',
-    description: 'Data prometida de pagamento (ISO; não pode ser no passado).',
+    description:
+      'Data prometida (obrigatória e ≤ D+10 quando result=payment_promise).',
   })
   @IsOptional()
   @IsDateString()
   promiseDate?: string;
 
   @ApiPropertyOptional({
-    description: 'Latitude da visita. Obrigatória junto com longitude.',
+    description: 'Latitude da visita (junto com longitude).',
   })
   @ValidateIf(
     (o: RegisterInteractionDto) =>
@@ -45,7 +79,7 @@ export class RegisterInteractionDto {
   latitude?: number;
 
   @ApiPropertyOptional({
-    description: 'Longitude da visita. Obrigatória junto com latitude.',
+    description: 'Longitude da visita (junto com latitude).',
   })
   @ValidateIf(
     (o: RegisterInteractionDto) =>

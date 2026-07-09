@@ -82,9 +82,9 @@ interface OverdueRow {
   collection_agent_name: string | null;
   company_name: string | null;
   task_id: string | null;
-  task_stage_code: string | null;
+  task_segment_code: string | null;
   task_stage_badge_label: string | null;
-  task_channel: string | null;
+  task_task_type: string | null;
   task_status: string | null;
   task_created_at: Date | null;
   task_completed_at: Date | null;
@@ -94,9 +94,9 @@ interface UpcomingRow extends Omit<
   OverdueRow,
   | 'days_overdue'
   | 'task_id'
-  | 'task_stage_code'
+  | 'task_segment_code'
   | 'task_stage_badge_label'
-  | 'task_channel'
+  | 'task_task_type'
   | 'task_status'
   | 'task_created_at'
   | 'task_completed_at'
@@ -232,9 +232,9 @@ export class CollectionsService {
         ca.full_name AS collection_agent_name,
         comp.name AS company_name,
         task.id AS task_id,
-        task.stage_code AS task_stage_code,
+        task.segment_code AS task_segment_code,
         task.badge_label AS task_stage_badge_label,
-        task.channel AS task_channel,
+        task.task_type AS task_task_type,
         task.status AS task_status,
         task.created_at AS task_created_at,
         task.completed_at AS task_completed_at
@@ -246,7 +246,7 @@ export class CollectionsService {
       LEFT JOIN trigo_users ca ON ca.id = c.current_collection_agent_id
       LEFT JOIN companies comp ON comp.id = c.company_id
       LEFT JOIN LATERAL (
-        SELECT at.id, at.stage_code, at.channel, at.status, at.created_at, at.completed_at, rs.badge_label
+        SELECT at.id, at.segment_code, at.task_type, at.status, at.created_at, at.completed_at, rs.badge_label
         FROM activity_tasks at
         LEFT JOIN activity_ruler_stages rs ON rs.id = at.ruler_stage_id
         WHERE at.installment_id = i.id
@@ -329,9 +329,9 @@ export class CollectionsService {
 
     return {
       id: row.task_id,
-      stageCode: row.task_stage_code ?? '',
-      stageBadgeLabel: row.task_stage_badge_label ?? '',
-      channel: row.task_channel ?? '',
+      segmentCode: row.task_segment_code ?? '',
+      segmentBadgeLabel: row.task_stage_badge_label ?? '',
+      taskType: row.task_task_type ?? '',
       status: row.task_status ?? '',
       createdAt: row.task_created_at as Date,
       completedAt: row.task_completed_at ?? undefined,
@@ -597,8 +597,8 @@ export class CollectionsService {
       orderBy: { created_at: 'desc' },
       select: {
         id: true,
-        stage_code: true,
-        channel: true,
+        segment_code: true,
+        task_type: true,
         status: true,
         created_at: true,
         completed_at: true,
@@ -679,9 +679,9 @@ export class CollectionsService {
       activity: {
         tasks: tasks.map((t) => ({
           id: t.id,
-          stageCode: t.stage_code,
-          stageBadgeLabel: t.activity_ruler_stages?.badge_label ?? '',
-          channel: t.channel,
+          segmentCode: t.segment_code,
+          segmentBadgeLabel: t.activity_ruler_stages?.badge_label ?? '',
+          taskType: t.task_type,
           status: t.status,
           createdAt: t.created_at,
           completedAt: t.completed_at ?? undefined,
