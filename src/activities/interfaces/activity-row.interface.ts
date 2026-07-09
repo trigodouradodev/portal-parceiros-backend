@@ -5,6 +5,17 @@ import { Prisma } from '@prisma/client';
  * Não são contratos de API — são o resultado direto do Postgres.
  */
 
+/** Colunas do endereço retornadas pelo select do Prisma (detalhe da parcela). */
+export interface RawAddress {
+  street: string;
+  number: string;
+  complement: string | null;
+  neighborhood: string;
+  city: string;
+  state: string | null;
+  zip_code: string;
+}
+
 /** Linha lockada da tarefa (o mínimo p/ validar e executar uma ação). */
 export interface LockedTaskRow {
   id: string;

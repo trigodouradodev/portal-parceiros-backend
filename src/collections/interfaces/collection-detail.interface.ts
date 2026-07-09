@@ -1,8 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  ActivityTaskSummary,
-  ClientInfo,
-} from './overdue-collection.interface';
+import { ClientInfo } from './overdue-collection.interface';
 import { ContractResponsible } from './responsible.interface';
 
 /** Autor de um registro (follow-up ou interação de cobrança). */
@@ -55,49 +52,6 @@ export class FollowUpHistoryItem {
 
   @ApiPropertyOptional({ type: Geolocation })
   geolocation?: Geolocation;
-}
-
-/** Item do histórico de interações (Cobrança) da parcela. */
-export class ActivityInteractionHistoryItem {
-  @ApiProperty()
-  id: string;
-
-  @ApiProperty({ example: 'client_visit' })
-  channel: string;
-
-  @ApiProperty({ example: 'no_return' })
-  result: string;
-
-  @ApiPropertyOptional()
-  observation?: string;
-
-  @ApiPropertyOptional({ type: String, format: 'date' })
-  promiseDate?: Date;
-
-  @ApiProperty({ type: String, format: 'date-time' })
-  createdAt: Date;
-
-  @ApiProperty({ type: HistoryAuthor })
-  author: HistoryAuthor;
-
-  @ApiPropertyOptional({ type: Geolocation })
-  geolocation?: Geolocation;
-}
-
-/** Histórico da régua de cobrança (activity) da parcela. */
-export class ActivityHistory {
-  @ApiProperty({
-    type: [ActivityTaskSummary],
-    description:
-      'Tasks da régua, mais recente primeiro (a 1ª é a tarefa atual).',
-  })
-  tasks: ActivityTaskSummary[];
-
-  @ApiProperty({
-    type: [ActivityInteractionHistoryItem],
-    description: 'Interações registradas, mais recente primeiro.',
-  })
-  interactions: ActivityInteractionHistoryItem[];
 }
 
 /** Dados do contrato no detalhe. */
@@ -168,12 +122,6 @@ export class CollectionDetail {
 
   @ApiProperty({ type: InstallmentDetailInfo })
   installment: InstallmentDetailInfo;
-
-  @ApiProperty({
-    type: ActivityHistory,
-    description: 'Cobrança: tasks + interações da régua dessa parcela.',
-  })
-  activity: ActivityHistory;
 
   @ApiProperty({
     type: [FollowUpHistoryItem],

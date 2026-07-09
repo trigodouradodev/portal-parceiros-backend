@@ -22,7 +22,6 @@ import {
   RESULTS_BY_TASK_TYPE,
 } from './enums/activity.enums';
 import {
-  ActivityInteractionResponse,
   RegisterInteractionResult,
   TaskActionResult,
 } from './interfaces/activity-interaction.interface';
@@ -32,17 +31,16 @@ import {
   QueueRow,
   TaskActionRow,
 } from './interfaces/activity-row.interface';
+import { SegmentSummary, TodayQueue } from './interfaces/task-queue.interface';
+import { InstallmentDetail } from './interfaces/installment-detail.interface';
+import { ResponsibleType } from '../collections/interfaces/responsible.interface';
+import { daysOverdue, toNum } from './activities.util';
 import {
-  QueueTaskCard,
-  SegmentSummary,
-  TodayQueue,
-} from './interfaces/task-queue.interface';
-
-function toNum(value: unknown): number {
-  if (value === null || value === undefined) return 0;
-  if (typeof value === 'bigint') return Number(value);
-  return Number(value);
-}
+  mapAddress,
+  mapCard,
+  mapInteraction,
+  mapTaskAction,
+} from './activities.mapper';
 
 @Injectable()
 export class ActivitiesService {
@@ -140,12 +138,12 @@ export class ActivitiesService {
     );
 
     return {
-      active: activeRow ? this.mapCard(activeRow, 1) : null,
+      active: activeRow ? mapCard(activeRow, 1) : null,
       counter,
       segments,
       locked: {
         items: lockedRows.map((row, i) =>
-          this.mapCard(row, activeOffset + offset + i + 1),
+          mapCard(row, activeOffset + offset + i + 1),
         ),
         pagination: {
           page,
@@ -155,8 +153,209 @@ export class ActivitiesService {
           hasNextPage: page < totalPages,
         },
       },
-      scheduled: scheduledRows.map((row) => this.mapCard(row, 0)),
-      completedToday: completedRows.map((row) => this.mapCard(row, 0)),
+      scheduled: scheduledRows.map((row) => mapCard(row, 0)),
+      completedToday: completedRows.map((row) => mapCard(row, 0)),
+    };
+  }
+
+  /**
+   * Detalhe da PARCELA (por installmentId): contrato, cliente, responsável e o histórico
+   * completo de tarefas da parcela — cada uma com a sua interação. Escopado por hierarquia;
+   * fora do escopo ou inexistente → 404 (não revela existência).
+   */
+  async getInstallmentDetail(
+    installmentId: string,
+    viewer: ScopeViewer,
+  ): Promise<InstallmentDetail> {
+    const installment = await this.prisma.installments.findUnique({
+      where: { id: installmentId },
+      select: {
+        installment_number: true,
+        due_date: true,
+        total_amount: true,
+        pending_amount: true,
+        status: true,
+        contract_id: true,
+      },
+    });
+    if (!installment) throw new NotFoundException('installment_not_found');
+    const contractId = installment.contract_id;
+    if (!contractId) throw new NotFoundException('installment_not_found');
+
+    const canView = await this.scope.canViewContract(contractId, viewer, [
+      PermissionKey.INSTALLMENT_VIEW_ALL,
+    ]);
+    if (!canView) throw new NotFoundException('installment_not_found');
+
+    const contract = await this.prisma.contracts.findUnique({
+      where: { id: contractId },
+      select: {
+        contract_number: true,
+        total_amount: true,
+        total_installments: true,
+        disbursement_date: true,
+        current_collection_agent_id: true,
+        companies: { select: { name: true } },
+        clients: {
+          select: {
+            name: true,
+            tax_id: true,
+            phone: true,
+            addresses: {
+              select: {
+                street: true,
+                number: true,
+                complement: true,
+                neighborhood: true,
+                city: true,
+                state: true,
+                zip_code: true,
+              },
+              orderBy: [
+                { is_primary: { sort: 'desc', nulls: 'last' } },
+                { created_at: 'desc' },
+              ],
+              take: 1,
+            },
+          },
+        },
+      },
+    });
+    if (!contract) throw new NotFoundException('installment_not_found');
+
+    // Fim do contrato = vencimento da última parcela.
+    const lastInstallment = await this.prisma.installments.aggregate({
+      where: { contract_id: contractId },
+      _max: { due_date: true },
+    });
+
+    // Histórico completo de tarefas da parcela, cada uma com a sua interação.
+    const tasks = await this.prisma.activity_tasks.findMany({
+      where: { installment_id: installmentId },
+      orderBy: { created_at: 'desc' },
+      select: {
+        id: true,
+        assigned_to: true,
+        segment_code: true,
+        task_type: true,
+        status: true,
+        created_by: true,
+        expire_date: true,
+        was_postponed: true,
+        was_rescheduled: true,
+        created_at: true,
+        completed_at: true,
+        system_closed_at: true,
+        cancelled_at: true,
+        cancellation_reason: true,
+        activity_ruler_stages: {
+          select: { priority: true, tone: true, badge_label: true },
+        },
+        trigo_users_activity_tasks_assigned_toTotrigo_users: {
+          select: { id: true, full_name: true },
+        },
+        activity_interactions: {
+          select: {
+            id: true,
+            channel: true,
+            recipient_type: true,
+            result: true,
+            promise_date: true,
+            observation: true,
+            created_at: true,
+            trigo_users: { select: { id: true, full_name: true } },
+            geolocations: { select: { latitude: true, longitude: true } },
+          },
+        },
+      },
+    });
+
+    const totalInstallments = Number(contract.total_installments ?? 0);
+    const instNumber = Number(installment.installment_number);
+    // Responsável atual = assigned_to da tarefa mais recente.
+    const latest = tasks[0];
+    const assignee =
+      latest?.trigo_users_activity_tasks_assigned_toTotrigo_users;
+
+    return {
+      installment: {
+        id: installmentId,
+        number: instNumber,
+        label: `${instNumber}/${totalInstallments}`,
+        dueDate: installment.due_date,
+        daysOverdue: daysOverdue(installment.due_date),
+        pendingAmount: toNum(installment.pending_amount),
+        totalAmount: toNum(installment.total_amount),
+        status: installment.status,
+      },
+      contract: {
+        id: contractId,
+        number: contract.contract_number,
+        totalInstallments,
+        totalAmount: toNum(contract.total_amount),
+        startDate: contract.disbursement_date ?? undefined,
+        endDate: lastInstallment._max.due_date ?? undefined,
+        companyName: contract.companies?.name ?? undefined,
+      },
+      client: {
+        name: contract.clients.name,
+        taxId: contract.clients.tax_id,
+        phone: contract.clients.phone ?? undefined,
+        address: mapAddress(contract.clients.addresses[0]),
+      },
+      responsible: assignee
+        ? {
+            id: assignee.id,
+            name: assignee.full_name,
+            type:
+              latest?.assigned_to === contract.current_collection_agent_id
+                ? ResponsibleType.COLLECTION_AGENT
+                : ResponsibleType.CONSULTANT,
+          }
+        : null,
+      tasks: tasks.map((t) => ({
+        id: t.id,
+        segmentCode: t.segment_code,
+        segmentBadgeLabel: t.activity_ruler_stages?.badge_label ?? undefined,
+        priority: Number(t.activity_ruler_stages?.priority ?? 0),
+        tone: t.activity_ruler_stages?.tone ?? '',
+        taskType: t.task_type,
+        status: t.status,
+        createdBy: t.created_by,
+        expireDate: t.expire_date,
+        wasPostponed: t.was_postponed,
+        wasRescheduled: t.was_rescheduled,
+        createdAt: t.created_at,
+        completedAt: t.completed_at ?? undefined,
+        systemClosedAt: t.system_closed_at ?? undefined,
+        cancelledAt: t.cancelled_at ?? undefined,
+        cancellationReason: t.cancellation_reason ?? undefined,
+        interaction: t.activity_interactions
+          ? {
+              id: t.activity_interactions.id,
+              channel: t.activity_interactions.channel,
+              recipientType: t.activity_interactions.recipient_type,
+              result: t.activity_interactions.result,
+              promiseDate: t.activity_interactions.promise_date ?? undefined,
+              observation: t.activity_interactions.observation ?? undefined,
+              createdAt: t.activity_interactions.created_at,
+              author: {
+                id: t.activity_interactions.trigo_users.id,
+                name: t.activity_interactions.trigo_users.full_name,
+              },
+              geolocation: t.activity_interactions.geolocations
+                ? {
+                    latitude: toNum(
+                      t.activity_interactions.geolocations.latitude,
+                    ),
+                    longitude: toNum(
+                      t.activity_interactions.geolocations.longitude,
+                    ),
+                  }
+                : undefined,
+            }
+          : null,
+      })),
     };
   }
 
@@ -347,7 +546,7 @@ export class ActivitiesService {
         RETURNING id, task_id, installment_id, contract_id, task_type, channel, recipient_type,
                   recipient_contact_id, result, promise_date, observation, user_id, created_at
       `;
-      const interaction = this.mapInteraction(rows[0]);
+      const interaction = mapInteraction(rows[0]);
 
       if (dto.latitude !== undefined && dto.longitude !== undefined) {
         await tx.$executeRaw`
@@ -377,7 +576,7 @@ export class ActivitiesService {
         RETURNING id, installment_id, contract_id, segment_code, task_type, status,
                   expire_date, was_postponed, was_rescheduled
       `;
-      return this.mapTaskAction(rows[0]);
+      return mapTaskAction(rows[0]);
     });
   }
 
@@ -403,7 +602,7 @@ export class ActivitiesService {
         RETURNING id, installment_id, contract_id, segment_code, task_type, status,
                   expire_date, was_postponed, was_rescheduled
       `;
-      return this.mapTaskAction(rows[0]);
+      return mapTaskAction(rows[0]);
     });
   }
 
@@ -517,90 +716,5 @@ export class ActivitiesService {
               AND CURRENT_DATE + ${RESCHEDULE_MAX_DAYS}::int) AS ok
     `;
     if (!row?.ok) throw new BadRequestException('reschedule_out_of_window');
-  }
-
-  // ---- mappers (row → DTO) ---------------------------------------------------
-
-  private mapInteraction(row: InteractionRow): ActivityInteractionResponse {
-    return {
-      id: row.id,
-      taskId: row.task_id,
-      installmentId: row.installment_id,
-      contractId: row.contract_id,
-      taskType: row.task_type,
-      channel: row.channel,
-      recipientType: row.recipient_type,
-      recipientContactId: row.recipient_contact_id ?? undefined,
-      result: row.result,
-      promiseDate: row.promise_date ?? undefined,
-      observation: row.observation ?? undefined,
-      userId: row.user_id,
-      createdAt: row.created_at,
-    };
-  }
-
-  private mapTaskAction(row: TaskActionRow): TaskActionResult {
-    return {
-      id: row.id,
-      installmentId: row.installment_id,
-      contractId: row.contract_id,
-      segmentCode: row.segment_code,
-      taskType: row.task_type,
-      status: row.status,
-      expireDate: row.expire_date,
-      wasPostponed: row.was_postponed,
-      wasRescheduled: row.was_rescheduled,
-    };
-  }
-
-  private mapCard(row: QueueRow, position: number): QueueTaskCard {
-    const totalInstallments = Number(row.total_installments ?? 0);
-    const installmentNumber = Number(row.installment_number);
-    const pendingAmount = toNum(row.pending_amount);
-    return {
-      position,
-      taskId: row.task_id,
-      segmentCode: row.segment_code,
-      priority: Number(row.priority ?? 0),
-      tone: row.tone ?? '',
-      taskType: row.task_type,
-      status: row.status,
-      isActive: row.is_active,
-      assignedTo: row.assigned_to_id
-        ? { id: row.assigned_to_id, name: row.assigned_to_name ?? '' }
-        : null,
-      expireDate: row.expire_date,
-      wasPostponed: row.was_postponed,
-      wasRescheduled: row.was_rescheduled,
-      client: {
-        name: row.client_name,
-        taxId: row.client_tax_id,
-        phone: row.client_phone ?? undefined,
-      },
-      contract: {
-        id: row.contract_id,
-        number: row.contract_number,
-        totalInstallments,
-        companyName: row.company_name ?? undefined,
-      },
-      installment: {
-        id: row.installment_id,
-        number: installmentNumber,
-        label: `${installmentNumber}/${totalInstallments}`,
-        dueDate: row.due_date,
-        daysOverdue: Number(row.days_overdue),
-        pendingAmount,
-        // TODO(RN-023): valor corrigido hoje (juros + correção). Sem cálculo no portal ainda.
-        amountOverdue: pendingAmount,
-        totalAmount: toNum(row.total_amount),
-      },
-      lastInteraction: row.last_result
-        ? {
-            result: row.last_result,
-            channel: row.last_channel ?? '',
-            createdAt: row.last_created_at as Date,
-          }
-        : null,
-    };
   }
 }

@@ -591,36 +591,6 @@ export class CollectionsService {
       },
     });
 
-    // Cobrança: a régua (tasks) e as interações registradas dessa parcela.
-    const tasks = await this.prisma.activity_tasks.findMany({
-      where: { installment_id: installment.id },
-      orderBy: { created_at: 'desc' },
-      select: {
-        id: true,
-        segment_code: true,
-        task_type: true,
-        status: true,
-        created_at: true,
-        completed_at: true,
-        activity_ruler_stages: { select: { badge_label: true } },
-      },
-    });
-
-    const interactions = await this.prisma.activity_interactions.findMany({
-      where: { installment_id: installment.id },
-      orderBy: { created_at: 'desc' },
-      select: {
-        id: true,
-        channel: true,
-        result: true,
-        observation: true,
-        promise_date: true,
-        created_at: true,
-        trigo_users: { select: { id: true, full_name: true } },
-        geolocations: { select: { latitude: true, longitude: true } },
-      },
-    });
-
     const addr = contract.clients.addresses[0];
     // Responsável pela parcela: agente de cobrança; na ausência, cai para o
     // consultor do contrato. `type` indica a origem.
@@ -675,32 +645,6 @@ export class CollectionsService {
         totalAmount: toNum(installment.total_amount),
         pendingAmount: toNum(installment.pending_amount),
         status: installment.status,
-      },
-      activity: {
-        tasks: tasks.map((t) => ({
-          id: t.id,
-          segmentCode: t.segment_code,
-          segmentBadgeLabel: t.activity_ruler_stages?.badge_label ?? '',
-          taskType: t.task_type,
-          status: t.status,
-          createdAt: t.created_at,
-          completedAt: t.completed_at ?? undefined,
-        })),
-        interactions: interactions.map((i) => ({
-          id: i.id,
-          channel: i.channel,
-          result: i.result,
-          observation: i.observation ?? undefined,
-          promiseDate: i.promise_date ?? undefined,
-          createdAt: i.created_at,
-          author: { id: i.trigo_users.id, name: i.trigo_users.full_name },
-          geolocation: i.geolocations
-            ? {
-                latitude: toNum(i.geolocations.latitude),
-                longitude: toNum(i.geolocations.longitude),
-              }
-            : undefined,
-        })),
       },
       followups: followUps.map(
         (f): FollowUpHistoryItem => ({
