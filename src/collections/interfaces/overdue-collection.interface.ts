@@ -7,23 +7,23 @@ export class ActivityTaskSummary {
   id: string;
 
   @ApiProperty({
-    example: 'warning',
+    example: 'mid',
     description:
-      'Estágio da régua: friendly | assertive | warning | defaulted.',
+      'Segmento da régua: recent | broken_promise | fpd | early | mid | post_letter | pre_default.',
   })
-  stageCode: string;
+  segmentCode: string;
 
   @ApiProperty({
-    example: 'Advertência',
-    description: 'Label do estágio para exibição (badge).',
+    example: 'Atraso médio',
+    description: 'Label do segmento para exibição (badge).',
   })
-  stageBadgeLabel: string;
+  segmentBadgeLabel: string;
 
   @ApiProperty({
-    example: 'whatsapp_message',
-    description: 'Canal: whatsapp_message | client_call | client_visit.',
+    example: 'contact',
+    description: 'Tipo da tarefa: contact | visit.',
   })
-  channel: string;
+  taskType: string;
 
   @ApiProperty({
     example: 'pending',
