@@ -1,5 +1,6 @@
 /** Mappers puros (row do Postgres → DTO de resposta) do módulo de activities. */
 
+import { Prisma } from '@prisma/client';
 import { ClientAddress } from '../collections/interfaces/overdue-collection.interface';
 import {
   ActivityInteractionResponse,
@@ -9,10 +10,12 @@ import {
   InteractionRow,
   QueueRow,
   RawAddress,
+  RawGuarantor,
   TaskActionRow,
 } from './interfaces/activity-row.interface';
+import { DetailGuarantor } from './interfaces/installment-detail.interface';
 import { QueueTaskCard } from './interfaces/task-queue.interface';
-import { toNum } from './activities.util';
+import { onlyDigits, toNum } from './activities.util';
 
 export function mapInteraction(
   row: InteractionRow,
@@ -96,6 +99,45 @@ export function mapCard(row: QueueRow, position: number): QueueTaskCard {
           createdAt: row.last_created_at as Date,
         }
       : null,
+  };
+}
+
+/**
+ * Avalista a partir do jsonb `quotes.guarantor`. Retorna null quando não há
+ * proposta vinculada, quando ela não tem avalista, ou quando o objeto está lá
+ * mas sem identificação (nome e documento vazios) — caso visto em propostas
+ * onde o bloco foi aberto e não preenchido.
+ *
+ * O endereço do avalista usa chaves DIFERENTES das de `addresses` (streetName /
+ * streetDistrict / zipCode vs street / neighborhood / zip_code), por isso não dá
+ * pra reusar o mapAddress aqui.
+ */
+export function mapGuarantor(
+  raw: Prisma.JsonValue | null | undefined,
+): DetailGuarantor | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const guarantor = raw as RawGuarantor;
+  const name = guarantor.name?.trim() ?? '';
+  const taxId = onlyDigits(guarantor.document);
+  if (!name && !taxId) return null;
+
+  const address = guarantor.address;
+  return {
+    name,
+    taxId,
+    phone: guarantor.telephone ?? undefined,
+    email: guarantor.email ?? undefined,
+    address: address?.streetName
+      ? {
+          street: address.streetName,
+          number: address.streetNumber ?? '',
+          complement: address.streetComplement ?? undefined,
+          neighborhood: address.streetDistrict ?? '',
+          city: address.city ?? '',
+          state: address.state ?? undefined,
+          zipCode: address.zipCode ?? '',
+        }
+      : undefined,
   };
 }
 

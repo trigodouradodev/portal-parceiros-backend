@@ -38,6 +38,7 @@ import { daysOverdue, toNum } from './activities.util';
 import {
   mapAddress,
   mapCard,
+  mapGuarantor,
   mapInteraction,
   mapTaskAction,
 } from './activities.mapper';
@@ -196,6 +197,7 @@ export class ActivitiesService {
         disbursement_date: true,
         current_collection_agent_id: true,
         companies: { select: { name: true } },
+        quotes: { select: { guarantor: true } },
         clients: {
           select: {
             name: true,
@@ -303,6 +305,7 @@ export class ActivitiesService {
         phone: contract.clients.phone ?? undefined,
         address: mapAddress(contract.clients.addresses[0]),
       },
+      guarantor: mapGuarantor(contract.quotes?.guarantor),
       responsible: assignee
         ? {
             id: assignee.id,

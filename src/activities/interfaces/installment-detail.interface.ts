@@ -187,8 +187,34 @@ export class DetailClient {
 }
 
 /**
- * Detalhe da PARCELA: contrato, cliente, responsável e o histórico completo de tarefas
- * da parcela — cada uma com a sua interação.
+ * Contato do avalista da proposta que originou o contrato.
+ * Origem: `quotes.guarantor` (jsonb preenchido pelo backoffice na proposta) —
+ * não há tabela de avalistas, e o vínculo é `contracts.quote_id → quotes.id`.
+ */
+export class DetailGuarantor {
+  @ApiProperty()
+  name: string;
+
+  @ApiProperty({
+    example: '12345678901',
+    description:
+      'Só dígitos: no jsonb o CPF vem como o consultor digitou (com ou sem máscara).',
+  })
+  taxId: string;
+
+  @ApiPropertyOptional({ example: '11987654321' })
+  phone?: string;
+
+  @ApiPropertyOptional({ example: 'avalista@email.com' })
+  email?: string;
+
+  @ApiPropertyOptional({ type: ClientAddress })
+  address?: ClientAddress;
+}
+
+/**
+ * Detalhe da PARCELA: contrato, cliente, avalista, responsável e o histórico completo
+ * de tarefas da parcela — cada uma com a sua interação.
  */
 export class InstallmentDetail {
   @ApiProperty({ type: DetailInstallment })
@@ -199,6 +225,14 @@ export class InstallmentDetail {
 
   @ApiProperty({ type: DetailClient })
   client: DetailClient;
+
+  @ApiProperty({
+    type: DetailGuarantor,
+    nullable: true,
+    description:
+      'Avalista da proposta; null quando o contrato não veio de uma proposta ou ela não tem avalista.',
+  })
+  guarantor: DetailGuarantor | null;
 
   @ApiProperty({
     type: ContractResponsible,
