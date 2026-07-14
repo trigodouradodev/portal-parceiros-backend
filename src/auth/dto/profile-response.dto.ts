@@ -1,6 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-/** Perfil do usuário autenticado retornado por GET /auth/me. */
 export class ProfileResponseDto {
   @ApiProperty({ format: 'uuid' })
   id: string;
@@ -10,6 +9,9 @@ export class ProfileResponseDto {
 
   @ApiProperty({ example: 'Maria Souza' })
   full_name: string;
+
+  @ApiPropertyOptional({ example: '11987654321', nullable: true })
+  phone_number: string | null;
 
   @ApiProperty({ example: 'ROLE_CONSULTANT', description: 'Papel do usuário.' })
   role: string;
