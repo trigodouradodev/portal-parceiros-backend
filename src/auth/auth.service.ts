@@ -8,6 +8,7 @@ import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { trigo_users } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
+import { UpdateProfileDto } from '../users/dto/update-profile.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
 
@@ -66,6 +67,12 @@ export class AuthService {
     return { ...this.toPublicUser(user), permissions };
   }
 
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const user = await this.usersService.updateProfile(userId, dto);
+    const permissions = await this.usersService.getPermissionKeys(user.id);
+    return { ...this.toPublicUser(user), permissions };
+  }
+
   private async generateTokens(
     user: trigo_users,
     permissions: string[],
@@ -100,6 +107,7 @@ export class AuthService {
       id: user.id,
       email: user.email,
       full_name: user.full_name,
+      phone_number: user.phone_number,
       role: user.role,
     };
   }
