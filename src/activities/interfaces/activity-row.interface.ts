@@ -16,6 +16,29 @@ export interface RawAddress {
   zip_code: string;
 }
 
+/**
+ * Shape do objeto `quotes.guarantor` (jsonb). Chaves em camelCase, espelhando o
+ * type da proposta no backoffice. Nada é garantido: o jsonb é escrito lá e não
+ * tem constraint — todo campo é tratado como possivelmente ausente.
+ */
+export interface RawGuarantor {
+  name?: string;
+  document?: string;
+  telephone?: string;
+  email?: string;
+  birthDate?: string;
+  address?: {
+    zipCode?: string;
+    streetName?: string;
+    streetNumber?: string;
+    streetComplement?: string;
+    streetDistrict?: string;
+    city?: string;
+    state?: string;
+    referencePoint?: string;
+  };
+}
+
 /** Linha lockada da tarefa (o mínimo p/ validar e executar uma ação). */
 export interface LockedTaskRow {
   id: string;

@@ -7,6 +7,11 @@ export function toNum(value: unknown): number {
   return Number(value);
 }
 
+/** Mantém só os dígitos (CPF/telefone digitados à mão, com ou sem máscara). */
+export function onlyDigits(value: string | undefined): string {
+  return value ? value.replace(/\D/g, '') : '';
+}
+
 /** Dias inteiros de atraso (UTC, consistente com CURRENT_DATE - due_date do banco). */
 export function daysOverdue(dueDate: Date): number {
   const MS = 86400000;
