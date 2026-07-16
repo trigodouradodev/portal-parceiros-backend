@@ -2,8 +2,6 @@ name: Deploy Prod
 
 on:
   workflow_dispatch:
-  release:
-    types: [published]
 
 env:
   AWS_REGION: sa-east-1
