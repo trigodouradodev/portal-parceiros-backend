@@ -1,6 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiInternalServerErrorResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -11,6 +12,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PerformanceService } from './performance.service';
 import { PartnerProfile } from './interfaces/partner-profile.interface';
+import { PartnerProgram } from './interfaces/partner-program.interface';
 
 @ApiTags('performance')
 @ApiBearerAuth('access-token')
@@ -43,5 +45,31 @@ export class PerformanceController {
       user.sub,
       user.permissions,
     );
+  }
+
+  /**
+   * Parâmetros do Programa de Parceiros Exclusivos: níveis, faixas dos 3 pilares
+   * de bônus, marcos de permanência e bônus de boas-vindas.
+   *
+   * É o insumo do simulador do front, que avalia as faixas localmente — a cada
+   * arrasto de slider — em vez de bater no servidor. Também é a base da tabela
+   * comparativa entre níveis.
+   *
+   * Sem `@RequirePermissions`: são os parâmetros do programa, iguais para todo
+   * parceiro e sem nenhum dado de carteira. Vale para quem não está inscrito,
+   * então não replica o 404 de `/me`.
+   */
+  @ApiOperation({
+    summary: 'Níveis, faixas de bônus e marcos do programa (parâmetros).',
+  })
+  @ApiOkResponse({ type: PartnerProgram })
+  @ApiInternalServerErrorResponse({
+    description:
+      'Parâmetros mal cadastrados no banco — régua de bônus com buraco ou ' +
+      'sobreposição, ou config do bônus de boas-vindas ausente/inválida.',
+  })
+  @Get('program')
+  getProgram() {
+    return this.performanceService.getProgram();
   }
 }
