@@ -216,6 +216,7 @@ model clients {
   updated_at                 DateTime                     @default(now()) @db.Timestamptz(6)
   contact_preference         String?                      @db.VarChar(255)
   otp_secret                 String?                      @db.VarChar
+  email_checked              Boolean                      @default(false)
   addresses                  addresses[]
   bank_accounts              bank_accounts[]
   client_auth_credentials    client_auth_credentials?
@@ -1292,6 +1293,10 @@ model renegotiation_simulations {
   decision_date                                                    DateTime?    @db.Timestamptz(6)
   decision_reason                                                  String?
   status                                                           String       @default("pending")
+  type                                                             String?
+  down_payment_amount                                              Decimal?     @db.Decimal(15, 2)
+  down_payment_date                                                DateTime?    @db.Date
+  discount_amount                                                  Decimal?     @default(0) @db.Decimal(15, 2)
   contracts                                                        contracts    @relation(fields: [contract_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "renegotiation_simulations_contract_id_foreign")
   trigo_users_renegotiation_simulations_decision_userTotrigo_users trigo_users? @relation("renegotiation_simulations_decision_userTotrigo_users", fields: [decision_user], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "renegotiation_simulations_decision_user_foreign")
   trigo_users_renegotiation_simulations_proposed_byTotrigo_users   trigo_users? @relation("renegotiation_simulations_proposed_byTotrigo_users", fields: [proposed_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "renegotiation_simulations_proposed_by_foreign")
@@ -1335,6 +1340,9 @@ model renegotiations {
   created_at                   DateTime                       @default(now()) @db.Timestamptz(6)
   updated_at                   DateTime                       @default(now()) @db.Timestamptz(6)
   cobransaas_agreement_id      String?                        @db.VarChar
+  type                         String?
+  down_payment_amount          Decimal?                       @db.Decimal(15, 2)
+  down_payment_date            DateTime?                      @db.Date
   installments                 installments[]
   renegotiation_status_history renegotiation_status_history[]
   trigo_users                  trigo_users?                   @relation(fields: [approved_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "renegotiations_approved_by_foreign")
@@ -1536,6 +1544,7 @@ model trigo_users {
   form_edit_history                                                              form_edit_history[]
   installment_followups                                                          installment_followups[]
   loan_quotes                                                                    loan_quotes[]
+  partner_enrollments                                                            partner_enrollments?
   quote_approval_history                                                         quote_approval_history[]
   quote_approvals                                                                quote_approvals[]
   quote_edit_history                                                             quote_edit_history[]
@@ -1817,6 +1826,59 @@ model serasa_cache {
   updated_at DateTime @default(now()) @db.Timestamptz(6)
 
   @@index([document], map: "serasa_cache_document_index")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model partner_bonus_bands {
+  id            String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  pillar        String   @db.VarChar(20)
+  min_value     Decimal  @db.Decimal(7, 4)
+  min_inclusive Boolean
+  max_value     Decimal? @db.Decimal(7, 4)
+  max_inclusive Boolean
+  bonus_percent Decimal  @db.Decimal(7, 4)
+  sort_order    Int
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([pillar, sort_order], map: "partner_bonus_bands_order_unique")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model partner_enrollments {
+  id               String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id          String         @unique(map: "partner_enrollments_current_unique", where: raw("(effective_to IS NULL)")) @db.Uuid
+  partner_level_id String         @db.Uuid
+  effective_from   DateTime       @db.Date
+  effective_to     DateTime?      @db.Date
+  created_at       DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime       @default(now()) @db.Timestamptz(6)
+  partner_levels   partner_levels @relation(fields: [partner_level_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "partner_enrollments_partner_level_id_foreign")
+  trigo_users      trigo_users    @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "partner_enrollments_user_id_foreign")
+
+  @@index([partner_level_id], map: "partner_enrollments_partner_level_id_index")
+  @@index([user_id], map: "partner_enrollments_user_id_index")
+}
+
+model partner_levels {
+  id                    String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  key                   String                @unique(map: "partner_levels_key_unique") @db.VarChar(20)
+  name                  String                @db.VarChar(50)
+  monthly_target_amount Decimal               @db.Decimal(15, 2)
+  monthly_fixed_amount  Decimal               @db.Decimal(15, 2)
+  sort_order            Int                   @unique(map: "partner_levels_sort_order_unique")
+  is_active             Boolean               @default(true)
+  created_at            DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime              @default(now()) @db.Timestamptz(6)
+  partner_enrollments   partner_enrollments[]
+}
+
+model partner_permanence_milestones {
+  id               String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  month_number     Int      @unique(map: "partner_permanence_milestones_month_number_unique")
+  fixed_multiplier Decimal  @db.Decimal(5, 2)
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime @default(now()) @db.Timestamptz(6)
 }
 
 enum message_status_enum {

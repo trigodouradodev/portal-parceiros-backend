@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { toNum } from '../common/query.util';
 import { ScopeService, ScopeViewer } from '../scope/scope.service';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import {
@@ -104,13 +105,6 @@ interface UpcomingRow extends Omit<
   days_until_due: number;
   followup_count: number;
   latest_followup_status: string | null;
-}
-
-/** Coerção robusta de valores numéricos do $queryRaw (Decimal/string/bigint). */
-function toNum(value: unknown): number {
-  if (value === null || value === undefined) return 0;
-  if (typeof value === 'bigint') return Number(value);
-  return Number(value);
 }
 
 /** Campos de endereço presentes em ambas as linhas (overdue e upcoming). */

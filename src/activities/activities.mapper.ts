@@ -15,7 +15,8 @@ import {
 } from './interfaces/activity-row.interface';
 import { DetailGuarantor } from './interfaces/installment-detail.interface';
 import { QueueTaskCard } from './interfaces/task-queue.interface';
-import { onlyDigits, toNum } from './activities.util';
+import { toNum } from '../common/query.util';
+import { onlyDigits } from './activities.util';
 
 export function mapInteraction(
   row: InteractionRow,

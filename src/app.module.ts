@@ -6,6 +6,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { HealthModule } from './health/health.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { PerformanceModule } from './performance/performance.module';
 import { CollectionsModule } from './collections/collections.module';
 import { ActivitiesModule } from './activities/activities.module';
 import { FollowUpModule } from './follow-up/follow-up.module';
@@ -27,6 +28,7 @@ import { envValidationSchema } from './config/env.validation';
     AuthModule,
     HealthModule,
     DashboardModule,
+    PerformanceModule,
     CollectionsModule,
     ActivitiesModule,
     FollowUpModule,
