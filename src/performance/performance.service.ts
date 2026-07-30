@@ -7,14 +7,24 @@ import { PrismaService } from '../prisma/prisma.service';
 import { toNum } from '../common/query.util';
 import { PartnerProfile } from './interfaces/partner-profile.interface';
 import { PartnerProgram } from './interfaces/partner-program.interface';
+import { CurrentPerformance } from './interfaces/current-performance.interface';
 import {
   BonusBandRow,
+  DelinquencyRow,
   EnrollmentRow,
+  OriginationRow,
   PermanenceMilestone,
   ProgramLevelRow,
 } from './interfaces/performance-row.interface';
-import { mapPartnerProfile, mapPartnerProgram } from './performance.mapper';
-import { findBandCoverageDefect } from './performance.util';
+import {
+  mapCurrentPerformance,
+  mapPartnerProfile,
+  mapPartnerProgram,
+} from './performance.mapper';
+import {
+  findBandCoverageDefect,
+  partnershipMonthNumber,
+} from './performance.util';
 
 /** Chave em `system_configs` do bônus de boas-vindas (R$). */
 const WELCOME_BONUS_CONFIG_KEY = 'PERFORMANCE_WELCOME_BONUS_AMOUNT';
@@ -60,7 +70,48 @@ export class PerformanceService {
    * banco é o backoffice poder mudar sem deploy, o que um cache em memória
    * anularia. Se aparecer na latência, um TTL curto resolve.
    */
-  async getProgram(): Promise<PartnerProgram> {
+  getProgram(): Promise<PartnerProgram> {
+    return this.loadProgram();
+  }
+
+  /**
+   * Desempenho real do mês corrente do parceiro logado: originação contra a
+   * meta, inadimplência da carteira e taxa média praticada — cada um já com o
+   * bônus que destravou — mais a comissão resultante.
+   *
+   * As metas são individuais: sem expansão de subárvore, nada de ScopeService.
+   * Originação e taxa média olham só o que ele originou (`consultant_id`); a
+   * carteira da inadimplência inclui também o que ele cobra
+   * (`current_collection_agent_id`). A assimetria é intencional.
+   */
+  async getCurrentPerformance(userId: string): Promise<CurrentPerformance> {
+    const enrollment = await this.findCurrentEnrollment(userId);
+    if (!enrollment) throw new NotFoundException('partner_not_enrolled');
+    if (enrollment.started_at > enrollment.reference_date) {
+      throw new NotFoundException('partner_not_enrolled');
+    }
+
+    const [program, origination, delinquency] = await Promise.all([
+      this.loadProgram(),
+      this.findMonthOrigination(userId),
+      this.findPortfolioDelinquency(userId),
+    ]);
+
+    return mapCurrentPerformance({
+      origination,
+      delinquency,
+      program,
+      monthlyTarget: toNum(enrollment.monthly_target),
+      monthlyFixed: toNum(enrollment.monthly_fixed),
+      monthNumber: partnershipMonthNumber(
+        enrollment.started_at,
+        enrollment.reference_date,
+      ),
+    });
+  }
+
+  /** Lê os parâmetros do programa e valida as réguas antes de devolver. */
+  private async loadProgram(): Promise<PartnerProgram> {
     const [welcomeBonusAmount, levels, bands, milestones] = await Promise.all([
       this.findWelcomeBonusAmount(),
       this.findActiveLevels(),
@@ -165,6 +216,81 @@ export class PerformanceService {
         bonus_percent: true,
       },
     });
+  }
+
+  /**
+   * Originação do mês corrente e taxa média praticada nela.
+   *
+   * Só o que o parceiro originou (`consultant_id`) — a meta é individual, sem
+   * subárvore. Status `disbursed`/`closed` são os desembolsos válidos: `closed`
+   * entra porque um contrato quitado dentro do próprio mês continua sendo
+   * originação daquele mês.
+   *
+   * `avg_rate` é média simples de `loan_terms.interest_rate`, em fração; volta
+   * null quando não houve originação no mês.
+   */
+  private async findMonthOrigination(userId: string): Promise<OriginationRow> {
+    const [row] = await this.prisma.$queryRaw<OriginationRow[]>`
+      SELECT
+        to_char(date_trunc('month', CURRENT_DATE), 'YYYY-MM') AS month,
+        date_trunc('month', CURRENT_DATE)::date               AS period_start,
+        CURRENT_DATE                                          AS period_end,
+        COUNT(*)                                              AS origination_count,
+        COALESCE(SUM(c.total_amount), 0)                      AS origination_amount,
+        AVG(lt.interest_rate)                                 AS avg_rate
+      FROM contracts c
+      JOIN loan_terms lt ON lt.id = c.loan_terms_id
+      WHERE c.status IN ('disbursed', 'closed')
+        AND c.consultant_id = ${userId}::uuid
+        AND c.disbursement_date >= date_trunc('month', CURRENT_DATE)
+        AND c.disbursement_date <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+    `;
+    return row;
+  }
+
+  /**
+   * Inadimplência da carteira: saldo já vencido e saldo total em aberto.
+   *
+   * Inadimplência simples por valor, "de hoje pra trás" — parcela em aberto com
+   * `due_date < CURRENT_DATE`. NÃO usa a regra de arrasto que o dashboard aplica
+   * (atraso > 30d puxando o saldo inteiro do contrato): são modelos diferentes
+   * de propósito, e aqui as faixas de bônus são apertadas demais para o arrasto.
+   *
+   * Carteira inclui o que ele cobra, não só o que originou — por isso o OR com
+   * `current_collection_agent_id`.
+   *
+   * Saldo = `total_amount - total_paid` (espelha o dashboard; não usa
+   * `pending_amount`, que pondera desconto e pagamento em curso).
+   */
+  private async findPortfolioDelinquency(
+    userId: string,
+  ): Promise<DelinquencyRow> {
+    const [row] = await this.prisma.$queryRaw<DelinquencyRow[]>`
+      SELECT
+        COALESCE(SUM(
+          CASE
+            WHEN i.status IN ('not_paid', 'partially_paid')
+             AND i.due_date < CURRENT_DATE
+            THEN i.total_amount - i.total_paid
+            ELSE 0
+          END
+        ), 0) AS overdue_amount,
+        COALESCE(SUM(
+          CASE
+            WHEN i.status IN ('not_paid', 'partially_paid')
+            THEN i.total_amount - i.total_paid
+            ELSE 0
+          END
+        ), 0) AS open_amount
+      FROM contracts c
+      JOIN installments i ON i.contract_id = c.id
+      WHERE c.status IN ('disbursed', 'active')
+        AND (
+          c.consultant_id = ${userId}::uuid
+          OR c.current_collection_agent_id = ${userId}::uuid
+        )
+    `;
+    return row;
   }
 
   /**

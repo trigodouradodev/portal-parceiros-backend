@@ -2,7 +2,9 @@ import { toNum } from '../common/query.util';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import {
   BonusBandRow,
+  DelinquencyRow,
   EnrollmentRow,
+  OriginationRow,
   PermanenceMilestone,
   ProgramLevelRow,
 } from './interfaces/performance-row.interface';
@@ -17,8 +19,14 @@ import {
   PartnerProgram,
 } from './interfaces/partner-program.interface';
 import {
+  CommissionComponent,
+  CommissionComponentKind,
+  CurrentPerformance,
+} from './interfaces/current-performance.interface';
+import {
   findNextMilestone,
   partnershipMonthNumber,
+  resolveBonusPercent,
   round2,
   toDateString,
 } from './performance.util';
@@ -145,5 +153,125 @@ export function mapPartnerProgram(
     levels: levels.map(mapLevel),
     bonusPillars: mapBonusPillars(bands),
     permanenceMilestones: milestones,
+  };
+}
+
+/** Insumos do bloco "Desempenho real do mês". */
+export interface CurrentPerformanceInput {
+  origination: OriginationRow;
+  delinquency: DelinquencyRow;
+  program: PartnerProgram;
+  monthlyTarget: number;
+  monthlyFixed: number;
+  monthNumber: number;
+}
+
+/** Régua de um pilar. Lista vazia é impossível após a validação do programa. */
+function bandsOf(program: PartnerProgram, pillar: BonusPillar): BonusBand[] {
+  return program.bonusPillars.find((p) => p.pillar === pillar)?.bands ?? [];
+}
+
+/**
+ * Monta a resposta de `GET /performance/current`: os 3 KPIs reais do mês, o
+ * bônus que cada um já garantiu, e a comissão resultante.
+ *
+ * Os três pilares são independentes e somados, cada um como % sobre o fixo
+ * mensal do nível.
+ */
+export function mapCurrentPerformance(
+  input: CurrentPerformanceInput,
+): CurrentPerformance {
+  const { origination, delinquency, program, monthlyFixed, monthNumber } =
+    input;
+
+  const originationAmount = toNum(origination.origination_amount);
+  const targetPercent =
+    input.monthlyTarget > 0
+      ? round2((originationAmount / input.monthlyTarget) * 100)
+      : 0;
+  const disbursementBonus = resolveBonusPercent(
+    targetPercent,
+    bandsOf(program, BonusPillar.DISBURSEMENT),
+  );
+
+  const overdueAmount = toNum(delinquency.overdue_amount);
+  const portfolioOpenAmount = toNum(delinquency.open_amount);
+  // Carteira vazia devolve null, não 0: 0 cairia na melhor faixa e daria o teto
+  // de +50% a quem não tem carteira nenhuma. E na tela, "0,0%" pareceria
+  // desempenho excelente, quando o certo é não haver o que medir.
+  const delinquencyRate =
+    portfolioOpenAmount > 0
+      ? round2((overdueAmount / portfolioOpenAmount) * 100)
+      : null;
+  const riskBonus =
+    delinquencyRate === null
+      ? 0
+      : resolveBonusPercent(
+          delinquencyRate,
+          bandsOf(program, BonusPillar.RISK),
+        );
+
+  // interest_rate é gravado em fração (0.098 = 9,8%); ×100 para casar com as
+  // faixas, que são percentuais.
+  const averageRate =
+    origination.avg_rate === null
+      ? null
+      : round2(toNum(origination.avg_rate) * 100);
+  const rateBonus =
+    averageRate === null
+      ? 0
+      : resolveBonusPercent(averageRate, bandsOf(program, BonusPillar.RATE));
+
+  const milestone = program.permanenceMilestones.find(
+    (m) => m.month === monthNumber,
+  );
+
+  const components: CommissionComponent[] = [
+    { kind: CommissionComponentKind.FIXED, amount: monthlyFixed },
+    {
+      kind: CommissionComponentKind.WELCOME,
+      // Boas-vindas não depende de performance e sai uma única vez.
+      amount: monthNumber === 1 ? program.welcomeBonusAmount : 0,
+    },
+    {
+      kind: CommissionComponentKind.DISBURSEMENT_BONUS,
+      amount: round2((monthlyFixed * disbursementBonus) / 100),
+    },
+    {
+      kind: CommissionComponentKind.RISK_BONUS,
+      amount: round2((monthlyFixed * riskBonus) / 100),
+    },
+    {
+      kind: CommissionComponentKind.RATE_BONUS,
+      amount: round2((monthlyFixed * rateBonus) / 100),
+    },
+    {
+      kind: CommissionComponentKind.PERMANENCE_BONUS,
+      // Marco é valor único no mês exato em que cai, não recorrente.
+      amount: milestone ? round2(monthlyFixed * milestone.multiplier) : 0,
+    },
+  ];
+
+  return {
+    month: origination.month,
+    periodStart: toDateString(origination.period_start),
+    periodEnd: toDateString(origination.period_end),
+    origination: {
+      count: toNum(origination.origination_count),
+      amount: originationAmount,
+      targetPercent,
+      bonusPercent: disbursementBonus,
+    },
+    delinquency: {
+      rate: delinquencyRate,
+      overdueAmount,
+      portfolioOpenAmount,
+      bonusPercent: riskBonus,
+    },
+    averageRate: { rate: averageRate, bonusPercent: rateBonus },
+    commission: {
+      total: round2(components.reduce((acc, c) => acc + c.amount, 0)),
+      components,
+    },
   };
 }
