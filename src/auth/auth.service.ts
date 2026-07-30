@@ -91,9 +91,7 @@ export class AuthService {
     }
 
     if (dto.currentPassword === dto.newPassword) {
-      throw new BadRequestException(
-        'A nova senha deve ser diferente da atual',
-      );
+      throw new BadRequestException('A nova senha deve ser diferente da atual');
     }
 
     const passwordHash = await bcrypt.hash(dto.newPassword, 12);
