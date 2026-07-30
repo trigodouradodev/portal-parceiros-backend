@@ -35,6 +35,56 @@ jobs:
       - name: Build
         run: npm run build
 
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    # `edited` dispara em mudança de título/descrição do PR, que não altera o
+    # código — só o validate-pr precisa reagir a esse evento.
+    if: github.event.action != 'edited'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        shell: bash
+        run: |
+          # pipefail é obrigatório: sem ele o status do pipeline seria o do
+          # `tee` (sempre 0) e um teste quebrado passaria despercebido.
+          set -o pipefail
+          npm run test:cov -- \
+            --ci \
+            --coverageReporters=text-summary \
+            --coveragePathIgnorePatterns='(\.spec\.ts|\.fixture\.ts)$' \
+            2>&1 | tee test-output.txt
+
+      # Roda mesmo com teste quebrado: aí o resumo traz o rastro da falha, que é
+      # justamente quando o revisor mais precisa dele.
+      - name: Publish test summary
+        if: always()
+        shell: bash
+        run: |
+          if [ ! -f test-output.txt ]; then
+            echo 'Testes não chegaram a rodar.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo '## Testes e cobertura'
+            echo ''
+            echo '```'
+            tail -n 25 test-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   validate-pr:
     name: Validate PR title and description
     runs-on: ubuntu-latest
