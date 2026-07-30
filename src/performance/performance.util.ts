@@ -47,6 +47,29 @@ export function findNextMilestone(
   return milestones.find((m) => m.month > monthNumber) ?? null;
 }
 
+/** true se o valor cai dentro da faixa, respeitando as duas fronteiras. */
+function containsValue(band: BonusBand, value: number): boolean {
+  const aboveMin = band.minInclusive
+    ? value >= band.minValue
+    : value > band.minValue;
+  if (!aboveMin) return false;
+  if (band.maxValue === null) return true;
+  return band.maxInclusive ? value <= band.maxValue : value < band.maxValue;
+}
+
+/**
+ * Bônus (em % sobre o fixo mensal) destravado por um valor, dada a régua do
+ * pilar.
+ *
+ * A régua passa por `findBandCoverageDefect` antes de chegar aqui, então cobre
+ * de 0 ao infinito sem buraco e todo valor >= 0 casa com exatamente uma faixa.
+ * O fallback de 0 só existe para o impossível — não é um caminho esperado.
+ */
+export function resolveBonusPercent(value: number, bands: BonusBand[]): number {
+  const band = bands.find((candidate) => containsValue(candidate, value));
+  return band?.bonusPercent ?? 0;
+}
+
 /** Notação de intervalo da faixa, para mensagem de erro legível. */
 function describeBand(band: BonusBand): string {
   const left = band.minInclusive ? '[' : '(';

@@ -32,6 +32,26 @@ export interface ProgramLevelRow {
   monthly_fixed_amount: Prisma.Decimal | string | number;
 }
 
+/**
+ * Linha de `findMonthOrigination`: contratos desembolsados no mês pelo próprio
+ * parceiro, mais o período de referência do banco.
+ */
+export interface OriginationRow {
+  month: string;
+  period_start: Date;
+  period_end: Date;
+  origination_count: bigint | number;
+  origination_amount: Prisma.Decimal | string | number;
+  /** Fração (ex.: 0.0980 = 9,8%). null quando não houve originação no mês. */
+  avg_rate: Prisma.Decimal | string | number | null;
+}
+
+/** Linha de `findPortfolioDelinquency`: saldos vencido e em aberto (R$). */
+export interface DelinquencyRow {
+  overdue_amount: Prisma.Decimal | string | number;
+  open_amount: Prisma.Decimal | string | number;
+}
+
 /** Colunas lidas de `partner_bonus_bands`. */
 export interface BonusBandRow {
   pillar: string;

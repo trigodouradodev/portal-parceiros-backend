@@ -13,6 +13,7 @@ import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PerformanceService } from './performance.service';
 import { PartnerProfile } from './interfaces/partner-profile.interface';
 import { PartnerProgram } from './interfaces/partner-program.interface';
+import { CurrentPerformance } from './interfaces/current-performance.interface';
 
 @ApiTags('performance')
 @ApiBearerAuth('access-token')
@@ -71,5 +72,32 @@ export class PerformanceController {
   @Get('program')
   getProgram() {
     return this.performanceService.getProgram();
+  }
+
+  /**
+   * Bloco "Desempenho real do mês": originação contra a meta, inadimplência da
+   * carteira e taxa média, cada um com o bônus já garantido, mais a comissão
+   * acumulada do mês.
+   *
+   * Mesmo gate do `/me`: dado próprio do viewer, sem scope hierárquico, e não
+   * inscrito recebe 404. As metas são individuais — nada de subárvore.
+   */
+  @ApiOperation({
+    summary: 'Desempenho real do mês corrente e comissão acumulada.',
+  })
+  @ApiOkResponse({ type: CurrentPerformance })
+  @ApiNotFoundResponse({
+    description:
+      'Viewer não inscrito no Programa de Parceiros Exclusivos (ou com ' +
+      'parceria de início futuro).',
+  })
+  @ApiInternalServerErrorResponse({
+    description:
+      'Parâmetros do programa mal cadastrados no banco — mesma validação de ' +
+      '`/performance/program`.',
+  })
+  @Get('current')
+  getCurrent(@CurrentUser('sub') userId: string) {
+    return this.performanceService.getCurrentPerformance(userId);
   }
 }
