@@ -109,7 +109,7 @@ export class AuthController {
   })
   @ApiBearerAuth('access-token')
   @HttpCode(HttpStatus.OK)
-  @Patch('me/password')
+  @Patch('change-password')
   changePassword(
     @CurrentUser('sub') userId: string,
     @Body() dto: ChangePasswordDto,
