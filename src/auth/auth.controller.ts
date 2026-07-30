@@ -23,6 +23,7 @@ import { UpdateProfileDto } from '../users/dto/update-profile.dto';
 import { AuthService } from './auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { LoginResponseDto, TokensDto } from './dto/auth-response.dto';
 import { ProfileResponseDto } from './dto/profile-response.dto';
@@ -96,5 +97,23 @@ export class AuthController {
   @Patch('me')
   updateMe(@CurrentUser('sub') userId: string, @Body() dto: UpdateProfileDto) {
     return this.authService.updateProfile(userId, dto);
+  }
+
+  @ApiOperation({ summary: 'Altera a senha do usuário autenticado.' })
+  @ApiOkResponse({ description: 'Senha alterada com sucesso.' })
+  @ApiBadRequestResponse({
+    description: 'Payload inválido ou nova senha igual à atual.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Token inválido ou senha atual incorreta.',
+  })
+  @ApiBearerAuth('access-token')
+  @HttpCode(HttpStatus.OK)
+  @Patch('change-password')
+  changePassword(
+    @CurrentUser('sub') userId: string,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.authService.changePassword(userId, dto);
   }
 }
