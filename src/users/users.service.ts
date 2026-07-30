@@ -27,6 +27,13 @@ export class UsersService {
     });
   }
 
+  async updatePassword(userId: string, passwordHash: string): Promise<void> {
+    await this.prisma.trigo_users.update({
+      where: { id: userId },
+      data: { password: passwordHash, updated_at: new Date() },
+    });
+  }
+
   async updateProfile(
     userId: string,
     dto: UpdateProfileDto,
