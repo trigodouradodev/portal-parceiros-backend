@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { toNum } from '../common/query.util';
 import { ScopeService, ScopeViewer } from '../scope/scope.service';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import {
@@ -45,13 +46,6 @@ interface PerformanceRow {
 interface DelinquencyRow {
   overdue_pending: Prisma.Decimal | string | number;
   open_pending: Prisma.Decimal | string | number;
-}
-
-/** Coerção robusta de valores numéricos do $queryRaw (Decimal/string/bigint). */
-function toNum(value: unknown): number {
-  if (value === null || value === undefined) return 0;
-  if (typeof value === 'bigint') return Number(value);
-  return Number(value);
 }
 
 /** Mês corrente 'YYYY-MM' (fallback quando não há ida ao banco). */

@@ -34,7 +34,8 @@ import {
 import { SegmentSummary, TodayQueue } from './interfaces/task-queue.interface';
 import { InstallmentDetail } from './interfaces/installment-detail.interface';
 import { ResponsibleType } from '../collections/interfaces/responsible.interface';
-import { daysOverdue, toNum } from './activities.util';
+import { toNum } from '../common/query.util';
+import { daysOverdue } from './activities.util';
 import {
   mapAddress,
   mapCard,
