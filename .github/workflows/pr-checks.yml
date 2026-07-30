@@ -57,16 +57,16 @@ jobs:
             const errors = [];
 
             // Validate title: must start with a Jira issue key followed by colon
-            // Format: TTC-129: Description...
-            const titleRegex = /^TTC-\d+:/i;
+            // Format: AUREA-220: Description...
+            const titleRegex = /^[A-Z][A-Z0-9]+-\d+:/i;
             if (!titleRegex.test(title)) {
-              errors.push('❌ **Título inválido**: o título deve começar com a chave do ticket Jira seguida de dois pontos.\n   Formato esperado: `TTC-129: Descrição da tarefa`');
+              errors.push('❌ **Título inválido**: o título deve começar com a chave do ticket Jira seguida de dois pontos.\n   Formato esperado: `AUREA-220: Descrição da tarefa`');
             }
 
             // Validate body: must contain a Jira link
-            const jiraLinkRegex = /https:\/\/aureadev\.atlassian\.net\/browse\/TTC-\d+/;
+            const jiraLinkRegex = /https:\/\/aureadev\.atlassian\.net\/browse\/[A-Z][A-Z0-9]+-\d+/i;
             if (!jiraLinkRegex.test(body)) {
-              errors.push('❌ **Descrição inválida**: a descrição deve conter o link do ticket no Jira.\n   Exemplo: `https://aureadev.atlassian.net/browse/TTC-129`');
+              errors.push('❌ **Descrição inválida**: a descrição deve conter o link do ticket no Jira.\n   Exemplo: `https://aureadev.atlassian.net/browse/AUREA-220`');
             }
 
             if (errors.length > 0) {
