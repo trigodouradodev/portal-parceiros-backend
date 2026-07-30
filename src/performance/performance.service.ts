@@ -1,12 +1,23 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { toNum } from '../common/query.util';
 import { PartnerProfile } from './interfaces/partner-profile.interface';
+import { PartnerProgram } from './interfaces/partner-program.interface';
 import {
+  BonusBandRow,
   EnrollmentRow,
   PermanenceMilestone,
+  ProgramLevelRow,
 } from './interfaces/performance-row.interface';
-import { mapPartnerProfile } from './performance.mapper';
+import { mapPartnerProfile, mapPartnerProgram } from './performance.mapper';
+import { findBandCoverageDefect } from './performance.util';
+
+/** Chave em `system_configs` do bônus de boas-vindas (R$). */
+const WELCOME_BONUS_CONFIG_KEY = 'PERFORMANCE_WELCOME_BONUS_AMOUNT';
 
 @Injectable()
 export class PerformanceService {
@@ -35,6 +46,125 @@ export class PerformanceService {
 
     const milestones = await this.findPermanenceMilestones();
     return mapPartnerProfile(userId, permissions, enrollment, milestones);
+  }
+
+  /**
+   * Parâmetros do Programa de Parceiros Exclusivos: níveis, faixas dos 3 pilares
+   * de bônus, marcos de permanência e o bônus de boas-vindas.
+   *
+   * Serve o simulador do front, que precisa avaliar as MESMAS faixas que o
+   * cálculo real usa — sem isso as fronteiras ficariam hardcoded em dois
+   * repositórios, livres para divergir.
+   *
+   * Sem cache de propósito: as tabelas são minúsculas e o motivo de estarem no
+   * banco é o backoffice poder mudar sem deploy, o que um cache em memória
+   * anularia. Se aparecer na latência, um TTL curto resolve.
+   */
+  async getProgram(): Promise<PartnerProgram> {
+    const [welcomeBonusAmount, levels, bands, milestones] = await Promise.all([
+      this.findWelcomeBonusAmount(),
+      this.findActiveLevels(),
+      this.findBonusBands(),
+      this.findPermanenceMilestones(),
+    ]);
+
+    const program = mapPartnerProgram(
+      welcomeBonusAmount,
+      levels,
+      bands,
+      milestones,
+    );
+
+    // As faixas são editáveis em runtime, então validar só no boot não protegeria
+    // o cenário que motivou tirá-las do código. Régua defeituosa falha alto: bem
+    // melhor que pagar bônus errado em silêncio.
+    for (const pillar of program.bonusPillars) {
+      const defect = findBandCoverageDefect(pillar.bands);
+      if (defect) {
+        throw new InternalServerErrorException(
+          `Faixas de bônus mal cadastradas em partner_bonus_bands ` +
+            `(pilar ${pillar.pillar}): ${defect}.`,
+        );
+      }
+    }
+
+    if (program.levels.length === 0) {
+      throw new InternalServerErrorException(
+        'Nenhum nível ativo em partner_levels.',
+      );
+    }
+    if (program.permanenceMilestones.length === 0) {
+      throw new InternalServerErrorException(
+        'Nenhum marco em partner_permanence_milestones.',
+      );
+    }
+
+    return program;
+  }
+
+  /**
+   * Bônus de boas-vindas (R$) da config `PERFORMANCE_WELCOME_BONUS_AMOUNT`.
+   *
+   * `system_configs.value` é texto livre, então chave ausente, valor não numérico
+   * e valor negativo são erros de configuração e falham alto. Cair para 0 seria
+   * pior que erro: 0 é indistinguível de "não é o 1º mês de parceria" e o valor
+   * simplesmente desapareceria da tela.
+   */
+  private async findWelcomeBonusAmount(): Promise<number> {
+    const config = await this.prisma.system_configs.findUnique({
+      where: { key: WELCOME_BONUS_CONFIG_KEY },
+      select: { value: true },
+    });
+    if (!config) {
+      throw new InternalServerErrorException(
+        `Config ${WELCOME_BONUS_CONFIG_KEY} ausente em system_configs.`,
+      );
+    }
+    const amount = Number(config.value);
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw new InternalServerErrorException(
+        `Config ${WELCOME_BONUS_CONFIG_KEY} inválida: '${config.value}'.`,
+      );
+    }
+    return amount;
+  }
+
+  /** Níveis ativos, em ordem crescente de meta (base da tabela comparativa). */
+  private findActiveLevels(): Promise<ProgramLevelRow[]> {
+    return this.prisma.partner_levels.findMany({
+      where: { is_active: true },
+      orderBy: { sort_order: 'asc' },
+      select: {
+        key: true,
+        name: true,
+        monthly_target_amount: true,
+        monthly_fixed_amount: true,
+      },
+    });
+  }
+
+  /**
+   * Faixas de bônus dos 3 pilares.
+   *
+   * Ordenadas por `sort_order`, e não por `min_value`: a faixa de ponto único da
+   * taxa (`[9.5 , 9.5]`) compartilha o `min_value` com a faixa seguinte
+   * (`(9.5 , 10]`), então valor não é ordem total e o desempate ficaria a cargo
+   * do plano de execução. `sort_order` é único por pilar e carrega a ordem
+   * pretendida; se ele for cadastrado incoerente com os limites, a validação de
+   * cobertura acusa.
+   */
+  private findBonusBands(): Promise<BonusBandRow[]> {
+    return this.prisma.partner_bonus_bands.findMany({
+      orderBy: [{ pillar: 'asc' }, { sort_order: 'asc' }],
+      select: {
+        pillar: true,
+        min_value: true,
+        min_inclusive: true,
+        max_value: true,
+        max_inclusive: true,
+        bonus_percent: true,
+      },
+    });
   }
 
   /**

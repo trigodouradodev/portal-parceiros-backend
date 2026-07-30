@@ -1,10 +1,21 @@
 import { toNum } from '../common/query.util';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import {
+  BonusBandRow,
   EnrollmentRow,
   PermanenceMilestone,
+  ProgramLevelRow,
 } from './interfaces/performance-row.interface';
-import { PartnerProfile } from './interfaces/partner-profile.interface';
+import {
+  PartnerLevel,
+  PartnerProfile,
+} from './interfaces/partner-profile.interface';
+import {
+  BonusBand,
+  BonusPillar,
+  BonusPillarBands,
+  PartnerProgram,
+} from './interfaces/partner-program.interface';
 import {
   findNextMilestone,
   partnershipMonthNumber,
@@ -74,5 +85,65 @@ export function mapPartnerProfile(
         monthsRemaining: next.month - monthNumber,
       },
     },
+  };
+}
+
+/**
+ * Ordem em que os pilares são expostos — a mesma do material comercial, pra
+ * tela não precisar reordenar.
+ */
+const PILLAR_ORDER: readonly BonusPillar[] = [
+  BonusPillar.DISBURSEMENT,
+  BonusPillar.RISK,
+  BonusPillar.RATE,
+];
+
+function mapLevel(row: ProgramLevelRow): PartnerLevel {
+  return {
+    key: row.key,
+    label: row.name,
+    monthlyTarget: toNum(row.monthly_target_amount),
+    monthlyFixed: toNum(row.monthly_fixed_amount),
+  };
+}
+
+function mapBand(row: BonusBandRow): BonusBand {
+  return {
+    minValue: toNum(row.min_value),
+    minInclusive: row.min_inclusive,
+    // toNum(null) daria 0, que aqui significaria "teto zero" em vez de "sem
+    // teto" — por isso o null passa direto.
+    maxValue: row.max_value === null ? null : toNum(row.max_value),
+    maxInclusive: row.max_inclusive,
+    bonusPercent: toNum(row.bonus_percent),
+  };
+}
+
+/**
+ * Agrupa as faixas por pilar, na ordem de `PILLAR_ORDER`. Pilar sem nenhuma
+ * faixa cadastrada entra com lista vazia de propósito — quem valida (o service)
+ * precisa ver a ausência para poder reclamar dela.
+ */
+function mapBonusPillars(rows: BonusBandRow[]): BonusPillarBands[] {
+  return PILLAR_ORDER.map((pillar) => ({
+    pillar,
+    // `partner_bonus_bands.pillar` é varchar (não enum do Postgres), então a
+    // comparação é string-para-string.
+    bands: rows.filter((row) => row.pillar === String(pillar)).map(mapBand),
+  }));
+}
+
+/** Monta a resposta de `GET /performance/program`. */
+export function mapPartnerProgram(
+  welcomeBonusAmount: number,
+  levels: ProgramLevelRow[],
+  bands: BonusBandRow[],
+  milestones: PermanenceMilestone[],
+): PartnerProgram {
+  return {
+    welcomeBonusAmount,
+    levels: levels.map(mapLevel),
+    bonusPillars: mapBonusPillars(bands),
+    permanenceMilestones: milestones,
   };
 }

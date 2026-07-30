@@ -23,3 +23,21 @@ export interface PermanenceMilestone {
   month: number;
   multiplier: number;
 }
+
+/** Colunas lidas de `partner_levels` para a tabela comparativa de níveis. */
+export interface ProgramLevelRow {
+  key: string;
+  name: string;
+  monthly_target_amount: Prisma.Decimal | string | number;
+  monthly_fixed_amount: Prisma.Decimal | string | number;
+}
+
+/** Colunas lidas de `partner_bonus_bands`. */
+export interface BonusBandRow {
+  pillar: string;
+  min_value: Prisma.Decimal | string | number;
+  min_inclusive: boolean;
+  max_value: Prisma.Decimal | string | number | null;
+  max_inclusive: boolean;
+  bonus_percent: Prisma.Decimal | string | number;
+}
