@@ -38,6 +38,12 @@ export class ContractListItem {
   disbursementDate?: Date;
 
   @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'ID da parcela em aberto com o vencimento mais próximo.',
+  })
+  nextInstallmentId?: string;
+
+  @ApiPropertyOptional({
     type: String,
     format: 'date',
     example: '2026-09-10',

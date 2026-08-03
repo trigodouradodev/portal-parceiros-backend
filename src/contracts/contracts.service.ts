@@ -58,7 +58,8 @@ export class ContractsService {
         COALESCE(open_installments.outstanding_balance, 0) AS outstanding_balance,
         c.total_installments,
         c.disbursement_date,
-        open_installments.next_due_date
+        next_open_installment.id AS next_installment_id,
+        next_open_installment.due_date AS next_due_date
       FROM public.contracts c
       JOIN public.clients cl ON cl.id = c.client_id
       LEFT JOIN public.companies comp ON comp.id = c.company_id
@@ -69,13 +70,18 @@ export class ContractsService {
         SELECT
           COALESCE(SUM(i.pending_amount) FILTER (
             WHERE i.status IN ('not_paid', 'partially_paid')
-          ), 0) AS outstanding_balance,
-          MIN(i.due_date) FILTER (
-            WHERE i.status IN ('not_paid', 'partially_paid')
-          ) AS next_due_date
+          ), 0) AS outstanding_balance
         FROM public.installments i
         WHERE i.contract_id = c.id
       ) open_installments ON true
+      LEFT JOIN LATERAL (
+        SELECT i.id, i.due_date
+        FROM public.installments i
+        WHERE i.contract_id = c.id
+          AND i.status IN ('not_paid', 'partially_paid')
+        ORDER BY i.due_date ASC, i.installment_number ASC, i.id ASC
+        LIMIT 1
+      ) next_open_installment ON true
       WHERE ${whereClause}
       ORDER BY c.disbursement_date DESC NULLS LAST, c.created_at DESC, c.id
       LIMIT ${limit} OFFSET ${offset}
@@ -106,6 +112,7 @@ export class ContractsService {
       outstandingBalance: toNum(row.outstanding_balance),
       totalInstallments: Number(row.total_installments),
       disbursementDate: row.disbursement_date ?? undefined,
+      nextInstallmentId: row.next_installment_id ?? undefined,
       nextDueDate: row.next_due_date ?? undefined,
     };
   }

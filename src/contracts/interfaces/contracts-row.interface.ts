@@ -14,5 +14,6 @@ export interface ContractListRow {
   outstanding_balance: Numeric;
   total_installments: number;
   disbursement_date: Date | null;
+  next_installment_id: string | null;
   next_due_date: Date | null;
 }

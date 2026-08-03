@@ -18,6 +18,7 @@ const ROW = {
   outstanding_balance: '7300.50',
   total_installments: 12,
   disbursement_date: new Date('2026-01-10T00:00:00Z'),
+  next_installment_id: '22222222-2222-2222-2222-222222222222',
   next_due_date: new Date('2026-09-10T00:00:00Z'),
 };
 
@@ -69,6 +70,7 @@ describe('ContractsService.getContracts', () => {
           outstandingBalance: 7300.5,
           totalInstallments: 12,
           disbursementDate: ROW.disbursement_date,
+          nextInstallmentId: ROW.next_installment_id,
           nextDueDate: ROW.next_due_date,
         },
       ],
