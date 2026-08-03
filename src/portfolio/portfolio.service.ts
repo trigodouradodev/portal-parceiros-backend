@@ -1,9 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
-import { PermissionKey } from '../auth/permissions/permission-keys';
 import { toNum } from '../common/query.util';
 import { PrismaService } from '../prisma/prisma.service';
-import { ScopeService, ScopeViewer } from '../scope/scope.service';
 import { PortfolioSnapshotRow } from './interfaces/portfolio-row.interface';
 import { PortfolioSummary } from './interfaces/portfolio-summary.interface';
 
@@ -15,23 +12,15 @@ const EMPTY_SUMMARY = (): PortfolioSummary => ({
 
 @Injectable()
 export class PortfolioService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly scope: ScopeService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Os seis KPIs de carteira vêm de `analytics.vw_fato_parcela`. A ligação com
-   * `public.contracts c` existe apenas para reaproveitar o mesmo escopo
-   * hierárquico e RBAC dos módulos Activities e Collections.
+   * `public.contracts c` limita os dados ao usuário vinculado diretamente como
+   * consultor ou agente de cobrança — sem escopo hierárquico em cascata.
    */
-  async getSummary(viewer: ScopeViewer): Promise<PortfolioSummary> {
-    const scopeClause = await this.scope.buildContractScopeSql(viewer, [
-      PermissionKey.INSTALLMENT_VIEW_ALL,
-    ]);
-    if (scopeClause === null) return EMPTY_SUMMARY();
-
-    const snapshot = await this.findPortfolioSnapshot(scopeClause);
+  async getSummary(userId: string): Promise<PortfolioSummary> {
+    const snapshot = await this.findPortfolioSnapshot(userId);
     const portfolioActiveAmount = toNum(snapshot?.portfolio_active_amount);
     const delinquencyAmount = toNum(snapshot?.delinquency_amount);
 
@@ -56,7 +45,7 @@ export class PortfolioService {
   }
 
   private async findPortfolioSnapshot(
-    scopeClause: Prisma.Sql,
+    userId: string,
   ): Promise<PortfolioSnapshotRow | undefined> {
     const [row] = await this.prisma.$queryRaw<PortfolioSnapshotRow[]>`
       SELECT
@@ -75,7 +64,10 @@ export class PortfolioService {
         ), 0) AS renegotiated_outstanding_amount
       FROM analytics.vw_fato_parcela p
       JOIN public.contracts c ON c.id = p.id_contrato
-      WHERE ${scopeClause}
+      WHERE (
+        c.consultant_id = ${userId}::uuid
+        OR c.current_collection_agent_id = ${userId}::uuid
+      )
     `;
     return row;
   }

@@ -9,7 +9,6 @@ import {
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
-import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { PortfolioSummary } from './interfaces/portfolio-summary.interface';
 import { PortfolioService } from './portfolio.service';
@@ -32,10 +31,7 @@ export class PortfolioController {
     PermissionKey.INSTALLMENT_VIEW_ALL,
   )
   @Get('summary')
-  getSummary(@CurrentUser() user: JwtPayload) {
-    return this.portfolioService.getSummary({
-      userId: user.sub,
-      permissions: user.permissions,
-    });
+  getSummary(@CurrentUser('sub') userId: string) {
+    return this.portfolioService.getSummary(userId);
   }
 }
