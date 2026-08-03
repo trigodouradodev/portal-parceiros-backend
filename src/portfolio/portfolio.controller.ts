@@ -24,7 +24,7 @@ export class PortfolioController {
 
   @ApiOperation({
     summary:
-      'Resumo executivo da carteira (saldo, inadimplência, originação e recebimentos).',
+      'Resumo da carteira (saldo, contratos, inadimplência e renegociação).',
   })
   @ApiOkResponse({ type: PortfolioSummary })
   @RequirePermissions(
