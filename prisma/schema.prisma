@@ -1,10 +1,95 @@
 generator client {
   provider        = "prisma-client-js"
-  previewFeatures = ["partialIndexes"]
+  previewFeatures = ["partialIndexes", "views"]
 }
 
 datasource db {
   provider = "postgresql"
+  schemas  = ["analytics", "public"]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model activity_interactions {
+  id                   String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  task_id              String         @unique(map: "activity_interactions_task_id_unique") @db.Uuid
+  installment_id       String         @db.Uuid
+  contract_id          String         @db.Uuid
+  task_type            String         @db.VarChar(255)
+  channel              String         @db.VarChar(255)
+  recipient_type       String         @db.VarChar(255)
+  recipient_contact_id String?        @db.Uuid
+  result               String         @db.VarChar(255)
+  promise_date         DateTime?      @db.Date
+  observation          String?
+  user_id              String         @db.Uuid
+  created_at           DateTime       @default(now()) @db.Timestamptz(6)
+  contracts            contracts      @relation(fields: [contract_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_contract_id_foreign")
+  installments         installments   @relation(fields: [installment_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_installment_id_foreign")
+  activity_tasks       activity_tasks @relation(fields: [task_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_task_id_foreign")
+  trigo_users          trigo_users    @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_user_id_foreign")
+  geolocations         geolocations?
+
+  @@index([contract_id, created_at], map: "idx_activity_interactions_contract")
+  @@index([installment_id, created_at], map: "idx_activity_interactions_installment")
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model activity_ruler_stages {
+  id                    String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                  String           @unique(map: "activity_ruler_stages_code_unique") @db.VarChar(255)
+  name                  String           @db.VarChar(255)
+  priority              Int              @unique(map: "activity_ruler_stages_priority_unique")
+  min_days_overdue      Int?
+  max_days_overdue      Int?
+  predicate             String?          @db.VarChar(255)
+  contacts_before_visit Int?
+  tone                  String           @db.VarChar(255)
+  badge_label           String?          @db.VarChar(255)
+  is_active             Boolean          @default(true)
+  created_at            DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime         @default(now()) @db.Timestamptz(6)
+  activity_tasks        activity_tasks[]
+
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model activity_tasks {
+  id                                                           String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  installment_id                                               String                 @unique(map: "idx_activity_tasks_one_pending_per_installment", where: raw("((status)::text = 'pending'::text)")) @db.Uuid
+  contract_id                                                  String                 @db.Uuid
+  ruler_stage_id                                               String?                @db.Uuid
+  segment_code                                                 String                 @db.VarChar(255)
+  task_type                                                    String                 @db.VarChar(255)
+  status                                                       String                 @default("pending") @db.VarChar(255)
+  expire_date                                                  DateTime               @db.Date
+  was_postponed                                                Boolean                @default(false)
+  was_rescheduled                                              Boolean                @default(false)
+  created_at                                                   DateTime               @default(now()) @db.Timestamptz(6)
+  created_by                                                   String                 @db.VarChar(255)
+  created_by_user_id                                           String?                @db.Uuid
+  assigned_to                                                  String?                @db.Uuid
+  completed_at                                                 DateTime?              @db.Timestamptz(6)
+  completed_by_user_id                                         String?                @db.Uuid
+  system_closed_at                                             DateTime?              @db.Timestamptz(6)
+  cancelled_at                                                 DateTime?              @db.Timestamptz(6)
+  cancellation_reason                                          String?                @db.VarChar(255)
+  parent_task_id                                               String?                @db.Uuid
+  activity_interactions                                        activity_interactions?
+  trigo_users_activity_tasks_assigned_toTotrigo_users          trigo_users?           @relation("activity_tasks_assigned_toTotrigo_users", fields: [assigned_to], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_assigned_to_foreign")
+  trigo_users_activity_tasks_completed_by_user_idTotrigo_users trigo_users?           @relation("activity_tasks_completed_by_user_idTotrigo_users", fields: [completed_by_user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_completed_by_user_id_foreign")
+  contracts                                                    contracts              @relation(fields: [contract_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_contract_id_foreign")
+  trigo_users_activity_tasks_created_by_user_idTotrigo_users   trigo_users?           @relation("activity_tasks_created_by_user_idTotrigo_users", fields: [created_by_user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_created_by_user_id_foreign")
+  installments                                                 installments           @relation(fields: [installment_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_installment_id_foreign")
+  activity_tasks                                               activity_tasks?        @relation("activity_tasksToactivity_tasks", fields: [parent_task_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_parent_task_id_foreign")
+  other_activity_tasks                                         activity_tasks[]       @relation("activity_tasksToactivity_tasks")
+  activity_ruler_stages                                        activity_ruler_stages? @relation(fields: [ruler_stage_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_ruler_stage_id_foreign")
+
+  @@index([assigned_to, expire_date], map: "idx_activity_tasks_assigned_pending", where: raw("((status)::text = 'pending'::text)"))
+  @@index([contract_id, created_at], map: "idx_activity_tasks_contract")
+  @@index([installment_id, created_at], map: "idx_activity_tasks_installment")
+  @@schema("public")
 }
 
 model addresses {
@@ -24,6 +109,7 @@ model addresses {
   clients      clients? @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "addresses_client_id_foreign")
 
   @@index([client_id], map: "addresses_client_id_index")
+  @@schema("public")
 }
 
 model bank_accounts {
@@ -42,6 +128,7 @@ model bank_accounts {
   clients        clients? @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "bank_accounts_client_id_foreign")
 
   @@index([client_id], map: "bank_accounts_client_id_index")
+  @@schema("public")
 }
 
 model batch_payment_jobs {
@@ -63,6 +150,7 @@ model batch_payment_jobs {
   @@index([created_at], map: "idx_batch_payment_jobs_created_at")
   @@index([created_by], map: "idx_batch_payment_jobs_created_by")
   @@index([status], map: "idx_batch_payment_jobs_status")
+  @@schema("public")
 }
 
 model celcoin_celcredit_webhook {
@@ -78,6 +166,7 @@ model celcoin_celcredit_webhook {
 
   @@index([application_id])
   @@index([person_id])
+  @@schema("public")
 }
 
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
@@ -91,6 +180,7 @@ model celcoin_cobransaas_contract {
   contracts              contracts @relation(fields: [contract_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_contract")
 
   @@ignore
+  @@schema("public")
 }
 
 model celcoin_cobransaas_webhook {
@@ -99,6 +189,8 @@ model celcoin_cobransaas_webhook {
   signature  String   @db.VarChar(255)
   payload    Json     @default("{}")
   created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -133,6 +225,7 @@ model celcoin_integration_status {
   @@index([borrower_integration_status], map: "celcoin_integration_status_borrower_integration_status_index")
   @@index([guarantor_integration_status], map: "celcoin_integration_status_guarantor_integration_status_index")
   @@index([quote_id], map: "celcoin_integration_status_quote_id_index")
+  @@schema("public")
 }
 
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
@@ -146,6 +239,15 @@ model celcoin_temp_webhooks {
   created_at       DateTime? @default(now()) @db.Timestamp(6)
 
   @@ignore
+  @@schema("public")
+}
+
+model client_auth_blacklist {
+  cpf        String   @id
+  reason     String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("public")
 }
 
 model client_auth_credentials {
@@ -162,6 +264,7 @@ model client_auth_credentials {
 
   @@index([blocked_until], map: "idx_client_auth_credentials_blocked_until")
   @@index([client_id], map: "idx_client_auth_credentials_client_id")
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -185,6 +288,7 @@ model client_files {
 
   @@index([client_id, file_type], map: "client_files_client_id_file_type_index")
   @@index([file_id], map: "client_files_file_id_index")
+  @@schema("public")
 }
 
 model client_login_attempts {
@@ -192,6 +296,8 @@ model client_login_attempts {
   count            Int
   first_attempt_at DateTime @db.Timestamptz(6)
   updated_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("public")
 }
 
 model client_otp_tokens {
@@ -204,6 +310,7 @@ model client_otp_tokens {
 
   @@index([client_id], map: "idx_client_otp_tokens_client_id")
   @@index([expires_at], map: "idx_client_otp_tokens_expires_at")
+  @@schema("public")
 }
 
 model clients {
@@ -233,6 +340,7 @@ model clients {
   whatsapp_messages_sent     whatsapp_messages_sent[]
 
   @@index([tax_id], map: "clients_tax_id_index")
+  @@schema("public")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -267,6 +375,7 @@ model collaterals {
   @@index([external_id], map: "collaterals_external_id_index")
   @@index([number], map: "collaterals_number_index")
   @@index([type], map: "collaterals_type_index")
+  @@schema("public")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -291,6 +400,7 @@ model collection_agents {
   @@index([manager_id], map: "collection_agents_manager_id_index")
   @@index([company_id], map: "idx_collection_agents_company_id")
   @@index([is_active], map: "idx_collection_agents_is_active")
+  @@schema("public")
 }
 
 model companies {
@@ -311,6 +421,8 @@ model companies {
   contracts                contracts[]
   contracts_ccbs           contracts_ccbs[]
   trigo_users              trigo_users[]
+
+  @@schema("public")
 }
 
 model consultant_finance_products {
@@ -324,6 +436,7 @@ model consultant_finance_products {
   @@id([consultant_id, finance_product_id])
   @@index([consultant_id], map: "idx_consultant_finance_products_consultant_id")
   @@index([finance_product_id], map: "idx_consultant_finance_products_finance_product_id")
+  @@schema("public")
 }
 
 model consultants {
@@ -351,6 +464,7 @@ model consultants {
   @@index([cpf], map: "consultants_cpf_index")
   @@index([email], map: "consultants_email_index")
   @@index([manager_id], map: "consultants_manager_id_index")
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -373,6 +487,7 @@ model contract_amortization {
   @@index([contract_id], map: "idx_contract_amortization_contract_id")
   @@index([contract_id, year, month], map: "idx_contract_amortization_contract_month_year")
   @@index([year, month], map: "idx_contract_amortization_month_year")
+  @@schema("public")
 }
 
 model contract_cobransaas_agreements {
@@ -385,6 +500,7 @@ model contract_cobransaas_agreements {
   contracts               contracts @relation(fields: [contract_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([contract_id], map: "idx_contract_cobransaas_agreements_contract_id")
+  @@schema("public")
 }
 
 model contract_letter_history {
@@ -404,6 +520,8 @@ model contract_letter_history {
   is_deleted              Boolean   @default(false)
   cobransaas_agreement_id String?   @db.VarChar(255)
   contracts               contracts @relation(fields: [contract_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_contract")
+
+  @@schema("public")
 }
 
 model contract_status_history {
@@ -419,6 +537,7 @@ model contract_status_history {
 
   @@index([contract_id], map: "contract_status_history_contract_id_index")
   @@index([created_at], map: "contract_status_history_created_at_index")
+  @@schema("public")
 }
 
 model contract_surveys {
@@ -433,6 +552,8 @@ model contract_surveys {
   contracts                                            contracts    @relation(fields: [contract_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   trigo_users_contract_surveys_created_byTotrigo_users trigo_users? @relation("contract_surveys_created_byTotrigo_users", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "contract_surveys_created_by_foreign")
   trigo_users_contract_surveys_updated_byTotrigo_users trigo_users? @relation("contract_surveys_updated_byTotrigo_users", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "contract_surveys_updated_by_foreign")
+
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -502,6 +623,7 @@ model contracts {
   @@index([consultant_id], map: "contracts_consultant_id_index")
   @@index([current_collection_agent_id], map: "contracts_current_collection_agent_id_index")
   @@index([status], map: "contracts_status_index")
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -540,12 +662,16 @@ model contracts_ccbs {
   trigo_users_contracts_ccbs_consultant_idTotrigo_users               trigo_users? @relation("contracts_ccbs_consultant_idTotrigo_users", fields: [consultant_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "contracts_ccbs_consultant_id_foreign")
   trigo_users_contracts_ccbs_current_collection_agent_idTotrigo_users trigo_users? @relation("contracts_ccbs_current_collection_agent_idTotrigo_users", fields: [current_collection_agent_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "contracts_ccbs_current_collection_agent_id_foreign")
   quotes                                                              quotes       @relation(fields: [quote_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "contracts_ccbs_quote_id_foreign")
+
+  @@schema("public")
 }
 
 model contracts_migrated_brx_to_celcoin {
   contract_id String    @id @db.Uuid
   created_at  DateTime? @default(now()) @db.Timestamp(6)
   contracts   contracts @relation(fields: [contract_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "contracts_migration_contract_id_fkey")
+
+  @@schema("public")
 }
 
 model credit_request_reasons {
@@ -553,6 +679,8 @@ model credit_request_reasons {
   description     String
   active          Boolean           @default(true)
   credit_requests credit_requests[]
+
+  @@schema("public")
 }
 
 model credit_requests {
@@ -575,6 +703,7 @@ model credit_requests {
 
   @@index([client_id], map: "idx_credit_requests_client_id")
   @@index([status], map: "idx_credit_requests_status")
+  @@schema("public")
 }
 
 model customer_notifications {
@@ -599,6 +728,7 @@ model customer_notifications {
   @@index([consultant_id], map: "customer_notifications_consultant_id_index")
   @@index([contract_id], map: "customer_notifications_contract_id_index")
   @@index([installment_id], map: "customer_notifications_installment_id_index")
+  @@schema("public")
 }
 
 model documents {
@@ -612,6 +742,7 @@ model documents {
 
   @@index([client_id], map: "documents_client_id_index")
   @@index([document_type], map: "documents_document_type_index")
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -631,6 +762,7 @@ model facility_repays {
 
   @@index([brx_facility_repay_id], map: "facility_repays_brx_facility_repay_id_index")
   @@index([status], map: "facility_repays_status_index")
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -653,6 +785,7 @@ model finance_products {
   quotes                      quotes[]
 
   @@index([product_name], map: "idx_finance_products_product_name")
+  @@schema("public")
 }
 
 model financial_info {
@@ -672,6 +805,7 @@ model financial_info {
   clients           clients? @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "financial_info_client_id_foreign")
 
   @@index([client_id], map: "financial_info_client_id_index")
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -687,6 +821,7 @@ model form_approval_history {
   trigo_users      trigo_users    @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "form_approval_history_user_id_foreign")
 
   @@index([form_response_id], map: "form_approval_history_form_response_id_index")
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -699,6 +834,8 @@ model form_approvals {
   comments         String?
   trigo_users      trigo_users?   @relation(fields: [approver], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "form_approvals_approver_foreign")
   form_responses   form_responses @relation(fields: [form_response_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("public")
 }
 
 model form_cities {
@@ -708,6 +845,8 @@ model form_cities {
   created_at               DateTime                   @default(now()) @db.Timestamptz(6)
   updated_at               DateTime                   @default(now()) @db.Timestamptz(6)
   form_city_interest_rates form_city_interest_rates[]
+
+  @@schema("public")
 }
 
 model form_city_interest_rates {
@@ -717,6 +856,8 @@ model form_city_interest_rates {
   created_at    DateTime    @default(now()) @db.Timestamptz(6)
   updated_at    DateTime    @default(now()) @db.Timestamptz(6)
   form_cities   form_cities @relation(fields: [form_city_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "form_city_interest_rates_form_city_id_foreign")
+
+  @@schema("public")
 }
 
 model form_edit_history {
@@ -733,6 +874,7 @@ model form_edit_history {
   trigo_users      trigo_users    @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "form_edit_history_user_id_foreign")
 
   @@index([form_response_id], map: "form_edit_history_form_response_id_index")
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -757,6 +899,7 @@ model form_responses {
   @@index([form_id], map: "form_responses_form_id_index")
   @@index([status], map: "form_responses_status_index")
   @@index([submission_time], map: "form_responses_submission_time_index")
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -772,6 +915,22 @@ model form_sync_status {
   @@index([form_id], map: "form_sync_status_form_id_index")
   @@index([last_sync_time], map: "form_sync_status_last_sync_time_index")
   @@index([status], map: "form_sync_status_status_index")
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model geolocations {
+  id                      String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  installment_followup_id String?                @unique(map: "geolocations_installment_followup_id_unique") @db.Uuid
+  latitude                Decimal                @db.Decimal(10, 7)
+  longitude               Decimal                @db.Decimal(10, 7)
+  created_at              DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime               @default(now()) @db.Timestamptz(6)
+  activity_interaction_id String?                @unique(map: "geolocations_activity_interaction_id_unique") @db.Uuid
+  activity_interactions   activity_interactions? @relation(fields: [activity_interaction_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "geolocations_activity_interaction_id_foreign")
+  installment_followups   installment_followups? @relation(fields: [installment_followup_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "geolocations_installment_followup_id_foreign")
+
+  @@schema("public")
 }
 
 model holidays {
@@ -782,6 +941,7 @@ model holidays {
   is_enabled   Boolean  @default(true)
 
   @@index([holiday_date], map: "idx_holidays_holiday_date")
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -802,6 +962,7 @@ model installment_boletos {
   @@index([installment_id], map: "idx_installment_boletos_installment_id")
   @@index([stark_id], map: "idx_installment_boletos_stark_id")
   @@index([status], map: "idx_installment_boletos_status")
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -819,6 +980,8 @@ model installment_followups {
   geolocations       geolocations?
   contracts          contracts     @relation(fields: [contract_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   trigo_users        trigo_users   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "installment_followups_user_id_foreign")
+
+  @@schema("public")
 }
 
 model installment_qr_codes {
@@ -840,6 +1003,7 @@ model installment_qr_codes {
 
   @@index([created_at], map: "installment_qr_codes_created_at_index")
   @@index([installment_id, is_active], map: "installment_qr_codes_installment_id_is_active_index")
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -888,6 +1052,7 @@ model installments {
   @@index([contract_id], map: "installments_contract_id_index")
   @@index([due_date], map: "installments_due_date_index")
   @@index([status], map: "installments_status_index")
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -923,6 +1088,7 @@ model integration_status {
   @@index([brx_stakeholder_integration_status], map: "integration_status_brx_stakeholder_integration_status_index")
   @@index([form_response_id], map: "integration_status_form_response_id_index")
   @@index([loan_id], map: "integration_status_loan_id_index")
+  @@schema("public")
 }
 
 model knex_migrations {
@@ -930,11 +1096,15 @@ model knex_migrations {
   name           String?   @db.VarChar(255)
   batch          Int?
   migration_time DateTime? @db.Timestamptz(6)
+
+  @@schema("public")
 }
 
 model knex_migrations_lock {
   index     Int  @id @default(autoincrement())
   is_locked Int?
+
+  @@schema("public")
 }
 
 model lemit_api_calls {
@@ -946,6 +1116,8 @@ model lemit_api_calls {
   created_at           DateTime @default(now()) @db.Timestamptz(6)
   response_status_code Decimal  @default(200) @db.Decimal
   quotes               quotes?  @relation(fields: [quote_id], references: [id], onDelete: Cascade, map: "lemit_api_calls_quotes_fk")
+
+  @@schema("public")
 }
 
 model lemit_cache {
@@ -956,6 +1128,7 @@ model lemit_cache {
   updated_at DateTime @default(now()) @db.Timestamptz(6)
 
   @@index([document], map: "lemit_cache_document_index")
+  @@schema("public")
 }
 
 model loan_quotes {
@@ -975,6 +1148,7 @@ model loan_quotes {
   @@index([contract_id], map: "loan_quotes_contract_id_index")
   @@index([form_response_id], map: "loan_quotes_form_response_id_index")
   @@index([id], map: "loan_quotes_id_index")
+  @@schema("public")
 }
 
 model loan_terms {
@@ -989,6 +1163,8 @@ model loan_terms {
   effective_cet         Decimal     @db.Decimal(12, 4)
   loan_days             Int
   contracts             contracts[]
+
+  @@schema("public")
 }
 
 model loans {
@@ -1009,6 +1185,7 @@ model loans {
   @@index([form_response_id], map: "loans_form_response_id_index")
   @@index([stakeholder_id], map: "loans_stakeholder_id_index")
   @@index([status], map: "loans_status_index")
+  @@schema("public")
 }
 
 model manual_payment_allocations {
@@ -1024,6 +1201,7 @@ model manual_payment_allocations {
   @@unique([manual_payment_id, installment_id], map: "manual_payment_allocations_manual_payment_id_installment_id_uni")
   @@index([installment_id], map: "manual_payment_allocations_installment_id_index")
   @@index([manual_payment_id], map: "manual_payment_allocations_manual_payment_id_index")
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -1048,6 +1226,66 @@ model manual_payments {
   @@index([contract_id], map: "manual_payments_contract_id_index")
   @@index([payment_date], map: "manual_payments_payment_date_index")
   @@index([status], map: "manual_payments_status_index")
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model partner_bonus_bands {
+  id            String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  pillar        String   @db.VarChar(20)
+  min_value     Decimal  @db.Decimal(7, 4)
+  min_inclusive Boolean
+  max_value     Decimal? @db.Decimal(7, 4)
+  max_inclusive Boolean
+  bonus_percent Decimal  @db.Decimal(7, 4)
+  sort_order    Int
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([pillar, sort_order], map: "partner_bonus_bands_order_unique")
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model partner_enrollments {
+  id               String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id          String         @unique(map: "partner_enrollments_current_unique", where: raw("(effective_to IS NULL)")) @db.Uuid
+  partner_level_id String         @db.Uuid
+  effective_from   DateTime       @db.Date
+  effective_to     DateTime?      @db.Date
+  created_at       DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime       @default(now()) @db.Timestamptz(6)
+  partner_levels   partner_levels @relation(fields: [partner_level_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "partner_enrollments_partner_level_id_foreign")
+  trigo_users      trigo_users    @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "partner_enrollments_user_id_foreign")
+
+  @@index([partner_level_id], map: "partner_enrollments_partner_level_id_index")
+  @@index([user_id], map: "partner_enrollments_user_id_index")
+  @@schema("public")
+}
+
+model partner_levels {
+  id                    String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  key                   String                @unique(map: "partner_levels_key_unique") @db.VarChar(20)
+  name                  String                @db.VarChar(50)
+  monthly_target_amount Decimal               @db.Decimal(15, 2)
+  monthly_fixed_amount  Decimal               @db.Decimal(15, 2)
+  sort_order            Int                   @unique(map: "partner_levels_sort_order_unique")
+  is_active             Boolean               @default(true)
+  created_at            DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime              @default(now()) @db.Timestamptz(6)
+  partner_enrollments   partner_enrollments[]
+
+  @@schema("public")
+}
+
+model partner_permanence_milestones {
+  id               String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  month_number     Int      @unique(map: "partner_permanence_milestones_month_number_unique")
+  fixed_multiplier Decimal  @db.Decimal(5, 2)
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("public")
 }
 
 model payment_allocations {
@@ -1065,6 +1303,7 @@ model payment_allocations {
 
   @@index([facility_repay_id], map: "payment_allocations_facility_repay_id_index")
   @@index([installment_id], map: "payment_allocations_installment_id_index")
+  @@schema("public")
 }
 
 model payment_proof_files {
@@ -1080,6 +1319,7 @@ model payment_proof_files {
   manual_payments manual_payments[]
 
   @@index([uploaded_by], map: "payment_proof_files_uploaded_by_index")
+  @@schema("public")
 }
 
 model permissions {
@@ -1089,6 +1329,7 @@ model permissions {
   trigo_group_permissions trigo_group_permissions[]
 
   @@index([permission_key], map: "idx_permissions_permission_key")
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -1104,6 +1345,7 @@ model quote_approval_history {
   trigo_users trigo_users @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "quote_approval_history_user_id_foreign")
 
   @@index([quote_id], map: "quote_approval_history_quote_id_index")
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -1116,6 +1358,8 @@ model quote_approvals {
   comments    String?
   trigo_users trigo_users? @relation(fields: [approver], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "quote_approvals_approver_foreign")
   quotes      quotes       @relation(fields: [quote_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("public")
 }
 
 model quote_edit_history {
@@ -1130,6 +1374,8 @@ model quote_edit_history {
   updated_at    DateTime?   @default(now()) @db.Timestamptz(6)
   quotes        quotes      @relation(fields: [quote_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   trigo_users   trigo_users @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "quote_edit_history_user_id_foreign")
+
+  @@schema("public")
 }
 
 model quote_lemit_analysis {
@@ -1139,6 +1385,8 @@ model quote_lemit_analysis {
   created_at              DateTime @default(now()) @db.Timestamptz(6)
   updated_at              DateTime @default(now()) @db.Timestamptz(6)
   quotes                  quotes   @relation(fields: [quote_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "quote_lemit_analysis_quote_fkey")
+
+  @@schema("public")
 }
 
 model quote_lemit_validation {
@@ -1149,6 +1397,19 @@ model quote_lemit_validation {
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @default(now()) @db.Timestamptz(6)
   quotes     quotes   @relation(fields: [quote_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "quote_lemit_validation_quote_fkey")
+
+  @@schema("public")
+}
+
+model quote_serasa_analysis {
+  id            String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  quote_id      String   @db.Uuid
+  serasa_result Json
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @default(now()) @db.Timestamptz(6)
+  quotes        quotes   @relation(fields: [quote_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "quote_serasa_analysis_quote_id_foreign")
+
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -1234,6 +1495,7 @@ model quotes {
   @@index([guarantor], map: "idx_quotes_guarantor_gin", type: Gin)
   @@index([referral], map: "idx_quotes_referral_gin", type: Gin)
   @@index([quote_status], map: "idx_quotes_status")
+  @@schema("public")
 }
 
 model region_interest_rates {
@@ -1243,6 +1505,8 @@ model region_interest_rates {
   created_at    DateTime @default(now()) @db.Timestamptz(6)
   updated_at    DateTime @default(now()) @db.Timestamptz(6)
   regions       regions  @relation(fields: [region_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "region_interest_rates_region_id_foreign")
+
+  @@schema("public")
 }
 
 model regions {
@@ -1258,6 +1522,8 @@ model regions {
   region_interest_rates region_interest_rates[]
   regions               regions?                @relation("regionsToregions", fields: [parent_id], references: [id], onUpdate: NoAction, map: "regions_parent_id_foreign")
   other_regions         regions[]               @relation("regionsToregions")
+
+  @@schema("public")
 }
 
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
@@ -1265,6 +1531,7 @@ model renegotiation_ids {
   array_agg String[] @db.Uuid
 
   @@ignore
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -1303,6 +1570,7 @@ model renegotiation_simulations {
 
   @@index([created_at], map: "renegotiation_simulations_created_at_index")
   @@index([expires_at], map: "renegotiation_simulations_expires_at_index")
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -1316,9 +1584,12 @@ model renegotiation_status_history {
   created_at       DateTime?      @default(now()) @db.Timestamptz(6)
   trigo_users      trigo_users    @relation(fields: [changed_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "renegotiation_status_history_changed_by_foreign")
   renegotiations   renegotiations @relation(fields: [renegotiation_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "renegotiation_status_history_renegotiation_id_foreign")
+
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model renegotiations {
   id                           String                         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   contract_id                  String                         @db.Uuid
@@ -1347,6 +1618,19 @@ model renegotiations {
   renegotiation_status_history renegotiation_status_history[]
   trigo_users                  trigo_users?                   @relation(fields: [approved_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "renegotiations_approved_by_foreign")
   contracts                    contracts                      @relation(fields: [contract_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "renegotiations_contract_id_foreign")
+
+  @@schema("public")
+}
+
+model serasa_cache {
+  id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  document   String   @db.VarChar(11)
+  result     Json
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([document], map: "serasa_cache_document_index")
+  @@schema("public")
 }
 
 model system_configs {
@@ -1364,6 +1648,7 @@ model system_configs {
 
   @@index([category], map: "system_configs_category_index")
   @@index([key], map: "system_configs_key_index")
+  @@schema("public")
 }
 
 model temp_applications {
@@ -1435,6 +1720,7 @@ model temp_applications {
   @@index([issue_date], map: "idx_app_issue_date")
   @@index([sequential_id], map: "idx_app_sequential_id")
   @@index([status], map: "idx_app_status")
+  @@schema("public")
 }
 
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
@@ -1444,6 +1730,7 @@ model temp_contratos_antigos_infos {
   NOME        String? @db.VarChar(50)
 
   @@ignore
+  @@schema("public")
 }
 
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
@@ -1454,6 +1741,7 @@ model tmp_payment_updates {
   new_payment_date DateTime @db.Date
 
   @@ignore
+  @@schema("public")
 }
 
 model trigo_group_members {
@@ -1467,6 +1755,7 @@ model trigo_group_members {
   @@unique([group_id, user_id], map: "uq_group_member")
   @@index([group_id], map: "idx_group_members_group")
   @@index([user_id], map: "idx_group_members_user")
+  @@schema("public")
 }
 
 model trigo_group_permissions {
@@ -1483,6 +1772,7 @@ model trigo_group_permissions {
   @@index([group_id], map: "idx_trigo_group_permissions_group_id")
   @@index([group_id, permission_id], map: "idx_trigo_group_permissions_group_perm")
   @@index([permission_id], map: "idx_trigo_group_permissions_permission_id")
+  @@schema("public")
 }
 
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
@@ -1500,6 +1790,7 @@ model trigo_groups {
 
   @@index([is_active], map: "idx_trigo_groups_is_active")
   @@index([is_deleted], map: "idx_trigo_groups_is_deleted")
+  @@schema("public")
 }
 
 model trigo_users {
@@ -1571,6 +1862,7 @@ model trigo_users {
   @@index([manager_id], map: "idx_trigo_users_managed_by")
   @@index([manager_id], map: "idx_trigo_users_manager_id")
   @@index([company_id], map: "trigo_users_company_id_index")
+  @@schema("public")
 }
 
 model user_profile_pictures {
@@ -1587,6 +1879,7 @@ model user_profile_pictures {
   trigo_users_user_profile_pictures_user_idTotrigo_users            trigo_users?  @relation("user_profile_pictures_user_idTotrigo_users", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "user_profile_pictures_user_id_foreign")
 
   @@index([user_id], map: "user_profile_pictures_user_id_index")
+  @@schema("public")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -1611,6 +1904,7 @@ model users {
 
   @@index([manager_id], map: "users_manager_id_index")
   @@index([username], map: "users_username_index")
+  @@schema("public")
 }
 
 model vaas_api_calls {
@@ -1622,6 +1916,8 @@ model vaas_api_calls {
   created_at           DateTime @default(now()) @db.Timestamptz(6)
   response_status_code Decimal  @default(200) @db.Decimal
   quotes               quotes?  @relation(fields: [quote_id], references: [id], onDelete: Cascade, map: "vaas_api_calls_quotes_fk")
+
+  @@schema("public")
 }
 
 model vaas_cache {
@@ -1632,6 +1928,7 @@ model vaas_cache {
   updated_at DateTime @default(now()) @db.Timestamptz(6)
 
   @@index([document], map: "vaas_cache_document_index")
+  @@schema("public")
 }
 
 model webhook_error_logs {
@@ -1643,6 +1940,7 @@ model webhook_error_logs {
 
   @@index([event_type], map: "webhook_error_logs_event_type_index")
   @@index([received_at], map: "webhook_error_logs_received_at_index")
+  @@schema("public")
 }
 
 model webhook_logs {
@@ -1653,6 +1951,7 @@ model webhook_logs {
 
   @@index([event_type], map: "webhook_logs_event_type_index")
   @@index([received_at], map: "webhook_logs_received_at_index")
+  @@schema("public")
 }
 
 model whatsapp_messages_received {
@@ -1672,6 +1971,8 @@ model whatsapp_messages_received {
   clients                                clients?                                 @relation(fields: [client_id], references: [id], onUpdate: SetNull, map: "whatsapp_messages_received_clients_fk")
   contracts                              contracts?                               @relation(fields: [contract_id], references: [id], onUpdate: SetNull, map: "whatsapp_messages_received_contracts_fk")
   whatsapp_messages_received_attachments whatsapp_messages_received_attachments[]
+
+  @@schema("public")
 }
 
 model whatsapp_messages_received_attachments {
@@ -1682,6 +1983,8 @@ model whatsapp_messages_received_attachments {
   twilio_attachment_url         String                     @default("") @db.VarChar
   attachment_s3_key             String?                    @db.VarChar
   whatsapp_messages_received    whatsapp_messages_received @relation(fields: [whatsapp_messages_received_id], references: [id], onDelete: Cascade, map: "whatsapp_messages_received_attachments_whatsapp_messages_receiv")
+
+  @@schema("public")
 }
 
 model whatsapp_messages_sent {
@@ -1710,181 +2013,255 @@ model whatsapp_messages_sent {
   installments   installments? @relation(fields: [installment_id], references: [id], onUpdate: SetNull, map: "whatsapp_sent_messages_installments_fk")
 
   @@index([sid], map: "whatsapp_sent_messages_sid_idx")
+  @@schema("public")
 }
 
-model geolocations {
-  id                      String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  installment_followup_id String?                @unique(map: "geolocations_installment_followup_id_unique") @db.Uuid
-  latitude                Decimal                @db.Decimal(10, 7)
-  longitude               Decimal                @db.Decimal(10, 7)
-  created_at              DateTime               @default(now()) @db.Timestamptz(6)
-  updated_at              DateTime               @default(now()) @db.Timestamptz(6)
-  activity_interaction_id String?                @unique(map: "geolocations_activity_interaction_id_unique") @db.Uuid
-  activity_interactions   activity_interactions? @relation(fields: [activity_interaction_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "geolocations_activity_interaction_id_foreign")
-  installment_followups   installment_followups? @relation(fields: [installment_followup_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "geolocations_installment_followup_id_foreign")
+view vw_client_documents {
+  client_name   String? @db.VarChar(255)
+  cpf           String? @db.VarChar(255)
+  quote_id      String? @db.Uuid
+  quote_status  String? @db.VarChar(20)
+  document_type String?
+  file_name     String?
+  mime_type     String?
+  s3_key        String?
+  uploaded_at   String?
+
+  @@schema("public")
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model activity_interactions {
-  id                   String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  task_id              String         @unique(map: "activity_interactions_task_id_unique") @db.Uuid
-  installment_id       String         @db.Uuid
-  contract_id          String         @db.Uuid
-  task_type            String         @db.VarChar(255)
-  channel              String         @db.VarChar(255)
-  recipient_type       String         @db.VarChar(255)
-  recipient_contact_id String?        @db.Uuid
-  result               String         @db.VarChar(255)
-  promise_date         DateTime?      @db.Date
-  observation          String?
-  user_id              String         @db.Uuid
-  created_at           DateTime       @default(now()) @db.Timestamptz(6)
-  contracts            contracts      @relation(fields: [contract_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_contract_id_foreign")
-  installments         installments   @relation(fields: [installment_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_installment_id_foreign")
-  activity_tasks       activity_tasks @relation(fields: [task_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_task_id_foreign")
-  trigo_users          trigo_users    @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_user_id_foreign")
-  geolocations         geolocations?
+view v_installment_current_state {
+  id                          String?   @db.Uuid
+  contract_id                 String?   @db.Uuid
+  installment_number          Int?
+  total_amount                Decimal?  @db.Decimal(15, 2)
+  present_value               Decimal?  @db.Decimal(15, 2)
+  due_date                    DateTime? @db.Date
+  payment_date                DateTime? @db.Date
+  status                      String?   @db.VarChar(255)
+  qr_code_string              String?   @db.VarChar(255)
+  qr_code_base64              String?
+  qr_code_amount              Decimal?  @db.Decimal(15, 2)
+  renegotiated_amount         Decimal?  @db.Decimal(15, 2)
+  renegotiated_at             DateTime? @db.Date
+  brx_repayment_schedule_uuid String?   @db.Uuid
 
-  @@index([contract_id, created_at], map: "idx_activity_interactions_contract")
-  @@index([installment_id, created_at], map: "idx_activity_interactions_installment")
+  @@schema("public")
 }
 
-model activity_ruler_stages {
-  id                    String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code                  String           @unique(map: "activity_ruler_stages_code_unique") @db.VarChar(255)
-  name                  String           @db.VarChar(255)
-  priority              Int              @unique(map: "activity_ruler_stages_priority_unique")
-  min_days_overdue      Int?
-  max_days_overdue      Int?
-  predicate             String?          @db.VarChar(255)
-  contacts_before_visit Int?
-  tone                  String           @db.VarChar(255)
-  badge_label           String?          @db.VarChar(255)
-  is_active             Boolean          @default(true)
-  created_at            DateTime         @default(now()) @db.Timestamptz(6)
-  updated_at            DateTime         @default(now()) @db.Timestamptz(6)
-  activity_tasks        activity_tasks[]
+view vw_quotes {
+  id                            String?   @db.Uuid
+  quote_status                  String?   @db.VarChar(20)
+  is_renegotiation              Boolean?
+  quote_type                    String?   @db.VarChar(10)
+  region_id                     String?   @db.Uuid
+  document                      String?   @db.VarChar(255)
+  client_name                   String?   @db.VarChar(255)
+  secondary_document            String?   @db.VarChar(255)
+  activity_type                 String?   @db.VarChar(20)
+  profession                    String?   @db.VarChar(255)
+  email                         String?   @db.VarChar(255)
+  telephone                     String?   @db.VarChar(255)
+  client_address                Json?
+  referral                      Json?
+  guarantor                     Json?
+  sales_agent_relation          String?   @db.VarChar(255)
+  finance_amount                Decimal?  @db.Decimal(15, 2)
+  personal_income               Decimal?  @db.Decimal(15, 2)
+  familiar_income               Decimal?  @db.Decimal(15, 2)
+  activity_income               Decimal?  @db.Decimal(15, 2)
+  first_installment_date        DateTime? @db.Date
+  installment_numbers           Int?
+  payment_pix_type              String?   @db.VarChar(20)
+  payment_pix_code              String?   @db.VarChar(255)
+  signature_type                String?   @db.VarChar(20)
+  observations                  String?
+  current_sales_agent_id        String?   @db.Uuid
+  current_collection_agent_id   String?   @db.Uuid
+  document_attachment           Json?
+  proof_of_residence_attachment Json?
+  proof_of_income_attachment    Json?
+  geolocation                   Json?
+  interest_rate                 Decimal?  @db.Decimal(12, 8)
+  loans                         Json?
+  debts                         Json?
+  lemit_kyc_status              String?   @db.VarChar(20)
+  income_observations           String?
+  simulation_result             Json?
+  vaas_kyc_status               String?   @db.VarChar(20)
+  vaas_kyc_response_message     String?   @db.VarChar(100)
+  vaas_result                   Json?
+  created_at                    DateTime? @db.Timestamptz(6)
+  updated_at                    DateTime? @db.Timestamptz(6)
+
+  @@schema("public")
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model activity_tasks {
-  id                                                           String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  installment_id                                               String                 @unique(map: "idx_activity_tasks_one_pending_per_installment", where: raw("((status)::text = 'pending'::text)")) @db.Uuid
-  contract_id                                                  String                 @db.Uuid
-  ruler_stage_id                                               String?                @db.Uuid
-  segment_code                                                 String                 @db.VarChar(255)
-  task_type                                                    String                 @db.VarChar(255)
-  status                                                       String                 @default("pending") @db.VarChar(255)
-  expire_date                                                  DateTime               @db.Date
-  was_postponed                                                Boolean                @default(false)
-  was_rescheduled                                              Boolean                @default(false)
-  created_at                                                   DateTime               @default(now()) @db.Timestamptz(6)
-  created_by                                                   String                 @db.VarChar(255)
-  created_by_user_id                                           String?                @db.Uuid
-  assigned_to                                                  String?                @db.Uuid
-  completed_at                                                 DateTime?              @db.Timestamptz(6)
-  completed_by_user_id                                         String?                @db.Uuid
-  system_closed_at                                             DateTime?              @db.Timestamptz(6)
-  cancelled_at                                                 DateTime?              @db.Timestamptz(6)
-  cancellation_reason                                          String?                @db.VarChar(255)
-  parent_task_id                                               String?                @db.Uuid
-  activity_interactions                                        activity_interactions?
-  trigo_users_activity_tasks_assigned_toTotrigo_users          trigo_users?           @relation("activity_tasks_assigned_toTotrigo_users", fields: [assigned_to], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_assigned_to_foreign")
-  trigo_users_activity_tasks_completed_by_user_idTotrigo_users trigo_users?           @relation("activity_tasks_completed_by_user_idTotrigo_users", fields: [completed_by_user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_completed_by_user_id_foreign")
-  contracts                                                    contracts              @relation(fields: [contract_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_contract_id_foreign")
-  trigo_users_activity_tasks_created_by_user_idTotrigo_users   trigo_users?           @relation("activity_tasks_created_by_user_idTotrigo_users", fields: [created_by_user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_created_by_user_id_foreign")
-  installments                                                 installments           @relation(fields: [installment_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_installment_id_foreign")
-  activity_tasks                                               activity_tasks?        @relation("activity_tasksToactivity_tasks", fields: [parent_task_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_parent_task_id_foreign")
-  other_activity_tasks                                         activity_tasks[]       @relation("activity_tasksToactivity_tasks")
-  activity_ruler_stages                                        activity_ruler_stages? @relation(fields: [ruler_stage_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_ruler_stage_id_foreign")
+view late_installments {
+  contract_id        String?   @db.Uuid
+  contract_number    String?   @db.VarChar(255)
+  client_id          String?   @db.Uuid
+  client_first_name  String?
+  client_full_name   String?   @db.VarChar(255)
+  client_phone       String?   @db.VarChar(255)
+  pix_key_type       String?
+  pix_key            String?   @db.VarChar(255)
+  installment_id     String?   @db.Uuid
+  due_date           DateTime? @db.Date
+  installment_number Int?
+  pending_amount     Decimal?  @db.Decimal(15, 2)
+  consultant_id      String?   @db.Uuid
+  consultant_name    String?   @db.VarChar(255)
 
-  @@index([assigned_to, expire_date], map: "idx_activity_tasks_assigned_pending", where: raw("((status)::text = 'pending'::text)"))
-  @@index([contract_id, created_at], map: "idx_activity_tasks_contract")
-  @@index([installment_id, created_at], map: "idx_activity_tasks_installment")
+  @@schema("public")
 }
 
-model client_auth_blacklist {
-  cpf        String   @id
-  reason     String?
-  created_at DateTime @default(now()) @db.Timestamptz(6)
+view vw_dim_empresa {
+  id_empresa                      String?  @db.Uuid
+  nome_empresa                    String?  @db.VarChar(255)
+  cnpj                            String?  @db.VarChar(255)
+  flag_utiliza_integracao_brx     Boolean?
+  flag_utiliza_integracao_celcoin Boolean?
+  flag_cobra_iof                  Boolean?
+  flag_ativo                      Boolean?
+
+  @@schema("analytics")
 }
 
-model quote_serasa_analysis {
-  id            String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  quote_id      String   @db.Uuid
-  serasa_result Json
-  created_at    DateTime @default(now()) @db.Timestamptz(6)
-  updated_at    DateTime @default(now()) @db.Timestamptz(6)
-  quotes        quotes   @relation(fields: [quote_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "quote_serasa_analysis_quote_id_foreign")
+view vw_dim_consultor {
+  id_consultor         String?  @db.Uuid
+  nome_consultor       String?  @db.VarChar(255)
+  id_gestor_direto     String?  @db.Uuid
+  nome_gestor_direto   String?  @db.VarChar(255)
+  id_empresa           String?  @db.Uuid
+  flag_ativo           Boolean?
+  nivel_hierarquia     Int?
+  nome_diretor         String?
+  nome_gerente_nivel_1 String?
+  nome_gerente_nivel_2 String?
+  nome_supervisor      String?
+  caminho_hierarquia   String[] @db.Uuid
+
+  @@schema("analytics")
 }
 
-model serasa_cache {
-  id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  document   String   @db.VarChar(11)
-  result     Json
-  created_at DateTime @default(now()) @db.Timestamptz(6)
-  updated_at DateTime @default(now()) @db.Timestamptz(6)
+view vw_fato_originacao {
+  id_contrato                    String?   @db.Uuid
+  numero_contrato                String?   @db.VarChar(255)
+  id_empresa                     String?   @db.Uuid
+  id_cliente                     String?   @db.Uuid
+  documento                      String?
+  id_consultor                   String?   @db.Uuid
+  id_agente_cobranca             String?   @db.Uuid
+  id_produto                     String?   @db.Uuid
+  nome_produto                   String?   @db.VarChar
+  valor_contrato                 Decimal?  @db.Decimal(15, 2)
+  valor_parcela                  Decimal?  @db.Decimal(15, 2)
+  qtd_parcelas                   Int?
+  valor_total_financiado         Decimal?  @db.Decimal(15, 2)
+  valor_iof                      Decimal?  @db.Decimal(15, 2)
+  taxa_juros                     Decimal?  @db.Decimal(5, 4)
+  taxa_cet                       Decimal?  @db.Decimal(7, 4)
+  data_desembolso                DateTime? @db.Date
+  mes_desembolso                 DateTime? @db.Date
+  data_primeiro_vencimento       DateTime? @db.Date
+  status_contrato                String?
+  flag_renegociado               Boolean?
+  flag_novo_cliente              Boolean?
+  flag_cliente_reativo           Boolean?
+  flag_renovado                  Boolean?
+  nome_empresa                   String?   @db.VarChar(255)
+  nome_cliente                   String?
+  nome_consultor                 String?
+  id_gestor_consultor            String?   @db.Uuid
+  nome_gestor_consultor          String?
+  nivel_hierarquia_consultor     Int?
+  nome_diretor_consultor         String?
+  nome_gerente_consultor_nivel_1 String?
+  nome_gerente_consultor_nivel_2 String?
 
-  @@index([document], map: "serasa_cache_document_index")
+  @@schema("analytics")
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model partner_bonus_bands {
-  id            String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  pillar        String   @db.VarChar(20)
-  min_value     Decimal  @db.Decimal(7, 4)
-  min_inclusive Boolean
-  max_value     Decimal? @db.Decimal(7, 4)
-  max_inclusive Boolean
-  bonus_percent Decimal  @db.Decimal(7, 4)
-  sort_order    Int
-  created_at    DateTime @default(now()) @db.Timestamptz(6)
-  updated_at    DateTime @default(now()) @db.Timestamptz(6)
+view vw_fato_parcela {
+  id_parcela                       String?   @db.Uuid
+  id_contrato                      String?   @db.Uuid
+  numero_contrato                  String?   @db.VarChar(255)
+  numero_parcela                   Int?
+  valor_total_parcela              Decimal?  @db.Decimal(15, 2)
+  valor_total_pago                 Decimal?  @db.Decimal
+  valor_pendente                   Decimal?  @db.Decimal
+  valor_presente_parcela           Decimal?  @db.Decimal(15, 2)
+  data_vencimento                  DateTime? @db.Date
+  data_pagamento                   DateTime? @db.Date
+  status_parcela                   String?
+  status_contrato                  String?
+  flag_renegociado                 Boolean?
+  dias_atraso_corridos             Int?
+  faixa_aging_dias_corridos        String?
+  valor_contribuicao_inadimplencia Decimal?  @db.Decimal
+  id_empresa                       String?   @db.Uuid
+  id_cliente                       String?   @db.Uuid
+  id_consultor                     String?   @db.Uuid
+  id_agente_cobranca               String?   @db.Uuid
 
-  @@unique([pillar, sort_order], map: "partner_bonus_bands_order_unique")
+  @@schema("analytics")
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model partner_enrollments {
-  id               String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  user_id          String         @unique(map: "partner_enrollments_current_unique", where: raw("(effective_to IS NULL)")) @db.Uuid
-  partner_level_id String         @db.Uuid
-  effective_from   DateTime       @db.Date
-  effective_to     DateTime?      @db.Date
-  created_at       DateTime       @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime       @default(now()) @db.Timestamptz(6)
-  partner_levels   partner_levels @relation(fields: [partner_level_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "partner_enrollments_partner_level_id_foreign")
-  trigo_users      trigo_users    @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "partner_enrollments_user_id_foreign")
+view vw_fato_recebimento {
+  id_parcela              String?   @db.Uuid
+  id_contrato             String?   @db.Uuid
+  id_empresa              String?   @db.Uuid
+  id_cliente              String?   @db.Uuid
+  id_consultor            String?   @db.Uuid
+  id_agente_cobranca      String?   @db.Uuid
+  data_pagamento          DateTime? @db.Date
+  valor_recebido          Decimal?  @db.Decimal
+  origem_recebimento      String?
+  numero_parcela          Int?
+  data_vencimento_parcela DateTime? @db.Date
+  valor_total_parcela     Decimal?  @db.Decimal(15, 2)
+  classificacao_pagamento String?
 
-  @@index([partner_level_id], map: "partner_enrollments_partner_level_id_index")
-  @@index([user_id], map: "partner_enrollments_user_id_index")
+  @@schema("analytics")
 }
 
-model partner_levels {
-  id                    String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  key                   String                @unique(map: "partner_levels_key_unique") @db.VarChar(20)
-  name                  String                @db.VarChar(50)
-  monthly_target_amount Decimal               @db.Decimal(15, 2)
-  monthly_fixed_amount  Decimal               @db.Decimal(15, 2)
-  sort_order            Int                   @unique(map: "partner_levels_sort_order_unique")
-  is_active             Boolean               @default(true)
-  created_at            DateTime              @default(now()) @db.Timestamptz(6)
-  updated_at            DateTime              @default(now()) @db.Timestamptz(6)
-  partner_enrollments   partner_enrollments[]
+view upcoming_installments {
+  contract_id       String?   @db.Uuid
+  contract_number   String?   @db.VarChar(255)
+  client_id         String?   @db.Uuid
+  client_first_name String?
+  client_full_name  String?   @db.VarChar(255)
+  client_phone      String?   @db.VarChar(255)
+  pix_key_type      String?
+  pix_key           String?   @db.VarChar(255)
+  installment_id    String?   @db.Uuid
+  due_date          DateTime? @db.Date
+  pending_amount    Decimal?  @db.Decimal(15, 2)
+  consultant_id     String?   @db.Uuid
+  consultant_name   String?   @db.VarChar(255)
+
+  @@schema("public")
 }
 
-model partner_permanence_milestones {
-  id               String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  month_number     Int      @unique(map: "partner_permanence_milestones_month_number_unique")
-  fixed_multiplier Decimal  @db.Decimal(5, 2)
-  created_at       DateTime @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime @default(now()) @db.Timestamptz(6)
+view clients_contracts_30_days_left {
+  client_first_name String?
+  client_full_name  String?   @db.VarChar(255)
+  client_phone      String?   @db.VarChar(255)
+  contract_number   String?   @db.VarChar(255)
+  valor_emprestimo  Decimal?  @db.Decimal(15, 2)
+  contract_end_date DateTime? @db.Date
+  consultant_name   String?   @db.VarChar(255)
+
+  @@schema("public")
 }
 
 enum message_status_enum {
   pending
   sent
   failed
+
+  @@schema("public")
 }
 
 enum message_type_enum {
@@ -1893,4 +2270,6 @@ enum message_type_enum {
   renegotiation
   discount
   other
+
+  @@schema("public")
 }
