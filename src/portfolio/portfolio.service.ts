@@ -4,7 +4,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PortfolioSnapshotRow } from './interfaces/portfolio-row.interface';
 import { PortfolioSummary } from './interfaces/portfolio-summary.interface';
 
-
 @Injectable()
 export class PortfolioService {
   constructor(private readonly prisma: PrismaService) {}
