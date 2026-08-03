@@ -4,11 +4,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PortfolioSnapshotRow } from './interfaces/portfolio-row.interface';
 import { PortfolioSummary } from './interfaces/portfolio-summary.interface';
 
-const EMPTY_SUMMARY = (): PortfolioSummary => ({
-  active: { outstandingAmount: 0, contracts: 0 },
-  delinquency: { rate: 0, amount: 0, contracts: 0 },
-  renegotiatedOutstandingAmount: 0,
-});
 
 @Injectable()
 export class PortfolioService {
