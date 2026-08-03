@@ -86,10 +86,13 @@ describe('ContractsService.getContracts', () => {
     const { service, prisma } = await buildService({ total: 0 });
 
     await expect(
-      service.getContracts(USER_ID, query({
-        page: 2,
-        limit: 10,
-      })),
+      service.getContracts(
+        USER_ID,
+        query({
+          page: 2,
+          limit: 10,
+        }),
+      ),
     ).resolves.toEqual({
       items: [],
       pagination: {
@@ -112,16 +115,19 @@ describe('ContractsService.getContracts', () => {
 
   it('aceita filtros combinados de listagem', async () => {
     const { service, prisma } = await buildService();
-    await service.getContracts(USER_ID, query({
-      page: 1,
-      limit: 30,
-      search: 'João',
-      products: ['11111111-1111-4111-8111-111111111111'],
-      startDate: '2026-01-01',
-      endDate: '2026-01-31',
-      onlyDelinquency: true,
-      onlyRenegotiated: true,
-    }));
+    await service.getContracts(
+      USER_ID,
+      query({
+        page: 1,
+        limit: 30,
+        search: 'João',
+        products: ['11111111-1111-4111-8111-111111111111'],
+        startDate: '2026-01-01',
+        endDate: '2026-01-31',
+        onlyDelinquency: true,
+        onlyRenegotiated: true,
+      }),
+    );
 
     expect(prisma.$queryRaw.mock.calls).toHaveLength(2);
   });
@@ -130,12 +136,15 @@ describe('ContractsService.getContracts', () => {
     const { service, prisma } = await buildService();
 
     await expect(
-      service.getContracts(USER_ID, query({
-        page: 1,
-        limit: 30,
-        startDate: '2026-02-01',
-        endDate: '2026-01-31',
-      })),
+      service.getContracts(
+        USER_ID,
+        query({
+          page: 1,
+          limit: 30,
+          startDate: '2026-02-01',
+          endDate: '2026-01-31',
+        }),
+      ),
     ).rejects.toThrow(BadRequestException);
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
   });
