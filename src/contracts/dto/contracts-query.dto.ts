@@ -11,6 +11,17 @@ import {
   Min,
 } from 'class-validator';
 
+const INVALID_BOOLEAN = 'invalid_boolean';
+
+function parseOptionalBoolean(
+  value: unknown,
+): boolean | undefined | typeof INVALID_BOOLEAN {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (value === 'true' || value === true) return true;
+  if (value === 'false' || value === false) return false;
+  return INVALID_BOOLEAN;
+}
+
 /** Paginação da listagem de contratos vinculados ao usuário. */
 export class ContractsQueryDto {
   @ApiPropertyOptional({
@@ -91,11 +102,7 @@ export class ContractsQueryDto {
       'Quando true, retorna somente contratos com parcela aberta em atraso.',
   })
   @IsOptional()
-  @Transform(({ value }) => {
-    if (value === 'true' || value === true) return true;
-    if (value === 'false' || value === false) return false;
-    return value;
-  })
+  @Transform(({ value }) => parseOptionalBoolean(value))
   @IsBoolean()
   onlyDelinquency?: boolean;
 
@@ -104,11 +111,7 @@ export class ContractsQueryDto {
     description: 'Quando true, retorna somente contratos com renegociação.',
   })
   @IsOptional()
-  @Transform(({ value }) => {
-    if (value === 'true' || value === true) return true;
-    if (value === 'false' || value === false) return false;
-    return value;
-  })
+  @Transform(({ value }) => parseOptionalBoolean(value))
   @IsBoolean()
   onlyRenegotiated?: boolean;
 }
