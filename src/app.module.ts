@@ -11,6 +11,7 @@ import { CollectionsModule } from './collections/collections.module';
 import { ActivitiesModule } from './activities/activities.module';
 import { FollowUpModule } from './follow-up/follow-up.module';
 import { LocationCheckModule } from './location-check/location-check.module';
+import { PortfolioModule } from './portfolio/portfolio.module';
 import configuration from './config/configuration';
 import { envValidationSchema } from './config/env.validation';
 
@@ -33,6 +34,7 @@ import { envValidationSchema } from './config/env.validation';
     ActivitiesModule,
     FollowUpModule,
     LocationCheckModule,
+    PortfolioModule,
   ],
   controllers: [AppController],
   providers: [AppService],
