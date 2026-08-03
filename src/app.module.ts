@@ -12,6 +12,8 @@ import { ActivitiesModule } from './activities/activities.module';
 import { FollowUpModule } from './follow-up/follow-up.module';
 import { LocationCheckModule } from './location-check/location-check.module';
 import { PortfolioModule } from './portfolio/portfolio.module';
+import { ContractsModule } from './contracts/contracts.module';
+import { ProductsModule } from './products/products.module';
 import configuration from './config/configuration';
 import { envValidationSchema } from './config/env.validation';
 
@@ -35,6 +37,8 @@ import { envValidationSchema } from './config/env.validation';
     FollowUpModule,
     LocationCheckModule,
     PortfolioModule,
+    ContractsModule,
+    ProductsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
