@@ -15,10 +15,7 @@ const SNAPSHOT = {
 async function buildService(snapshot: unknown[] = [SNAPSHOT]) {
   const prisma = { $queryRaw: jest.fn(() => Promise.resolve(snapshot)) };
   const module: TestingModule = await Test.createTestingModule({
-    providers: [
-      PortfolioService,
-      { provide: PrismaService, useValue: prisma },
-    ],
+    providers: [PortfolioService, { provide: PrismaService, useValue: prisma }],
   }).compile();
   return { service: module.get(PortfolioService), prisma };
 }
