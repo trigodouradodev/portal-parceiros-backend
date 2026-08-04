@@ -1,12 +1,5 @@
 /** Utils puros do módulo de activities (sem dependência de Nest/Prisma). */
 
-/** Coerção robusta de valores numéricos do $queryRaw (Decimal/string/bigint). */
-export function toNum(value: unknown): number {
-  if (value === null || value === undefined) return 0;
-  if (typeof value === 'bigint') return Number(value);
-  return Number(value);
-}
-
 /** Mantém só os dígitos (CPF/telefone digitados à mão, com ou sem máscara). */
 export function onlyDigits(value: string | undefined): string {
   return value ? value.replace(/\D/g, '') : '';
