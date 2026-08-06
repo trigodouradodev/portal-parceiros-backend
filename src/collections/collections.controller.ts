@@ -37,7 +37,7 @@ export class CollectionsController {
   /**
    * Aba Cobrança: lista paginada de contratos atrasados, do mais atrasado
    * para o menos. Acesso: INSTALLMENT_VIEW ou INSTALLMENT_VIEW_ALL (ROLE_ADMIN
-   * por bypass); scope por hierarquia aplicado no service.
+   * por bypass); o service aplica ownership direto do usuário.
    */
   @ApiOperation({
     summary: 'Aba Cobrança: contratos atrasados (mais atrasado primeiro).',

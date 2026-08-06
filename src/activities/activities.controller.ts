@@ -50,7 +50,7 @@ export class ActivitiesController {
    */
   @ApiOperation({
     summary:
-      'Fila de cobrança do dia (home). Escopo por hierarquia: parceiro=carteira, gerente=time, diretor=tudo.',
+      'Fila de cobrança do dia (home), limitada aos contratos diretamente vinculados ao usuário.',
   })
   @ApiOkResponse({ type: TodayQueue })
   @RequirePermissions(
@@ -71,8 +71,7 @@ export class ActivitiesController {
 
   /**
    * Detalhe da parcela: contrato, cliente, responsável e o histórico completo de tarefas
-   * da parcela (cada uma com sua interação). Escopado por hierarquia (os 3 perfis acessam
-   * o que enxergam).
+   * da parcela (cada uma com sua interação). Escopado por vínculo direto do usuário.
    */
   @ApiOperation({
     summary:

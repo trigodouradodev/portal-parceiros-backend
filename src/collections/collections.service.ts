@@ -3,7 +3,6 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { toNum } from '../common/query.util';
 import { ScopeService, ScopeViewer } from '../scope/scope.service';
-import { PermissionKey } from '../auth/permissions/permission-keys';
 import {
   ClientAddress,
   OverdueCollectionItem,
@@ -156,9 +155,8 @@ export class CollectionsService {
    * houver. Paginado por parcela.
    *
    * Carteira = contratos `disbursed`/`active`; parcela em aberto =
-   * `not_paid`/`partially_paid` com `due_date < CURRENT_DATE`. Scope por
-   * hierarquia (ROLE_ADMIN / INSTALLMENT_VIEW_ALL veem tudo; sem árvore →
-   * página vazia sem ir ao banco).
+   * `not_paid`/`partially_paid` com `due_date < CURRENT_DATE`. Escopo direto:
+   * apenas contratos vinculados ao usuário como consultor ou agente.
    *
    * Obs: o shape do response foi mantido — `contracts`/`totalContracts`/
    * `firstOverdueInstallment` agora representam parcelas (1 row por parcela).
@@ -179,10 +177,7 @@ export class CollectionsService {
       },
     };
 
-    const scopeClause = await this.scope.buildContractScopeSql(viewer, [
-      PermissionKey.INSTALLMENT_VIEW_ALL,
-    ]);
-    if (scopeClause === null) return emptyPage;
+    const scopeClause = this.scope.buildDirectContractScopeSql(viewer.userId);
 
     const statuses = Prisma.join(PORTFOLIO_CONTRACT_STATUSES);
     const openStatuses = Prisma.join(OPEN_INSTALLMENT_STATUSES);
@@ -359,10 +354,7 @@ export class CollectionsService {
       },
     };
 
-    const scopeClause = await this.scope.buildContractScopeSql(viewer, [
-      PermissionKey.INSTALLMENT_VIEW_ALL,
-    ]);
-    if (scopeClause === null) return emptyPage;
+    const scopeClause = this.scope.buildDirectContractScopeSql(viewer.userId);
 
     const statuses = Prisma.join(PORTFOLIO_CONTRACT_STATUSES);
     const openStatuses = Prisma.join(OPEN_INSTALLMENT_STATUSES);
@@ -490,8 +482,8 @@ export class CollectionsService {
    * parcela (valor, vencimento, posição X de Y) e o histórico de follow-up
    * registrado para essa parcela específica (mais recente primeiro).
    *
-   * Scope: mesmo gating das listas — ROLE_ADMIN / INSTALLMENT_VIEW_ALL veem
-   * qualquer contrato; os demais só os da própria árvore de hierarquia.
+   * Scope: mesmo ownership direto das listas, sem expansão hierárquica ou
+   * bypass de visão global.
    * Fora do escopo ou inexistente → 404 (não revela existência).
    */
   async getDetail(
@@ -499,9 +491,10 @@ export class CollectionsService {
     contractId: string,
     installmentNumber: number,
   ): Promise<CollectionDetail> {
-    const canView = await this.scope.canViewContract(contractId, viewer, [
-      PermissionKey.INSTALLMENT_VIEW_ALL,
-    ]);
+    const canView = await this.scope.canDirectlyViewContract(
+      contractId,
+      viewer.userId,
+    );
     if (!canView) {
       throw new NotFoundException('Contrato não encontrado.');
     }

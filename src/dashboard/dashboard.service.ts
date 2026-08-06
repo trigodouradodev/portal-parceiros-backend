@@ -3,7 +3,6 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { toNum } from '../common/query.util';
 import { ScopeService, ScopeViewer } from '../scope/scope.service';
-import { PermissionKey } from '../auth/permissions/permission-keys';
 import {
   PortfolioDashboard,
   RenewalMonthBucket,
@@ -16,13 +15,6 @@ const PORTFOLIO_CONTRACT_STATUSES = ['disbursed', 'active'];
 const ORIGINATION_CONTRACT_STATUSES = ['disbursed', 'closed'];
 /** Status de parcela considerados "em aberto". */
 const OPEN_INSTALLMENT_STATUSES = ['not_paid', 'partially_paid'];
-
-const EMPTY_DASHBOARD: PortfolioDashboard = {
-  activeContracts: 0,
-  dueTodayContracts: 0,
-  overdueContracts: 0,
-  upcomingRenewals: { total: 0, byMonth: [] },
-};
 
 interface KpiRow {
   active: bigint;
@@ -48,20 +40,10 @@ interface DelinquencyRow {
   open_pending: Prisma.Decimal | string | number;
 }
 
-/** Mês corrente 'YYYY-MM' (fallback quando não há ida ao banco). */
+/** Mês corrente `YYYY-MM`, usado quando a consulta não retorna linha. */
 function currentMonth(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-}
-
-function emptyPerformance(): MonthPerformance {
-  return {
-    month: currentMonth(),
-    origination: { count: 0, amount: 0 },
-    averageRate: null,
-    delinquency: { rate: 0, overdueAmount: 0, portfolioOpenAmount: 0 },
-    renewals: 0,
-  };
 }
 
 @Injectable()
@@ -79,15 +61,11 @@ export class DashboardService {
    *   - upcomingRenewals: contratos cuja última parcela vence nos próximos
    *     4 meses, agrupados por mês
    *
-   * Scope: ROLE_ADMIN ou INSTALLMENT_VIEW_ALL veem toda a carteira. Caso
-   * contrário, restringe a contratos da árvore de hierarquia do viewer
-   * (consultant_id OU current_collection_agent_id na árvore). Viewer sem
-   * árvore → dashboard zerado.
+   * Scope: somente contratos diretamente vinculados ao usuário como consultor
+   * ou agente de cobrança. Não expande hierarquia nem concede visão global.
    */
   async getDashboard(viewer: ScopeViewer): Promise<PortfolioDashboard> {
-    const scopeClause = await this.buildScopeClause(viewer);
-    if (scopeClause === null) return EMPTY_DASHBOARD;
-
+    const scopeClause = this.buildScopeClause(viewer);
     const statuses = Prisma.join(PORTFOLIO_CONTRACT_STATUSES);
     const openStatuses = Prisma.join(OPEN_INSTALLMENT_STATUSES);
 
@@ -150,8 +128,8 @@ export class DashboardService {
   }
 
   /**
-   * "Meu Desempenho do Mês" — KPIs do mês corrente sobre a carteira do viewer
-   * (mesmo scope de hierarquia do dashboard):
+   * "Meu Desempenho do Mês" — KPIs do mês corrente sobre a carteira direta
+   * do viewer:
    *   - origination: contratos desembolsados no mês (qtd + soma total_amount)
    *   - averageRate: média simples da interest_rate (loan_terms) desses contratos
    *   - delinquency: % de inadimplência da carteira (snapshot atual) pela
@@ -159,12 +137,11 @@ export class DashboardService {
    *     contrato; atraso 1–30d soma só as parcelas vencidas; ÷ saldo aberto
    *   - renewals: contratos do mês de clientes que já tiveram contrato 'closed'
    *
-   * Viewer sem árvore → desempenho zerado.
+   * Escopo direto: contratos em que o usuário é consultor ou agente de
+   * cobrança, sem expansão de hierarquia ou visão global.
    */
   async getMonthPerformance(viewer: ScopeViewer): Promise<MonthPerformance> {
-    const scopeClause = await this.buildScopeClause(viewer);
-    if (scopeClause === null) return emptyPerformance();
-
+    const scopeClause = this.buildScopeClause(viewer);
     const statuses = Prisma.join(PORTFOLIO_CONTRACT_STATUSES);
     const openStatuses = Prisma.join(OPEN_INSTALLMENT_STATUSES);
     const originationStatuses = Prisma.join(ORIGINATION_CONTRACT_STATUSES);
@@ -269,13 +246,9 @@ export class DashboardService {
   }
 
   /**
-   * Fragmento SQL do filtro de scope aplicado sobre `contracts c`
-   * (ROLE_ADMIN / INSTALLMENT_VIEW_ALL veem tudo; sem árvore → `null`).
-   * Delega ao `ScopeService.buildContractScopeSql` (lógica compartilhada).
+   * Fragmento SQL de ownership direto aplicado sobre `contracts c`.
    */
-  private buildScopeClause(viewer: ScopeViewer): Promise<Prisma.Sql | null> {
-    return this.scope.buildContractScopeSql(viewer, [
-      PermissionKey.INSTALLMENT_VIEW_ALL,
-    ]);
+  private buildScopeClause(viewer: ScopeViewer): Prisma.Sql {
+    return this.scope.buildDirectContractScopeSql(viewer.userId);
   }
 }

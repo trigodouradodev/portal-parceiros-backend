@@ -181,6 +181,20 @@ export class ScopeService {
   }
 
   /**
+   * Fragmento de ownership direto para módulos que, temporariamente, não
+   * devem expandir a hierarquia nem conceder bypass por permissão global.
+   * A alternativa hierárquica acima permanece disponível para uso futuro.
+   */
+  buildDirectContractScopeSql(userId: string, alias = 'c'): Prisma.Sql {
+    const consultantCol = Prisma.raw(`${alias}.consultant_id`);
+    const agentCol = Prisma.raw(`${alias}.current_collection_agent_id`);
+    return Prisma.sql`(
+      ${consultantCol} = ${userId}::uuid
+      OR ${agentCol} = ${userId}::uuid
+    )`;
+  }
+
+  /**
    * Verifica se o viewer tem acesso a um contrato específico.
    *
    * Regra:
@@ -232,6 +246,24 @@ export class ScopeService {
     }
     const row = await this.prisma.contracts.findFirst({
       where: { id: contractId, OR: or },
+      select: { id: true },
+    });
+    return !!row;
+  }
+
+  /** Gate de ownership direto, sem árvore e sem bypass de visão global. */
+  async canDirectlyViewContract(
+    contractId: string,
+    userId: string,
+  ): Promise<boolean> {
+    const row = await this.prisma.contracts.findFirst({
+      where: {
+        id: contractId,
+        OR: [
+          { consultant_id: userId },
+          { current_collection_agent_id: userId },
+        ],
+      },
       select: { id: true },
     });
     return !!row;

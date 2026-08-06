@@ -171,6 +171,47 @@ describe('buildContractScopeSql', () => {
   });
 });
 
+describe('buildDirectContractScopeSql', () => {
+  it('sempre filtra pelo vínculo direto, inclusive para ROLE_ADMIN', async () => {
+    const { service } = await build();
+    const sql = service.buildDirectContractScopeSql(VIEWER_ID);
+
+    expect(sql.sql).toContain('c.consultant_id');
+    expect(sql.sql).toContain('c.current_collection_agent_id');
+    expect(sql.sql).not.toContain('ANY');
+    expect(sql.values).toEqual([VIEWER_ID, VIEWER_ID]);
+  });
+
+  it('respeita o alias informado pelo caller', async () => {
+    const { service } = await build();
+    const sql = service.buildDirectContractScopeSql(VIEWER_ID, 'ct');
+
+    expect(sql.sql).toContain('ct.consultant_id');
+    expect(sql.sql).toContain('ct.current_collection_agent_id');
+  });
+});
+
+describe('canDirectlyViewContract', () => {
+  it('consulta somente as duas colunas de ownership do próprio usuário', async () => {
+    const { service, prisma } = await build();
+    prisma.contracts.findFirst.mockResolvedValue({ id: CONTRACT_ID });
+
+    await expect(
+      service.canDirectlyViewContract(CONTRACT_ID, VIEWER_ID),
+    ).resolves.toBe(true);
+    expect(prisma.contracts.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: CONTRACT_ID,
+        OR: [
+          { consultant_id: VIEWER_ID },
+          { current_collection_agent_id: VIEWER_ID },
+        ],
+      },
+      select: { id: true },
+    });
+  });
+});
+
 describe('canViewContract', () => {
   it('libera sem viewer — fail-open para callers internos sistêmicos', async () => {
     const { service, prisma } = await build();
