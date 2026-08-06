@@ -7,7 +7,6 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { PermissionKey } from '../auth/permissions/permission-keys';
 import { ScopeService, ScopeViewer } from '../scope/scope.service';
 import { RegisterInteractionDto } from './dto/register-interaction.dto';
 import { RescheduleTaskDto } from './dto/reschedule-task.dto';
@@ -52,11 +51,11 @@ export class ActivitiesService {
   ) {}
 
   /**
-   * Fila "Ações de hoje" da home, **escopada por hierarquia**: Parceiro vê a
-   * própria carteira, Gerente o time, Diretor tudo (mesmo ScopeService do overdue).
+   * Fila "Ações de hoje" da home, com ownership direto: o usuário vê somente
+   * contratos em que é consultor ou agente de cobrança.
    *
    * Grupos: `active` = a #1 EXECUTÁVEL do viewer (a de maior prioridade `assigned_to`
-   * = ele); só o parceiro dono a tem — Gerente/Diretor recebem `active=null` (view-only).
+   * = ele); somente o responsável pela tarefa pode recebê-la como ativa.
    * `locked` = demais pendentes de hoje visíveis; `scheduled` = postergadas/reagendadas;
    * `completedToday` = concluídas hoje. Ordem: prioridade do segmento, depois maior atraso.
    */
@@ -65,28 +64,7 @@ export class ActivitiesService {
     page = 1,
     limit = 30,
   ): Promise<TodayQueue> {
-    const scopeClause = await this.scope.buildContractScopeSql(viewer, [
-      PermissionKey.INSTALLMENT_VIEW_ALL,
-    ]);
-    if (scopeClause === null) {
-      return {
-        active: null,
-        counter: 0,
-        segments: [],
-        locked: {
-          items: [],
-          pagination: {
-            page,
-            limit,
-            total: 0,
-            totalPages: 0,
-            hasNextPage: false,
-          },
-        },
-        scheduled: [],
-        completedToday: [],
-      };
-    }
+    const scopeClause = this.scope.buildDirectContractScopeSql(viewer.userId);
 
     const pendingToday = Prisma.sql`at.status = 'pending' AND at.expire_date <= CURRENT_DATE`;
     const order = Prisma.sql`ORDER BY rs.priority ASC NULLS LAST, days_overdue DESC, at.created_at ASC`;
@@ -162,8 +140,8 @@ export class ActivitiesService {
 
   /**
    * Detalhe da PARCELA (por installmentId): contrato, cliente, responsável e o histórico
-   * completo de tarefas da parcela — cada uma com a sua interação. Escopado por hierarquia;
-   * fora do escopo ou inexistente → 404 (não revela existência).
+   * completo de tarefas da parcela — cada uma com a sua interação. Escopo por
+   * ownership direto; fora do escopo ou inexistente → 404 (não revela existência).
    */
   async getInstallmentDetail(
     installmentId: string,
@@ -184,9 +162,10 @@ export class ActivitiesService {
     const contractId = installment.contract_id;
     if (!contractId) throw new NotFoundException('installment_not_found');
 
-    const canView = await this.scope.canViewContract(contractId, viewer, [
-      PermissionKey.INSTALLMENT_VIEW_ALL,
-    ]);
+    const canView = await this.scope.canDirectlyViewContract(
+      contractId,
+      viewer.userId,
+    );
     if (!canView) throw new NotFoundException('installment_not_found');
 
     const contract = await this.prisma.contracts.findUnique({

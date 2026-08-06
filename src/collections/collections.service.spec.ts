@@ -9,8 +9,10 @@ import { ResponsibleType } from './interfaces/responsible.interface';
 const VIEWER = { userId: 'user-1', permissions: [] };
 const CONTRACT_ID = '11111111-1111-1111-1111-111111111111';
 
-/** Fragmento devolvido pelo ScopeService quando o viewer enxerga tudo. */
-const SCOPE_TRUE = Prisma.sql`TRUE`;
+/** Fragmento devolvido pelo ScopeService para o ownership direto. */
+const DIRECT_SCOPE = Prisma.sql`
+  (c.consultant_id = 'user-1' OR c.current_collection_agent_id = 'user-1')
+`;
 
 function overdueRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -64,19 +66,18 @@ function upcomingRow(overrides: Record<string, unknown> = {}) {
 }
 
 interface BuildOptions {
-  /** null simula viewer sem árvore de hierarquia. */
-  scopeClause?: Prisma.Sql | null;
+  scopeClause?: Prisma.Sql;
   total?: number;
   rows?: Record<string, unknown>[];
-  canViewContract?: boolean;
+  canDirectlyViewContract?: boolean;
 }
 
 function build(options: BuildOptions = {}) {
   const {
-    scopeClause = SCOPE_TRUE,
+    scopeClause = DIRECT_SCOPE,
     total = 1,
     rows = [overdueRow()],
-    canViewContract = true,
+    canDirectlyViewContract = true,
   } = options;
 
   let queryCall = 0;
@@ -90,8 +91,10 @@ function build(options: BuildOptions = {}) {
     installments: { findFirst: jest.fn().mockResolvedValue(null) },
   };
   const scope = {
-    buildContractScopeSql: jest.fn().mockResolvedValue(scopeClause),
-    canViewContract: jest.fn().mockResolvedValue(canViewContract),
+    buildDirectContractScopeSql: jest.fn().mockReturnValue(scopeClause),
+    canDirectlyViewContract: jest
+      .fn()
+      .mockResolvedValue(canDirectlyViewContract),
   };
 
   return { prisma, scope };
@@ -119,22 +122,6 @@ describe.each([
       : service.getPreventive(VIEWER, page, limit);
 
   const rowFor = () => (kind === 'overdue' ? overdueRow() : upcomingRow());
-
-  it('devolve página vazia sem ir ao banco quando o viewer não tem árvore', async () => {
-    const { service, prisma } = await buildService({ scopeClause: null });
-    const result = await call(service);
-
-    expect(result.items).toEqual([]);
-    expect(result.pagination.total).toBe(0);
-    expect(prisma.$queryRaw).not.toHaveBeenCalled();
-  });
-
-  it('ecoa page e limit pedidos mesmo na página vazia', async () => {
-    const { service } = await buildService({ scopeClause: null });
-    const result = await call(service, 3, 50);
-
-    expect(result.pagination).toMatchObject({ page: 3, limit: 50 });
-  });
 
   it('não busca a página quando o total é zero', async () => {
     const { service, prisma } = await buildService({ total: 0 });
@@ -173,15 +160,10 @@ describe.each([
     });
   });
 
-  it('exige INSTALLMENT_VIEW_ALL como permissão de visão global', async () => {
+  it('pede ao ScopeService o ownership direto do usuário', async () => {
     const { service, scope } = await buildService({ total: 0 });
     await call(service);
-
-    const [, viewAll] = scope.buildContractScopeSql.mock.calls[0] as [
-      unknown,
-      string[],
-    ];
-    expect(viewAll).toEqual(['INSTALLMENT_VIEW_ALL']);
+    expect(scope.buildDirectContractScopeSql).toHaveBeenCalledWith('user-1');
   });
 });
 
@@ -359,7 +341,9 @@ describe('getPreventive — mapeamento do item', () => {
 describe('getDetail — gating de acesso', () => {
   it('404 quando o viewer não pode ver o contrato', async () => {
     // Fora do escopo e inexistente respondem igual, para não revelar existência.
-    const { service, prisma } = await buildService({ canViewContract: false });
+    const { service, prisma } = await buildService({
+      canDirectlyViewContract: false,
+    });
 
     await expect(service.getDetail(VIEWER, CONTRACT_ID, 3)).rejects.toThrow(
       NotFoundException,
@@ -368,24 +352,24 @@ describe('getDetail — gating de acesso', () => {
   });
 
   it('404 quando o contrato não existe, mesmo com acesso liberado', async () => {
-    const { service } = await buildService({ canViewContract: true });
+    const { service } = await buildService({ canDirectlyViewContract: true });
 
     await expect(service.getDetail(VIEWER, CONTRACT_ID, 3)).rejects.toThrow(
       NotFoundException,
     );
   });
 
-  it('exige INSTALLMENT_VIEW_ALL como permissão de visão global', async () => {
-    const { service, scope } = await buildService({ canViewContract: false });
+  it('valida o vínculo direto pelo usuário autenticado', async () => {
+    const { service, scope } = await buildService({
+      canDirectlyViewContract: false,
+    });
     await expect(service.getDetail(VIEWER, CONTRACT_ID, 3)).rejects.toThrow(
       NotFoundException,
     );
 
-    const [, , viewAll] = scope.canViewContract.mock.calls[0] as [
-      unknown,
-      unknown,
-      string[],
-    ];
-    expect(viewAll).toEqual(['INSTALLMENT_VIEW_ALL']);
+    expect(scope.canDirectlyViewContract).toHaveBeenCalledWith(
+      CONTRACT_ID,
+      'user-1',
+    );
   });
 });

@@ -26,8 +26,8 @@ export class DashboardController {
   /**
    * KPIs de carteira para o Resumo Home (contratos ativos, vencendo hoje,
    * em atraso e renovações próximas). Acesso: INSTALLMENT_VIEW ou
-   * INSTALLMENT_VIEW_ALL (ROLE_ADMIN passa por bypass). O scope por hierarquia
-   * é aplicado no service para quem não tem visão global.
+   * INSTALLMENT_VIEW_ALL. O service restringe os dados ao vínculo direto do
+   * usuário, independentemente de grupo ou permissão global.
    */
   @ApiOperation({ summary: 'Summary cards da Home (KPIs de carteira).' })
   @ApiOkResponse({ type: PortfolioDashboard })
@@ -45,7 +45,7 @@ export class DashboardController {
 
   /**
    * "Meu Desempenho do Mês": originação, taxa média, inadimplência e
-   * renovações do mês corrente, no scope de hierarquia do viewer.
+   * renovações do mês corrente, no escopo direto do usuário.
    */
   @ApiOperation({
     summary:
