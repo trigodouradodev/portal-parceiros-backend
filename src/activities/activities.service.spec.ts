@@ -67,7 +67,12 @@ const INTERACTION_ROW = {
 interface TxOptions {
   /** Linha devolvida pelo SELECT ... FOR UPDATE. `null` simula tarefa inexistente. */
   task?: LockedTaskRow | null;
-  /** Id que o SELECT da fila devolve como #1 ativa. */
+  /**
+   * Simula o resultado de `assertIsActiveTask` (AUREA-319: checa segmento, não
+   * mais o id exato). `TASK_ID` simula "a tarefa pertence ao segmento ativo do
+   * usuário" (query devolve 1 linha); qualquer outro valor, incluindo `null`,
+   * simula "não pertence"/"sem tarefa ativa" (query devolve vazio).
+   */
   activeTaskId?: string | null;
   /** Resposta do Postgres para as checagens de janela de data. */
   windowOk?: boolean;
@@ -96,7 +101,11 @@ function createTx(options: TxOptions = {}) {
         return Promise.resolve(task ? [task] : []);
       }
       if (sql.includes('activity_ruler_stages')) {
-        return Promise.resolve(activeTaskId ? [{ id: activeTaskId }] : []);
+        // assertIsActiveTask agora verifica pertencimento ao segmento ativo
+        // (retorna alguma linha) em vez de comparar contra um id específico.
+        return Promise.resolve(
+          activeTaskId === TASK_ID ? [{ id: TASK_ID }] : [],
+        );
       }
       if (sql.includes('BETWEEN CURRENT_DATE')) {
         return Promise.resolve([{ ok: windowOk }]);
@@ -182,8 +191,9 @@ describe.each([
     await expect(run(service)).rejects.toThrow(ForbiddenException);
   });
 
-  it('409 quando a tarefa não é a #1 ativa da fila', async () => {
-    // Só a #1 da fila é executável — a trava é do backend, não da tela.
+  it('409 quando a tarefa não pertence ao segmento ativo do usuário', async () => {
+    // AUREA-319: a trava é por segmento (não mais por id exato) — mas ainda é
+    // do backend, não da tela.
     const { service } = await build({ activeTaskId: 'outra-task' });
     await expect(run(service)).rejects.toThrow(ConflictException);
   });

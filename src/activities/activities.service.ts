@@ -54,10 +54,13 @@ export class ActivitiesService {
    * Fila "Ações de hoje" da home, com ownership direto: o usuário vê somente
    * contratos em que é consultor ou agente de cobrança.
    *
-   * Grupos: `active` = a #1 EXECUTÁVEL do viewer (a de maior prioridade `assigned_to`
-   * = ele); somente o responsável pela tarefa pode recebê-la como ativa.
-   * `locked` = demais pendentes de hoje visíveis; `scheduled` = postergadas/reagendadas;
-   * `completedToday` = concluídas hoje. Ordem: prioridade do segmento, depois maior atraso.
+   * Grupos: `active` = a tarefa RECOMENDADA do viewer (a de maior prioridade
+   * `assigned_to` = ele). Desde AUREA-319, isso não é mais a única executável: toda
+   * pendente do mesmo `segment_code` da recomendada também é (ver `isActive` nos
+   * cards de `locked`) — a trava é só entre segmentos, dentro do segmento ativo o
+   * usuário escolhe qual executar. `locked` = demais pendentes de hoje visíveis;
+   * `scheduled` = postergadas/reagendadas; `completedToday` = concluídas hoje.
+   * Ordem: prioridade do segmento, depois maior atraso.
    */
   async getTodayQueue(
     viewer: ScopeViewer,
@@ -344,7 +347,8 @@ export class ActivitiesService {
 
   /**
    * Query enriquecida dos cards (active/scheduled/completed), parametrizada por filtro
-   * e ordenação. `isActive` é literal aqui: a #1 do viewer é true; scheduled/completed false.
+   * e ordenação. `isActive`/`isRecommended` são literais aqui: a recomendada do viewer
+   * é true nos dois; scheduled/completed false nos dois (não fazem parte da fila do dia).
    * O `assigned_to` (id + nome) sai junto p/ Gerente/Diretor verem o responsável.
    */
   private fetchCards(
@@ -357,6 +361,7 @@ export class ActivitiesService {
       SELECT
         at.id AS task_id, at.segment_code, at.task_type, at.status,
         ${isActive}::boolean AS is_active,
+        ${isActive}::boolean AS is_recommended,
         at.assigned_to AS assigned_to_id, u.full_name AS assigned_to_name,
         at.expire_date, at.was_postponed, at.was_rescheduled,
         rs.priority, rs.tone,
@@ -387,10 +392,15 @@ export class ActivitiesService {
   }
 
   /**
-   * Página de travadas com `is_active` POR RESPONSÁVEL: um CTE leve ranqueia as
-   * pendentes de hoje do escopo (ROW_NUMBER por assigned_to), marcando a #1 de cada um;
-   * o SELECT externo enriquece só a página, exclui a #1 do viewer e pagina. Assim o
-   * Gerente/Diretor vê, no locked, a ativa de cada subordinado (is_active=true) + as demais.
+   * Página de travadas com `is_active`/`is_recommended` POR RESPONSÁVEL (AUREA-319):
+   * o CTE `leaders` acha, por `assigned_to`, a tarefa recomendada de hoje (maior
+   * prioridade, mesmo critério de sempre); o CTE `ranked` marca `is_recommended` só
+   * nessa linha e `is_active` em TODA tarefa do mesmo `segment_code` do líder daquele
+   * responsável — ou seja, dentro do segmento ativo, qualquer pendente é executável,
+   * não só a recomendada. Entre segmentos a trava continua (só o segmento do líder
+   * fica desbloqueado). O SELECT externo enriquece só a página, exclui a recomendada
+   * do viewer (já vem em `active`) e pagina. Assim o Gerente/Diretor vê, no locked, o
+   * segmento ativo de cada subordinado desbloqueado + o restante travado.
    * NOTA: o ranking roda sobre o conjunto todo do escopo (ok p/ parceiro/gerente; p/ Diretor
    * muito grande, otimizar depois).
    */
@@ -404,25 +414,36 @@ export class ActivitiesService {
       ? Prisma.sql`WHERE r.task_id <> ${activeId}::uuid`
       : Prisma.empty;
     return this.prisma.$queryRaw<QueueRow[]>`
-      WITH ranked AS (
-        SELECT
-          at.id AS task_id,
-          rs.priority AS priority,
-          (CURRENT_DATE - i.due_date)::int AS days_overdue,
-          at.created_at AS created_at,
-          (ROW_NUMBER() OVER (
-            PARTITION BY at.assigned_to
-            ORDER BY rs.priority ASC NULLS LAST, (CURRENT_DATE - i.due_date) DESC, at.created_at ASC
-          ) = 1) AS is_active
+      WITH leaders AS (
+        SELECT DISTINCT ON (at.assigned_to)
+          at.assigned_to AS assigned_to,
+          at.segment_code AS segment_code,
+          at.id AS task_id
         FROM activity_tasks at
         LEFT JOIN activity_ruler_stages rs ON rs.id = at.ruler_stage_id
         JOIN installments i ON i.id = at.installment_id
         JOIN contracts c ON c.id = at.contract_id
         WHERE ${scopeClause} AND at.status = 'pending' AND at.expire_date <= CURRENT_DATE
+        ORDER BY at.assigned_to, rs.priority ASC NULLS LAST, (CURRENT_DATE - i.due_date) DESC, at.created_at ASC
+      ),
+      ranked AS (
+        SELECT
+          at.id AS task_id,
+          rs.priority AS priority,
+          (CURRENT_DATE - i.due_date)::int AS days_overdue,
+          at.created_at AS created_at,
+          (at.segment_code = l.segment_code) AS is_active,
+          (at.id = l.task_id) AS is_recommended
+        FROM activity_tasks at
+        LEFT JOIN activity_ruler_stages rs ON rs.id = at.ruler_stage_id
+        JOIN installments i ON i.id = at.installment_id
+        JOIN contracts c ON c.id = at.contract_id
+        JOIN leaders l ON l.assigned_to = at.assigned_to
+        WHERE ${scopeClause} AND at.status = 'pending' AND at.expire_date <= CURRENT_DATE
       )
       SELECT
         at.id AS task_id, at.segment_code, at.task_type, at.status,
-        r.is_active,
+        r.is_active, r.is_recommended,
         at.assigned_to AS assigned_to_id, u.full_name AS assigned_to_name,
         at.expire_date, at.was_postponed, at.was_rescheduled,
         rs.priority, rs.tone,
@@ -490,8 +511,8 @@ export class ActivitiesService {
 
   /**
    * Registra a execução de uma tarefa: conclui a tarefa e grava a interação.
-   * NÃO cria a próxima tarefa (só o job diário cria). Só é permitido na tarefa
-   * #1 ativa da fila do usuário (trava no backend).
+   * NÃO cria a próxima tarefa (só o job diário cria). Só é permitido em tarefa
+   * pendente do SEGMENTO ativo do usuário (trava no backend, ver assertIsActiveTask).
    */
   async registerInteraction(
     taskId: string,
@@ -633,24 +654,37 @@ export class ActivitiesService {
     }
   }
 
-  /** A tarefa deve ser a #1 ativa da fila do usuário (só a #1 é executável). */
+  /**
+   * A tarefa deve pertencer ao SEGMENTO ativo do usuário (AUREA-319): acha o
+   * segmento da tarefa recomendada (maior prioridade entre as pendentes de hoje)
+   * e aceita qualquer pendente daquele mesmo segmento — não exige mais ser
+   * exatamente a recomendada. Segmentos diferentes continuam bloqueados.
+   */
   private async assertIsActiveTask(
     tx: Prisma.TransactionClient,
     userId: string,
     taskId: string,
   ): Promise<void> {
     const rows = await tx.$queryRaw<{ id: string }[]>`
+      WITH leader AS (
+        SELECT at.segment_code
+        FROM activity_tasks at
+        LEFT JOIN activity_ruler_stages rs ON rs.id = at.ruler_stage_id
+        JOIN installments i ON i.id = at.installment_id
+        WHERE at.assigned_to = ${userId}::uuid
+          AND at.status = 'pending'
+          AND at.expire_date <= CURRENT_DATE
+        ORDER BY rs.priority ASC NULLS LAST, (CURRENT_DATE - i.due_date) DESC, at.created_at ASC
+        LIMIT 1
+      )
       SELECT at.id
       FROM activity_tasks at
-      LEFT JOIN activity_ruler_stages rs ON rs.id = at.ruler_stage_id
-      JOIN installments i ON i.id = at.installment_id
-      WHERE at.assigned_to = ${userId}::uuid
+      JOIN leader l ON l.segment_code = at.segment_code
+      WHERE at.id = ${taskId}::uuid
+        AND at.assigned_to = ${userId}::uuid
         AND at.status = 'pending'
-        AND at.expire_date <= CURRENT_DATE
-      ORDER BY rs.priority ASC NULLS LAST, (CURRENT_DATE - i.due_date) DESC, at.created_at ASC
-      LIMIT 1
     `;
-    if (rows[0]?.id !== taskId) {
+    if (rows.length === 0) {
       throw new ConflictException('task_not_active');
     }
   }

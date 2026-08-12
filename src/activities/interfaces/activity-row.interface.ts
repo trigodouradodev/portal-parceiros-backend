@@ -88,6 +88,7 @@ export interface QueueRow {
   task_type: string;
   status: string;
   is_active: boolean;
+  is_recommended: boolean;
   assigned_to_id: string | null;
   assigned_to_name: string | null;
   expire_date: Date;
