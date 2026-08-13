@@ -126,6 +126,7 @@ describe('ContractsService.getContracts', () => {
         products: ['11111111-1111-4111-8111-111111111111'],
         startDate: '2026-01-01',
         endDate: '2026-01-31',
+        onlyActive: true,
         onlyDelinquency: true,
         onlyRenegotiated: true,
       }),

@@ -114,9 +114,18 @@ export class QueueTaskCard {
   status: string;
 
   @ApiProperty({
-    description: 'É a #1 do responsável (a que ele deveria executar agora).',
+    description:
+      'Executável agora: pertence ao segmento ativo do responsável (AUREA-319). ' +
+      'Dentro do segmento ativo, qualquer pendente é executável — não só a recomendada.',
   })
   isActive: boolean;
+
+  @ApiProperty({
+    description:
+      'É a tarefa sugerida (maior prioridade do segmento ativo) — usada pra ' +
+      'destacar o card principal da fila. Só uma por responsável.',
+  })
+  isRecommended: boolean;
 
   @ApiProperty({
     type: QueueAssignee,
@@ -198,7 +207,9 @@ export class TodayQueue {
     type: QueueTaskCard,
     nullable: true,
     description:
-      'A tarefa #1 executável do viewer (parceiro); null p/ gerente/diretor.',
+      'A tarefa recomendada do viewer (parceiro) — maior prioridade do segmento ' +
+      'ativo; null p/ gerente/diretor. Outras pendentes do mesmo segmento também ' +
+      'são executáveis (ver isActive em locked.items).',
   })
   active: QueueTaskCard | null;
 

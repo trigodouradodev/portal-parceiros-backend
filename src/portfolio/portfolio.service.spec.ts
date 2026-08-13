@@ -54,6 +54,7 @@ describe('PortfolioService.getSummary', () => {
     expect(sql).toContain('analytics.vw_fato_parcela');
     expect(sql).toContain('c.consultant_id =');
     expect(sql).toContain('c.current_collection_agent_id =');
+    expect(sql).toContain("UPPER(comp.name) = 'CELCOIN'");
     expect(userId).toBe(USER_ID);
     expect(sql).not.toContain('WITH RECURSIVE');
   });

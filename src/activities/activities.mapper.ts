@@ -65,6 +65,7 @@ export function mapCard(row: QueueRow, position: number): QueueTaskCard {
     taskType: row.task_type,
     status: row.status,
     isActive: row.is_active,
+    isRecommended: row.is_recommended,
     assignedTo: row.assigned_to_id
       ? { id: row.assigned_to_id, name: row.assigned_to_name ?? '' }
       : null,
