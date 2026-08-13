@@ -99,7 +99,17 @@ export class ContractsQueryDto {
   @ApiPropertyOptional({
     default: false,
     description:
-      'Quando true, retorna somente contratos com parcela aberta em atraso.',
+      'Quando true, retorna somente contratos com saldo pendente hoje (KPI Carteira/Contratos Ativos — analytics.vw_fato_parcela.valor_pendente > 0).',
+  })
+  @IsOptional()
+  @Transform(({ value }) => parseOptionalBoolean(value))
+  @IsBoolean()
+  onlyActive?: boolean;
+
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'Quando true, retorna somente contratos em inadimplência pela Regra do Vagão (analytics.vw_fato_parcela.valor_contribuicao_inadimplencia > 0).',
   })
   @IsOptional()
   @Transform(({ value }) => parseOptionalBoolean(value))

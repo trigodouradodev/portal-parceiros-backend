@@ -131,6 +131,13 @@ export class ContractsService {
       c.consultant_id = ${userId}::uuid
       OR c.current_collection_agent_id = ${userId}::uuid
     )`,
+      // RN02: Empresa fixa em CELCOIN no portal do parceiro.
+      Prisma.sql`EXISTS (
+        SELECT 1
+        FROM public.companies celcoin_company
+        WHERE celcoin_company.id = c.company_id
+          AND UPPER(celcoin_company.name) = 'CELCOIN'
+      )`,
     ];
     const search = query.search?.trim();
     if (search) {
@@ -158,13 +165,22 @@ export class ContractsService {
         Prisma.sql`c.disbursement_date <= ${query.endDate}::date`,
       );
     }
-    if (query.onlyDelinquency) {
+    if (query.onlyActive) {
+      // Mesma fonte do KPI Contratos Ativos / Carteira Ativa.
       conditions.push(Prisma.sql`EXISTS (
         SELECT 1
-        FROM public.installments overdue_installment
-        WHERE overdue_installment.contract_id = c.id
-          AND overdue_installment.status IN ('not_paid', 'partially_paid')
-          AND overdue_installment.due_date < CURRENT_DATE
+        FROM analytics.vw_fato_parcela active_fato
+        WHERE active_fato.id_contrato = c.id
+          AND active_fato.valor_pendente > 0
+      )`);
+    }
+    if (query.onlyDelinquency) {
+      // Mesma fonte do KPI de inadimplência (Regra do Vagão / contribuição > 0).
+      conditions.push(Prisma.sql`EXISTS (
+        SELECT 1
+        FROM analytics.vw_fato_parcela delinquent_fato
+        WHERE delinquent_fato.id_contrato = c.id
+          AND delinquent_fato.valor_contribuicao_inadimplencia > 0
       )`);
     }
     if (query.onlyRenegotiated) {
