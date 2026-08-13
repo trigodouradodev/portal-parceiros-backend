@@ -58,10 +58,12 @@ export class PortfolioService {
         ), 0) AS renegotiated_outstanding_amount
       FROM analytics.vw_fato_parcela p
       JOIN public.contracts c ON c.id = p.id_contrato
+      JOIN public.companies comp ON comp.id = c.company_id
       WHERE (
         c.consultant_id = ${userId}::uuid
         OR c.current_collection_agent_id = ${userId}::uuid
       )
+        AND UPPER(comp.name) = 'CELCOIN'
     `;
     return row;
   }
