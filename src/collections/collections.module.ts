@@ -7,5 +7,6 @@ import { CollectionsService } from './collections.service';
   imports: [ScopeModule],
   controllers: [CollectionsController],
   providers: [CollectionsService],
+  exports: [CollectionsService],
 })
 export class CollectionsModule {}

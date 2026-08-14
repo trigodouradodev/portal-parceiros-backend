@@ -1,8 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { CollectionsService } from '../collections/collections.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ContractsQueryDto } from './dto/contracts-query.dto';
 import { ContractsService } from './contracts.service';
+
+const CONTRACT_ID = '33333333-3333-4333-8333-333333333333';
 
 const USER_ID = '269b0843-0aa8-40ab-af66-8304909930a6';
 
@@ -47,9 +50,50 @@ async function buildService(options: BuildOptions = {}) {
   }) as unknown as QueryRawMock;
   const prisma = { $queryRaw: queryRaw };
   const module: TestingModule = await Test.createTestingModule({
-    providers: [ContractsService, { provide: PrismaService, useValue: prisma }],
+    providers: [
+      ContractsService,
+      { provide: PrismaService, useValue: prisma },
+      { provide: CollectionsService, useValue: { getDetail: jest.fn() } },
+    ],
   }).compile();
   return { service: module.get(ContractsService), prisma };
+}
+
+interface DetailBuildOptions {
+  openInstallmentNumber?: number | null;
+  lastInstallmentNumber?: number | null;
+}
+
+/**
+ * Setup independente pra getContractDetail: o $queryRaw aqui é roteado por
+ * conteúdo do SQL (não por ordem de chamada, diferente do buildService acima),
+ * já que o método dispara 1 ou 2 queries distintas dependendo do contrato ter
+ * parcela em aberto ou não.
+ */
+async function buildDetailService(options: DetailBuildOptions = {}) {
+  const queryRaw = jest.fn((strings: TemplateStringsArray) => {
+    const sql = strings.join(' ');
+    if (sql.includes("'not_paid', 'partially_paid'")) {
+      const n = options.openInstallmentNumber;
+      return Promise.resolve(n == null ? [] : [{ installment_number: n }]);
+    }
+    if (sql.includes('ORDER BY installment_number DESC')) {
+      const n = options.lastInstallmentNumber;
+      return Promise.resolve(n == null ? [] : [{ installment_number: n }]);
+    }
+    throw new Error(`query não mapeada no mock: ${sql}`);
+  });
+  const getDetail = jest
+    .fn()
+    .mockResolvedValue({ contract: { id: CONTRACT_ID } });
+  const module: TestingModule = await Test.createTestingModule({
+    providers: [
+      ContractsService,
+      { provide: PrismaService, useValue: { $queryRaw: queryRaw } },
+      { provide: CollectionsService, useValue: { getDetail } },
+    ],
+  }).compile();
+  return { service: module.get(ContractsService), getDetail };
 }
 
 describe('ContractsService.getContracts', () => {
@@ -150,5 +194,42 @@ describe('ContractsService.getContracts', () => {
       ),
     ).rejects.toThrow(BadRequestException);
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+});
+
+describe('ContractsService.getContractDetail', () => {
+  const VIEWER = { userId: USER_ID, permissions: [] };
+
+  it('usa a parcela em aberto mais próxima do vencimento quando existir', async () => {
+    const { service, getDetail } = await buildDetailService({
+      openInstallmentNumber: 4,
+    });
+
+    await service.getContractDetail(VIEWER, CONTRACT_ID);
+
+    expect(getDetail).toHaveBeenCalledWith(VIEWER, CONTRACT_ID, 4);
+  });
+
+  it('cai pra última parcela quando não há nenhuma em aberto (contrato pago)', async () => {
+    const { service, getDetail } = await buildDetailService({
+      openInstallmentNumber: null,
+      lastInstallmentNumber: 12,
+    });
+
+    await service.getContractDetail(VIEWER, CONTRACT_ID);
+
+    expect(getDetail).toHaveBeenCalledWith(VIEWER, CONTRACT_ID, 12);
+  });
+
+  it('404 quando o contrato não tem nenhuma parcela', async () => {
+    const { service, getDetail } = await buildDetailService({
+      openInstallmentNumber: null,
+      lastInstallmentNumber: null,
+    });
+
+    await expect(
+      service.getContractDetail(VIEWER, CONTRACT_ID),
+    ).rejects.toThrow(NotFoundException);
+    expect(getDetail).not.toHaveBeenCalled();
   });
 });
