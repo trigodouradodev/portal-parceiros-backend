@@ -683,6 +683,7 @@ export class ActivitiesService {
       WHERE at.id = ${taskId}::uuid
         AND at.assigned_to = ${userId}::uuid
         AND at.status = 'pending'
+        AND at.expire_date <= CURRENT_DATE
     `;
     if (rows.length === 0) {
       throw new ConflictException('task_not_active');
