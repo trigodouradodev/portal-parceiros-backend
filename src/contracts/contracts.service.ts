@@ -1,6 +1,13 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { toNum } from '../common/query.util';
+import { CollectionDetail } from '../collections/interfaces/collection-detail.interface';
+import { CollectionsService } from '../collections/collections.service';
+import { ScopeViewer } from '../scope/scope.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ContractsQueryDto } from './dto/contracts-query.dto';
 import { ContractListRow } from './interfaces/contracts-row.interface';
@@ -11,7 +18,10 @@ import {
 
 @Injectable()
 export class ContractsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly collections: CollectionsService,
+  ) {}
 
   /**
    * Lista contratos em que o usuário é diretamente consultor ou agente de
@@ -97,6 +107,55 @@ export class ContractsService {
         hasNextPage: page < totalPages,
       },
     };
+  }
+
+  /**
+   * Detalhe de um contrato da Carteira (AUREA-330): reaproveita o mesmo
+   * detalhe rico do Preventivo/Cobrança (`CollectionsService.getDetail`),
+   * mas sem depender de o chamador já saber qual parcela mostrar — resolve
+   * aqui a parcela em aberto mais próxima do vencimento e, se o contrato não
+   * tiver nenhuma aberta (ex.: já pago), cai para a última parcela. Cobre
+   * 100% dos contratos, diferente de expor o id/número da próxima parcela na
+   * listagem (que falha pra contrato sem parcela aberta).
+   */
+  async getContractDetail(
+    viewer: ScopeViewer,
+    contractId: string,
+  ): Promise<CollectionDetail> {
+    const installmentNumber =
+      await this.resolveDisplayInstallmentNumber(contractId);
+    if (installmentNumber === null) {
+      throw new NotFoundException('contract_without_installments');
+    }
+    return this.collections.getDetail(viewer, contractId, installmentNumber);
+  }
+
+  /** Parcela em aberto mais próxima do vencimento; sem nenhuma aberta, a última. */
+  private async resolveDisplayInstallmentNumber(
+    contractId: string,
+  ): Promise<number | null> {
+    const [openRow] = await this.prisma.$queryRaw<
+      { installment_number: number }[]
+    >`
+      SELECT installment_number
+      FROM public.installments
+      WHERE contract_id = ${contractId}::uuid
+        AND status IN ('not_paid', 'partially_paid')
+      ORDER BY due_date ASC, installment_number ASC
+      LIMIT 1
+    `;
+    if (openRow) return Number(openRow.installment_number);
+
+    const [lastRow] = await this.prisma.$queryRaw<
+      { installment_number: number }[]
+    >`
+      SELECT installment_number
+      FROM public.installments
+      WHERE contract_id = ${contractId}::uuid
+      ORDER BY installment_number DESC
+      LIMIT 1
+    `;
+    return lastRow ? Number(lastRow.installment_number) : null;
   }
 
   private mapItem(row: ContractListRow): ContractListItem {
