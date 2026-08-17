@@ -217,13 +217,15 @@ describe('assertIsActiveTask — SQL final não deve aceitar tarefa postergada (
     const { service, tx } = await build();
     await service.postpone(TASK_ID, USER_ID);
 
-    const guardCall = (tx.$queryRaw as jest.Mock).mock.calls.find(
-      ([strings]: [TemplateStringsArray]) =>
-        strings.join(' ').includes('activity_ruler_stages'),
+    const guardCall = tx.$queryRaw.mock.calls.find(([strings]) =>
+      strings.join(' ').includes('activity_ruler_stages'),
     );
-    expect(guardCall).toBeDefined();
+    if (!guardCall) {
+      throw new Error('Query de validação da tarefa ativa não foi executada');
+    }
 
-    const sql = (guardCall![0] as TemplateStringsArray).join(' ');
+    const [strings] = guardCall;
+    const sql = strings.join(' ');
     const [, afterLeaderJoin] = sql.split('JOIN leader');
     expect(afterLeaderJoin).toContain('expire_date <= CURRENT_DATE');
   });
