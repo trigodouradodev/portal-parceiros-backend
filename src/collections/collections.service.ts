@@ -1,0 +1,658 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { toNum } from '../common/query.util';
+import { ScopeService, ScopeViewer } from '../scope/scope.service';
+import {
+  ClientAddress,
+  OverdueCollectionItem,
+  OverdueCollectionPage,
+} from './interfaces/overdue-collection.interface';
+import {
+  PreventiveCollectionItem,
+  PreventiveCollectionPage,
+} from './interfaces/preventive-collection.interface';
+import {
+  CollectionDetail,
+  FollowUpHistoryItem,
+} from './interfaces/collection-detail.interface';
+import {
+  ContractResponsible,
+  ResponsibleType,
+} from './interfaces/responsible.interface';
+
+/** Status de contrato que compõem a carteira em cobrança. */
+const PORTFOLIO_CONTRACT_STATUSES = ['disbursed', 'active'];
+/** Status de parcela considerados "em aberto". */
+const OPEN_INSTALLMENT_STATUSES = ['not_paid', 'partially_paid'];
+
+/**
+ * Colunas de contato do cliente (telefone + endereço) para o SELECT. Assume os
+ * aliases `cl` (clients) e `addr` (CLIENT_ADDRESS_JOIN) no escopo da query.
+ */
+const CLIENT_CONTACT_COLUMNS = Prisma.sql`
+  cl.phone AS client_phone,
+  addr.street AS addr_street,
+  addr.number AS addr_number,
+  addr.complement AS addr_complement,
+  addr.neighborhood AS addr_neighborhood,
+  addr.city AS addr_city,
+  addr.state AS addr_state,
+  addr.zip_code AS addr_zip_code
+`;
+
+/**
+ * Join lateral do endereço do cliente: prioriza o endereço primário e, na
+ * ausência de flag, cai para o mais recente. Assume o alias `cl` no escopo.
+ */
+const CLIENT_ADDRESS_JOIN = Prisma.sql`
+  LEFT JOIN LATERAL (
+    SELECT a.street, a.number, a.complement, a.neighborhood, a.city, a.state, a.zip_code
+    FROM addresses a
+    WHERE a.client_id = cl.id
+    ORDER BY a.is_primary DESC NULLS LAST, a.created_at DESC
+    LIMIT 1
+  ) addr ON true
+`;
+
+interface OverdueRow {
+  id: string;
+  contract_id: string;
+  installment_number: number;
+  due_date: Date;
+  pending_amount: Prisma.Decimal | string | number;
+  total_amount: Prisma.Decimal | string | number;
+  status: string;
+  days_overdue: number;
+  contract_number: string;
+  total_installments: number;
+  client_name: string;
+  client_tax_id: string;
+  client_phone: string | null;
+  addr_street: string | null;
+  addr_number: string | null;
+  addr_complement: string | null;
+  addr_neighborhood: string | null;
+  addr_city: string | null;
+  addr_state: string | null;
+  addr_zip_code: string | null;
+  consultant_id: string | null;
+  consultant_name: string | null;
+  collection_agent_id: string | null;
+  collection_agent_name: string | null;
+  company_name: string | null;
+  task_id: string | null;
+  task_segment_code: string | null;
+  task_stage_badge_label: string | null;
+  task_task_type: string | null;
+  task_status: string | null;
+  task_created_at: Date | null;
+  task_completed_at: Date | null;
+}
+
+interface UpcomingRow extends Omit<
+  OverdueRow,
+  | 'days_overdue'
+  | 'task_id'
+  | 'task_segment_code'
+  | 'task_stage_badge_label'
+  | 'task_task_type'
+  | 'task_status'
+  | 'task_created_at'
+  | 'task_completed_at'
+> {
+  days_until_due: number;
+  followup_count: number;
+  latest_followup_status: string | null;
+}
+
+/** Campos de endereço presentes em ambas as linhas (overdue e upcoming). */
+type AddressRow = Pick<
+  OverdueRow,
+  | 'addr_street'
+  | 'addr_number'
+  | 'addr_complement'
+  | 'addr_neighborhood'
+  | 'addr_city'
+  | 'addr_state'
+  | 'addr_zip_code'
+>;
+
+/** Campos usados para resolver o responsável (agente de cobrança senão consultor). */
+type ResponsibleRow = Pick<
+  OverdueRow,
+  | 'collection_agent_id'
+  | 'collection_agent_name'
+  | 'consultant_id'
+  | 'consultant_name'
+>;
+
+/** Monta o endereço do cliente a partir da linha; undefined se não houver. */
+function mapAddress(row: AddressRow): ClientAddress | undefined {
+  if (!row.addr_street) return undefined;
+  return {
+    street: row.addr_street,
+    number: row.addr_number ?? '',
+    complement: row.addr_complement ?? undefined,
+    neighborhood: row.addr_neighborhood ?? '',
+    city: row.addr_city ?? '',
+    state: row.addr_state ?? undefined,
+    zipCode: row.addr_zip_code ?? '',
+  };
+}
+
+@Injectable()
+export class CollectionsService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly scope: ScopeService,
+  ) {}
+
+  /**
+   * Aba Cobrança: **uma linha por parcela vencida em aberto**, do mais atrasado
+   * para o menos atrasado (parcelas do mesmo contrato podem se intercalar). Cada
+   * linha traz a tarefa de cobrança (activity) pendente daquela parcela, quando
+   * houver. Paginado por parcela.
+   *
+   * Carteira = contratos `disbursed`/`active`; parcela em aberto =
+   * `not_paid`/`partially_paid` com `due_date < CURRENT_DATE`. Escopo direto:
+   * apenas contratos vinculados ao usuário como consultor ou agente.
+   *
+   * Obs: o shape do response foi mantido — `contracts`/`totalContracts`/
+   * `firstOverdueInstallment` agora representam parcelas (1 row por parcela).
+   */
+  async getOverdue(
+    viewer: ScopeViewer,
+    page = 1,
+    limit = 30,
+  ): Promise<OverdueCollectionPage> {
+    const emptyPage: OverdueCollectionPage = {
+      items: [],
+      pagination: {
+        page,
+        limit,
+        total: 0,
+        totalPages: 0,
+        hasNextPage: false,
+      },
+    };
+
+    const scopeClause = this.scope.buildDirectContractScopeSql(viewer.userId);
+
+    const statuses = Prisma.join(PORTFOLIO_CONTRACT_STATUSES);
+    const openStatuses = Prisma.join(OPEN_INSTALLMENT_STATUSES);
+
+    // Total de parcelas atrasadas (para paginação).
+    const [countRow] = await this.prisma.$queryRaw<{ total: number }[]>`
+      SELECT COUNT(*)::int AS total
+      FROM installments i
+      JOIN contracts c ON c.id = i.contract_id
+      WHERE i.status IN (${openStatuses})
+        AND i.due_date < CURRENT_DATE
+        AND c.status IN (${statuses})
+        AND ${scopeClause}
+    `;
+    const total = toNum(countRow?.total);
+    if (total === 0) return emptyPage;
+
+    const offset = (page - 1) * limit;
+
+    // Uma linha por parcela atrasada (sem DISTINCT ON), do maior atraso para o
+    // menor; `i.id` no ORDER BY garante paginação estável em empates. O LATERAL
+    // traz a tarefa de cobrança pendente da parcela (no máx. 1, pela invariante).
+    const rows = await this.prisma.$queryRaw<OverdueRow[]>`
+      SELECT
+        i.id,
+        i.contract_id,
+        i.installment_number,
+        i.due_date,
+        i.pending_amount,
+        i.total_amount,
+        i.status,
+        (CURRENT_DATE - i.due_date)::int AS days_overdue,
+        c.contract_number,
+        c.total_installments,
+        cl.name AS client_name,
+        cl.tax_id AS client_tax_id,
+        ${CLIENT_CONTACT_COLUMNS},
+        c.consultant_id AS consultant_id,
+        cons.full_name AS consultant_name,
+        ca.id AS collection_agent_id,
+        ca.full_name AS collection_agent_name,
+        comp.name AS company_name,
+        task.id AS task_id,
+        task.segment_code AS task_segment_code,
+        task.badge_label AS task_stage_badge_label,
+        task.task_type AS task_task_type,
+        task.status AS task_status,
+        task.created_at AS task_created_at,
+        task.completed_at AS task_completed_at
+      FROM installments i
+      JOIN contracts c ON c.id = i.contract_id
+      JOIN clients cl ON cl.id = c.client_id
+      ${CLIENT_ADDRESS_JOIN}
+      LEFT JOIN trigo_users cons ON cons.id = c.consultant_id
+      LEFT JOIN trigo_users ca ON ca.id = c.current_collection_agent_id
+      LEFT JOIN companies comp ON comp.id = c.company_id
+      LEFT JOIN LATERAL (
+        SELECT at.id, at.segment_code, at.task_type, at.status, at.created_at, at.completed_at, rs.badge_label
+        FROM activity_tasks at
+        LEFT JOIN activity_ruler_stages rs ON rs.id = at.ruler_stage_id
+        WHERE at.installment_id = i.id
+        ORDER BY at.created_at DESC
+        LIMIT 1
+      ) task ON true
+      WHERE i.status IN (${openStatuses})
+        AND i.due_date < CURRENT_DATE
+        AND c.status IN (${statuses})
+        AND ${scopeClause}
+      ORDER BY days_overdue DESC, i.pending_amount DESC, i.id
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+
+    const totalPages = Math.ceil(total / limit);
+    return {
+      items: rows.map((row) => this.mapItem(row)),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+      },
+    };
+  }
+
+  private mapItem(row: OverdueRow): OverdueCollectionItem {
+    const totalInstallments = Number(row.total_installments ?? 0);
+    const installmentNumber = Number(row.installment_number);
+
+    return {
+      installment: {
+        id: row.id,
+        number: installmentNumber,
+        label: `${installmentNumber}/${totalInstallments}`,
+        dueDate: row.due_date,
+        daysOverdue: Number(row.days_overdue),
+        pendingAmount: toNum(row.pending_amount),
+        totalAmount: toNum(row.total_amount),
+        status: row.status,
+      },
+      contract: {
+        id: row.contract_id,
+        number: row.contract_number,
+        totalInstallments,
+        companyName: row.company_name ?? undefined,
+      },
+      client: {
+        name: row.client_name,
+        taxId: row.client_tax_id,
+        phone: row.client_phone ?? undefined,
+        address: mapAddress(row),
+      },
+      task: this.getTask(row),
+      responsible: this.getResponsible(row),
+    };
+  }
+
+  private getResponsible(row: ResponsibleRow): ContractResponsible | undefined {
+    if (!row?.consultant_id && !row?.collection_agent_id) return undefined;
+
+    if (row?.collection_agent_id) {
+      return {
+        id: row.collection_agent_id,
+        name: row.collection_agent_name ?? '',
+        type: ResponsibleType.COLLECTION_AGENT,
+      };
+    }
+
+    return {
+      id: row.consultant_id || '',
+      name: row.consultant_name ?? '',
+      type: ResponsibleType.CONSULTANT,
+    };
+  }
+
+  private getTask(row: OverdueRow) {
+    if (!row?.task_id) return null;
+
+    return {
+      id: row.task_id,
+      segmentCode: row.task_segment_code ?? '',
+      segmentBadgeLabel: row.task_stage_badge_label ?? '',
+      taskType: row.task_task_type ?? '',
+      status: row.task_status ?? '',
+      createdAt: row.task_created_at as Date,
+      completedAt: row.task_completed_at ?? undefined,
+    };
+  }
+
+  /**
+   * Aba Preventivo: **uma linha por parcela a vencer** nos próximos `withinDays`
+   * dias (default 15), do vencimento mais próximo para o mais distante. Paginado
+   * por parcela. Mesmo shape agrupado do overdue, com `followup` no lugar de `task`.
+   *
+   * Carteira = contratos `disbursed`/`active`; parcela em aberto =
+   * `not_paid`/`partially_paid` com `due_date` entre hoje e hoje + N dias. Um
+   * contrato com atraso também entra (pela próxima parcela a vencer), podendo
+   * aparecer também na Cobrança. Mesmo scope do getOverdue.
+   */
+  async getPreventive(
+    viewer: ScopeViewer,
+    page = 1,
+    limit = 30,
+    withinDays = 15,
+  ): Promise<PreventiveCollectionPage> {
+    const emptyPage: PreventiveCollectionPage = {
+      items: [],
+      pagination: {
+        page,
+        limit,
+        total: 0,
+        totalPages: 0,
+        hasNextPage: false,
+      },
+    };
+
+    const scopeClause = this.scope.buildDirectContractScopeSql(viewer.userId);
+
+    const statuses = Prisma.join(PORTFOLIO_CONTRACT_STATUSES);
+    const openStatuses = Prisma.join(OPEN_INSTALLMENT_STATUSES);
+    // Filtro de janela (parcela a vencer dentro de N dias), compartilhado entre
+    // a query de contagem e a de página. Um contrato com atraso também entra
+    // aqui pela sua próxima parcela a vencer (pode aparecer nas duas abas).
+    const upcomingFilter = Prisma.sql`
+      i.status IN (${openStatuses})
+      AND i.due_date >= CURRENT_DATE
+      AND i.due_date <= CURRENT_DATE + (${withinDays}::int * INTERVAL '1 day')
+      AND c.status IN (${statuses})
+      AND ${scopeClause}
+    `;
+
+    const [countRow] = await this.prisma.$queryRaw<{ total: number }[]>`
+      SELECT COUNT(*)::int AS total
+      FROM installments i
+      JOIN contracts c ON c.id = i.contract_id
+      WHERE ${upcomingFilter}
+    `;
+    const total = toNum(countRow?.total);
+    if (total === 0) return emptyPage;
+
+    const offset = (page - 1) * limit;
+
+    // Uma linha por parcela a vencer na janela (sem DISTINCT ON), do vencimento
+    // mais próximo para o mais distante; `i.id` no ORDER BY estabiliza empates.
+    const rows = await this.prisma.$queryRaw<UpcomingRow[]>`
+      SELECT
+        i.id,
+        i.contract_id,
+        i.installment_number,
+        i.due_date,
+        i.pending_amount,
+        i.total_amount,
+        i.status,
+        (i.due_date - CURRENT_DATE)::int AS days_until_due,
+        c.contract_number,
+        c.total_installments,
+        cl.name AS client_name,
+        cl.tax_id AS client_tax_id,
+        ${CLIENT_CONTACT_COLUMNS},
+        c.consultant_id AS consultant_id,
+        cons.full_name AS consultant_name,
+        ca.id AS collection_agent_id,
+        ca.full_name AS collection_agent_name,
+        comp.name AS company_name,
+        (
+          SELECT COUNT(*)::int
+          FROM installment_followups f
+          WHERE f.contract_id = i.contract_id
+            AND f.installment_number = i.installment_number
+        ) AS followup_count,
+        (
+          SELECT f.status
+          FROM installment_followups f
+          WHERE f.contract_id = i.contract_id
+            AND f.installment_number = i.installment_number
+          ORDER BY f.created_at DESC
+          LIMIT 1
+        ) AS latest_followup_status
+      FROM installments i
+      JOIN contracts c ON c.id = i.contract_id
+      JOIN clients cl ON cl.id = c.client_id
+      ${CLIENT_ADDRESS_JOIN}
+      LEFT JOIN trigo_users cons ON cons.id = c.consultant_id
+      LEFT JOIN trigo_users ca ON ca.id = c.current_collection_agent_id
+      LEFT JOIN companies comp ON comp.id = c.company_id
+      WHERE ${upcomingFilter}
+      ORDER BY days_until_due ASC, i.pending_amount DESC, i.id
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+
+    const totalPages = Math.ceil(total / limit);
+    return {
+      items: rows.map((row) => this.mapUpcomingItem(row)),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+      },
+    };
+  }
+
+  private mapUpcomingItem(row: UpcomingRow): PreventiveCollectionItem {
+    const totalInstallments = Number(row.total_installments ?? 0);
+    const installmentNumber = Number(row.installment_number);
+
+    return {
+      installment: {
+        id: row.id,
+        number: installmentNumber,
+        label: `${installmentNumber}/${totalInstallments}`,
+        dueDate: row.due_date,
+        daysUntilDue: Number(row.days_until_due),
+        pendingAmount: toNum(row.pending_amount),
+        totalAmount: toNum(row.total_amount),
+        status: row.status,
+      },
+      contract: {
+        id: row.contract_id,
+        number: row.contract_number,
+        totalInstallments,
+        companyName: row.company_name ?? undefined,
+      },
+      client: {
+        name: row.client_name,
+        taxId: row.client_tax_id,
+        phone: row.client_phone ?? undefined,
+        address: mapAddress(row),
+      },
+      responsible: this.getResponsible(row),
+      followup: {
+        count: Number(row.followup_count ?? 0),
+        latestStatus: row.latest_followup_status ?? undefined,
+      },
+    };
+  }
+
+  /**
+   * Detalhe de um contrato a partir de uma parcela selecionada na lista de
+   * Cobrança/Preventivo: dados do contrato (valor total, início/fim), da
+   * parcela (valor, vencimento, posição X de Y) e o histórico de follow-up
+   * registrado para essa parcela específica (mais recente primeiro).
+   *
+   * Scope: mesmo ownership direto das listas, sem expansão hierárquica ou
+   * bypass de visão global.
+   * Fora do escopo ou inexistente → 404 (não revela existência).
+   */
+  async getDetail(
+    viewer: ScopeViewer,
+    contractId: string,
+    installmentNumber: number,
+  ): Promise<CollectionDetail> {
+    const canView = await this.scope.canDirectlyViewContract(
+      contractId,
+      viewer.userId,
+    );
+    if (!canView) {
+      throw new NotFoundException('Contrato não encontrado.');
+    }
+
+    const contract = await this.prisma.contracts.findUnique({
+      where: { id: contractId },
+      select: {
+        contract_number: true,
+        total_amount: true,
+        total_installments: true,
+        disbursement_date: true,
+        clients: {
+          select: {
+            name: true,
+            tax_id: true,
+            phone: true,
+            // Endereço primário; fallback para o mais recente (mesma regra das listas).
+            addresses: {
+              select: {
+                street: true,
+                number: true,
+                complement: true,
+                neighborhood: true,
+                city: true,
+                state: true,
+                zip_code: true,
+              },
+              orderBy: [
+                { is_primary: { sort: 'desc', nulls: 'last' } },
+                { created_at: 'desc' },
+              ],
+              take: 1,
+            },
+          },
+        },
+        trigo_users_contracts_current_collection_agent_idTotrigo_users: {
+          select: { id: true, full_name: true },
+        },
+        trigo_users_contracts_consultant_idTotrigo_users: {
+          select: { id: true, full_name: true },
+        },
+      },
+    });
+    if (!contract) {
+      throw new NotFoundException('Contrato não encontrado.');
+    }
+
+    const installment = await this.prisma.installments.findFirst({
+      where: { contract_id: contractId, installment_number: installmentNumber },
+      select: {
+        id: true,
+        installment_number: true,
+        due_date: true,
+        total_amount: true,
+        pending_amount: true,
+        status: true,
+      },
+    });
+    if (!installment) {
+      throw new NotFoundException('Parcela não encontrada para o contrato.');
+    }
+
+    // Fim do contrato = vencimento da última parcela.
+    const lastInstallment = await this.prisma.installments.aggregate({
+      where: { contract_id: contractId },
+      _max: { due_date: true },
+    });
+
+    const followUps = await this.prisma.installment_followups.findMany({
+      where: { contract_id: contractId, installment_number: installmentNumber },
+      orderBy: { created_at: 'desc' },
+      select: {
+        id: true,
+        status: true,
+        note: true,
+        expected_result: true,
+        payment_forecast: true,
+        created_at: true,
+        trigo_users: { select: { id: true, full_name: true } },
+        geolocations: { select: { latitude: true, longitude: true } },
+      },
+    });
+
+    const addr = contract.clients.addresses[0];
+    // Responsável pela parcela: agente de cobrança; na ausência, cai para o
+    // consultor do contrato. `type` indica a origem.
+    const agent =
+      contract.trigo_users_contracts_current_collection_agent_idTotrigo_users;
+    const consultant =
+      contract.trigo_users_contracts_consultant_idTotrigo_users;
+    const responsibleUser = agent ?? consultant;
+    const responsible = responsibleUser
+      ? {
+          id: responsibleUser.id,
+          name: responsibleUser.full_name,
+          type: agent
+            ? ResponsibleType.COLLECTION_AGENT
+            : ResponsibleType.CONSULTANT,
+        }
+      : undefined;
+
+    const totalInstallments = Number(contract.total_installments ?? 0);
+
+    return {
+      contract: {
+        id: contractId,
+        number: contract.contract_number,
+        totalInstallments,
+        totalAmount: toNum(contract.total_amount),
+        startDate: contract.disbursement_date ?? undefined,
+        endDate: lastInstallment._max.due_date ?? undefined,
+      },
+      client: {
+        name: contract.clients.name,
+        taxId: contract.clients.tax_id,
+        phone: contract.clients.phone ?? undefined,
+        address: addr
+          ? {
+              street: addr.street,
+              number: addr.number ?? '',
+              complement: addr.complement ?? undefined,
+              neighborhood: addr.neighborhood ?? '',
+              city: addr.city ?? '',
+              state: addr.state ?? undefined,
+              zipCode: addr.zip_code ?? '',
+            }
+          : undefined,
+      },
+      responsible,
+      installment: {
+        id: installment.id,
+        number: installmentNumber,
+        label: `${installmentNumber}/${totalInstallments}`,
+        dueDate: installment.due_date,
+        totalAmount: toNum(installment.total_amount),
+        pendingAmount: toNum(installment.pending_amount),
+        status: installment.status,
+      },
+      followups: followUps.map(
+        (f): FollowUpHistoryItem => ({
+          id: f.id,
+          status: f.status,
+          note: f.note ?? undefined,
+          expectedResult: f.expected_result ?? undefined,
+          paymentForecast: f.payment_forecast ?? undefined,
+          createdAt: f.created_at,
+          author: {
+            id: f.trigo_users.id,
+            name: f.trigo_users.full_name,
+          },
+          geolocation: f.geolocations
+            ? {
+                latitude: toNum(f.geolocations.latitude),
+                longitude: toNum(f.geolocations.longitude),
+              }
+            : undefined,
+        }),
+      ),
+    };
+  }
+}
