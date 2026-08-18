@@ -98,4 +98,10 @@ export class TaskActionResult {
 
   @ApiProperty()
   wasRescheduled: boolean;
+
+  @ApiProperty({
+    example: 1,
+    description: 'Quantidade de reagendamentos da visita (máximo 2).',
+  })
+  rescheduleCount: number;
 }

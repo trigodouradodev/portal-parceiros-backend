@@ -49,6 +49,7 @@ export interface LockedTaskRow {
   assigned_to: string | null;
   was_postponed: boolean;
   was_rescheduled: boolean;
+  reschedule_count: number;
 }
 
 /** Linha retornada pelas ações de tarefa (postergar/reagendar). */
@@ -62,6 +63,7 @@ export interface TaskActionRow {
   expire_date: Date;
   was_postponed: boolean;
   was_rescheduled: boolean;
+  reschedule_count: number;
 }
 
 /** Interação recém-criada (retorno do INSERT). */
@@ -94,6 +96,7 @@ export interface QueueRow {
   expire_date: Date;
   was_postponed: boolean;
   was_rescheduled: boolean;
+  reschedule_count: number;
   priority: number | null;
   tone: string | null;
   installment_id: string;
