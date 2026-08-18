@@ -228,6 +228,7 @@ export class ActivitiesService {
         expire_date: true,
         was_postponed: true,
         was_rescheduled: true,
+        reschedule_count: true,
         created_at: true,
         completed_at: true,
         system_closed_at: true,
@@ -311,6 +312,7 @@ export class ActivitiesService {
         expireDate: t.expire_date,
         wasPostponed: t.was_postponed,
         wasRescheduled: t.was_rescheduled,
+        rescheduleCount: t.reschedule_count,
         createdAt: t.created_at,
         completedAt: t.completed_at ?? undefined,
         systemClosedAt: t.system_closed_at ?? undefined,
@@ -363,7 +365,7 @@ export class ActivitiesService {
         ${isActive}::boolean AS is_active,
         ${isActive}::boolean AS is_recommended,
         at.assigned_to AS assigned_to_id, u.full_name AS assigned_to_name,
-        at.expire_date, at.was_postponed, at.was_rescheduled,
+        at.expire_date, at.was_postponed, at.was_rescheduled, at.reschedule_count,
         rs.priority, rs.tone,
         i.id AS installment_id, i.installment_number, i.due_date,
         (CURRENT_DATE - i.due_date)::int AS days_overdue,
@@ -445,7 +447,7 @@ export class ActivitiesService {
         at.id AS task_id, at.segment_code, at.task_type, at.status,
         r.is_active, r.is_recommended,
         at.assigned_to AS assigned_to_id, u.full_name AS assigned_to_name,
-        at.expire_date, at.was_postponed, at.was_rescheduled,
+        at.expire_date, at.was_postponed, at.was_rescheduled, at.reschedule_count,
         rs.priority, rs.tone,
         i.id AS installment_id, i.installment_number, i.due_date, r.days_overdue,
         i.pending_amount, i.total_amount,
@@ -578,13 +580,13 @@ export class ActivitiesService {
         SET expire_date = CURRENT_DATE + 1, was_postponed = TRUE
         WHERE id = ${taskId}::uuid
         RETURNING id, installment_id, contract_id, segment_code, task_type, status,
-                  expire_date, was_postponed, was_rescheduled
+                  expire_date, was_postponed, was_rescheduled, reschedule_count
       `;
       return mapTaskAction(rows[0]);
     });
   }
 
-  /** Reagenda uma tarefa de VISITA para uma data em [D+1, D+5] (1× por tarefa). */
+  /** Reagenda uma tarefa de VISITA para uma data em [D+1, D+5] (até 2× por tarefa). */
   async reschedule(
     taskId: string,
     userId: string,
@@ -595,16 +597,19 @@ export class ActivitiesService {
       if (task.task_type !== (ActivityTaskType.VISIT as string)) {
         throw new BadRequestException('reschedule_visit_only');
       }
-      if (task.was_rescheduled)
-        throw new ConflictException('already_rescheduled');
+      if (task.reschedule_count >= 2) {
+        throw new ConflictException('reschedule_limit_reached');
+      }
       await this.assertWithinRescheduleWindow(tx, dto.date);
 
       const rows = await tx.$queryRaw<TaskActionRow[]>`
         UPDATE activity_tasks
-        SET expire_date = ${dto.date}::date, was_rescheduled = TRUE
+        SET expire_date = ${dto.date}::date,
+            was_rescheduled = TRUE,
+            reschedule_count = reschedule_count + 1
         WHERE id = ${taskId}::uuid
         RETURNING id, installment_id, contract_id, segment_code, task_type, status,
-                  expire_date, was_postponed, was_rescheduled
+                  expire_date, was_postponed, was_rescheduled, reschedule_count
       `;
       return mapTaskAction(rows[0]);
     });
@@ -634,7 +639,7 @@ export class ActivitiesService {
   ): Promise<LockedTaskRow> {
     const rows = await tx.$queryRaw<LockedTaskRow[]>`
       SELECT id, installment_id, contract_id, task_type, status, assigned_to,
-             was_postponed, was_rescheduled
+             was_postponed, was_rescheduled, reschedule_count
       FROM activity_tasks
       WHERE id = ${taskId}::uuid
       FOR UPDATE

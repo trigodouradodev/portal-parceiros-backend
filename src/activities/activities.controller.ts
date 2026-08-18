@@ -137,15 +137,16 @@ export class ActivitiesController {
     return this.activitiesService.postpone(taskId, userId);
   }
 
-  /** Reagenda uma tarefa de VISITA para [D+1, D+5] (1× por tarefa). */
-  @ApiOperation({ summary: 'Reagendar a visita ativa para D+1..D+5 (1×).' })
+  /** Reagenda uma tarefa de VISITA para [D+1, D+5] (até 2× por tarefa). */
+  @ApiOperation({ summary: 'Reagendar a visita ativa para D+1..D+5 (até 2×).' })
   @ApiOkResponse({ type: TaskActionResult })
   @ApiBadRequestResponse({
     description: 'Não é visita ou data fora da janela.',
   })
   @ApiNotFoundResponse({ description: 'Tarefa não encontrada.' })
   @ApiConflictResponse({
-    description: 'Tarefa não ativa/pendente ou já reagendada.',
+    description:
+      'Tarefa não ativa/pendente ou limite de reagendamentos atingido.',
   })
   @RequirePermissions(PermissionKey.CONTRACT_FOLLOW_UP)
   @Post('tasks/:taskId/reschedule')
