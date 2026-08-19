@@ -9,6 +9,7 @@ import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { trigo_users } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
+import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
 import { UpdateProfileDto } from '../users/dto/update-profile.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
@@ -25,6 +26,7 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly quoteActivityPermissions: QuoteActivityPermissionsService,
   ) {}
 
   async login(dto: LoginDto) {
@@ -44,7 +46,7 @@ export class AuthService {
     const tokens = await this.generateTokens(user, permissions);
     await this.usersService.updateLastLogin(user.id);
 
-    return { user: { ...this.toPublicUser(user), permissions }, ...tokens };
+    return { user: await this.toProfile(user, permissions), ...tokens };
   }
 
   async refreshTokens(userId: string): Promise<Tokens> {
@@ -66,13 +68,13 @@ export class AuthService {
     }
 
     const permissions = await this.usersService.getPermissionKeys(user.id);
-    return { ...this.toPublicUser(user), permissions };
+    return this.toProfile(user, permissions);
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
     const user = await this.usersService.updateProfile(userId, dto);
     const permissions = await this.usersService.getPermissionKeys(user.id);
-    return { ...this.toPublicUser(user), permissions };
+    return this.toProfile(user, permissions);
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto) {
@@ -136,6 +138,20 @@ export class AuthService {
       full_name: user.full_name,
       phone_number: user.phone_number,
       role: user.role,
+    };
+  }
+
+  private async toProfile(user: trigo_users, permissions: string[]) {
+    const activityPermissions =
+      await this.quoteActivityPermissions.getPermissions({
+        userId: user.id,
+        permissions,
+      });
+
+    return {
+      ...this.toPublicUser(user),
+      permissions,
+      ...activityPermissions,
     };
   }
 }
