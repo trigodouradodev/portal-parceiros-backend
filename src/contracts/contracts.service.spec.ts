@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { CollectionsService } from '../collections/collections.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ScopeService } from '../scope/scope.service';
 import { ContractsQueryDto } from './dto/contracts-query.dto';
 import { ContractsService } from './contracts.service';
 
@@ -54,6 +55,10 @@ async function buildService(options: BuildOptions = {}) {
       ContractsService,
       { provide: PrismaService, useValue: prisma },
       { provide: CollectionsService, useValue: { getDetail: jest.fn() } },
+      {
+        provide: ScopeService,
+        useValue: { canDirectlyViewContract: jest.fn() },
+      },
     ],
   }).compile();
   return { service: module.get(ContractsService), prisma };
@@ -91,9 +96,41 @@ async function buildDetailService(options: DetailBuildOptions = {}) {
       ContractsService,
       { provide: PrismaService, useValue: { $queryRaw: queryRaw } },
       { provide: CollectionsService, useValue: { getDetail } },
+      {
+        provide: ScopeService,
+        useValue: { canDirectlyViewContract: jest.fn() },
+      },
     ],
   }).compile();
   return { service: module.get(ContractsService), getDetail };
+}
+
+interface InstallmentsBuildOptions {
+  canView?: boolean;
+  rows?: unknown[];
+}
+
+/** Setup pra getContractInstallments (AUREA-346). */
+async function buildInstallmentsService(
+  options: InstallmentsBuildOptions = {},
+) {
+  const canDirectlyViewContract = jest
+    .fn()
+    .mockResolvedValue(options.canView ?? true);
+  const queryRaw = jest.fn().mockResolvedValue(options.rows ?? []);
+  const module: TestingModule = await Test.createTestingModule({
+    providers: [
+      ContractsService,
+      { provide: PrismaService, useValue: { $queryRaw: queryRaw } },
+      { provide: CollectionsService, useValue: { getDetail: jest.fn() } },
+      { provide: ScopeService, useValue: { canDirectlyViewContract } },
+    ],
+  }).compile();
+  return {
+    service: module.get(ContractsService),
+    canDirectlyViewContract,
+    queryRaw,
+  };
 }
 
 describe('ContractsService.getContracts', () => {
@@ -231,5 +268,76 @@ describe('ContractsService.getContractDetail', () => {
       service.getContractDetail(VIEWER, CONTRACT_ID),
     ).rejects.toThrow(NotFoundException);
     expect(getDetail).not.toHaveBeenCalled();
+  });
+
+  it('usa installmentNumber explícito direto, sem auto-resolver (AUREA-346)', async () => {
+    const { service, getDetail } = await buildDetailService({
+      openInstallmentNumber: 4,
+    });
+
+    await service.getContractDetail(VIEWER, CONTRACT_ID, 7);
+
+    expect(getDetail).toHaveBeenCalledWith(VIEWER, CONTRACT_ID, 7);
+  });
+});
+
+describe('ContractsService.getContractInstallments (AUREA-346)', () => {
+  const VIEWER = { userId: USER_ID, permissions: [] };
+
+  const ROWS = [
+    {
+      installment_number: 1,
+      due_date: new Date('2026-07-10T00:00:00Z'),
+      total_amount: '500',
+      pending_amount: '0',
+      payment_date: new Date('2026-07-09T00:00:00Z'),
+      display_status: 'paid',
+    },
+    {
+      installment_number: 2,
+      due_date: new Date('2026-08-10T00:00:00Z'),
+      total_amount: '500',
+      pending_amount: '500',
+      payment_date: null,
+      display_status: 'overdue',
+    },
+  ];
+
+  it('mapeia as parcelas com o status de exibição derivado', async () => {
+    const { service } = await buildInstallmentsService({ rows: ROWS });
+
+    await expect(
+      service.getContractInstallments(VIEWER, CONTRACT_ID),
+    ).resolves.toEqual({
+      items: [
+        {
+          number: 1,
+          dueDate: ROWS[0].due_date,
+          totalAmount: 500,
+          pendingAmount: 0,
+          paymentDate: ROWS[0].payment_date,
+          displayStatus: 'paid',
+        },
+        {
+          number: 2,
+          dueDate: ROWS[1].due_date,
+          totalAmount: 500,
+          pendingAmount: 500,
+          paymentDate: undefined,
+          displayStatus: 'overdue',
+        },
+      ],
+    });
+  });
+
+  it('404 quando o usuário não tem acesso direto ao contrato', async () => {
+    const { service, queryRaw } = await buildInstallmentsService({
+      canView: false,
+    });
+
+    await expect(
+      service.getContractInstallments(VIEWER, CONTRACT_ID),
+    ).rejects.toThrow(NotFoundException);
+    expect(queryRaw).not.toHaveBeenCalled();
   });
 });
