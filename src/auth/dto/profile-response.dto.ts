@@ -22,4 +22,16 @@ export class ProfileResponseDto {
     description: 'Chaves de permissão efetivas do usuário.',
   })
   permissions: string[];
+
+  @ApiProperty({
+    example: true,
+    description: 'Indica se o usuário pode simular proposta no momento.',
+  })
+  canSimulateQuote: boolean;
+
+  @ApiProperty({
+    example: true,
+    description: 'Indica se o usuário pode criar proposta no momento.',
+  })
+  canCreateQuote: boolean;
 }
