@@ -5,11 +5,15 @@ import { QuoteActivityPermissionsService } from './quote-activity-permissions.se
 const USER_ID = '11111111-1111-1111-1111-111111111111';
 
 function build(tasks: { segment_code: string }[] = []) {
+  const queryRaw = jest.fn().mockResolvedValue(tasks);
   const prisma = {
-    $queryRaw: jest.fn().mockResolvedValue(tasks),
+    $queryRaw: queryRaw,
   } as unknown as PrismaService;
 
-  return { service: new QuoteActivityPermissionsService(prisma), prisma };
+  return {
+    service: new QuoteActivityPermissionsService(prisma),
+    queryRaw,
+  };
 }
 
 const rolloutPartnerPermissions = [
@@ -19,7 +23,7 @@ const rolloutPartnerPermissions = [
 
 describe('QuoteActivityPermissionsService', () => {
   it('mantém as propostas liberadas fora do rollout', async () => {
-    const { service, prisma } = build();
+    const { service, queryRaw } = build();
 
     await expect(
       service.getPermissions({
@@ -27,11 +31,11 @@ describe('QuoteActivityPermissionsService', () => {
         permissions: [PermissionKey.ROLE_CONSULTANT],
       }),
     ).resolves.toEqual({ canSimulateQuote: true, canCreateQuote: true });
-    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(queryRaw).not.toHaveBeenCalled();
   });
 
   it('mantém as propostas liberadas para papéis não elegíveis', async () => {
-    const { service, prisma } = build();
+    const { service, queryRaw } = build();
 
     await expect(
       service.getPermissions({
@@ -39,7 +43,7 @@ describe('QuoteActivityPermissionsService', () => {
         permissions: [PermissionKey.QUOTE_ACTIVITY_GATES],
       }),
     ).resolves.toEqual({ canSimulateQuote: true, canCreateQuote: true });
-    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(queryRaw).not.toHaveBeenCalled();
   });
 
   it('bloqueia simular e criar para segmentos de contato pendentes', async () => {
