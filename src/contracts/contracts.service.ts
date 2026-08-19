@@ -7,7 +7,7 @@ import { Prisma } from '@prisma/client';
 import { toNum } from '../common/query.util';
 import { CollectionDetail } from '../collections/interfaces/collection-detail.interface';
 import { CollectionsService } from '../collections/collections.service';
-import { ScopeViewer } from '../scope/scope.service';
+import { ScopeService, ScopeViewer } from '../scope/scope.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ContractsQueryDto } from './dto/contracts-query.dto';
 import { ContractListRow } from './interfaces/contracts-row.interface';
@@ -15,12 +15,19 @@ import {
   ContractListItem,
   ContractsPage,
 } from './interfaces/contracts-list.interface';
+import { ContractInstallmentRow } from './interfaces/contract-installment-row.interface';
+import {
+  ContractInstallmentDisplayStatus,
+  ContractInstallmentItem,
+  ContractInstallmentsList,
+} from './interfaces/contract-installment.interface';
 
 @Injectable()
 export class ContractsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly collections: CollectionsService,
+    private readonly scope: ScopeService,
   ) {}
 
   /**
@@ -111,23 +118,76 @@ export class ContractsService {
 
   /**
    * Detalhe de um contrato da Carteira (AUREA-330): reaproveita o mesmo
-   * detalhe rico do Preventivo/Cobrança (`CollectionsService.getDetail`),
-   * mas sem depender de o chamador já saber qual parcela mostrar — resolve
-   * aqui a parcela em aberto mais próxima do vencimento e, se o contrato não
-   * tiver nenhuma aberta (ex.: já pago), cai para a última parcela. Cobre
-   * 100% dos contratos, diferente de expor o id/número da próxima parcela na
-   * listagem (que falha pra contrato sem parcela aberta).
+   * detalhe rico do Preventivo/Cobrança (`CollectionsService.getDetail`).
+   *
+   * AUREA-346: aceita `installmentNumber` explícito (parcela escolhida na
+   * lista de parcelas da Carteira) — nesse caso pula a auto-resolução e usa
+   * ela direto (`CollectionsService.getDetail` já valida que a parcela
+   * pertence ao contrato, 404 caso contrário). Sem o parâmetro, mantém o
+   * comportamento original: resolve a parcela em aberto mais próxima do
+   * vencimento e, se o contrato não tiver nenhuma aberta (ex.: já pago), cai
+   * para a última parcela — cobre 100% dos contratos, diferente de expor o
+   * id/número da próxima parcela na listagem (que falha pra contrato sem
+   * parcela aberta).
    */
   async getContractDetail(
     viewer: ScopeViewer,
     contractId: string,
+    installmentNumber?: number,
   ): Promise<CollectionDetail> {
-    const installmentNumber =
-      await this.resolveDisplayInstallmentNumber(contractId);
-    if (installmentNumber === null) {
+    const resolvedInstallmentNumber =
+      installmentNumber ??
+      (await this.resolveDisplayInstallmentNumber(contractId));
+    if (resolvedInstallmentNumber === null) {
       throw new NotFoundException('contract_without_installments');
     }
-    return this.collections.getDetail(viewer, contractId, installmentNumber);
+    return this.collections.getDetail(
+      viewer,
+      contractId,
+      resolvedInstallmentNumber,
+    );
+  }
+
+  /**
+   * Todas as parcelas do contrato com status de exibição derivado (paga /
+   * atrasada / vence hoje / a vencer) — AUREA-346. Alimenta a tela de lista
+   * de parcelas da Carteira, de onde o consultor escolhe uma parcela real
+   * pra ver o detalhe completo e registrar uma ação (follow-up).
+   *
+   * Mesmo gate de acesso do detalhe (ownership direto, sem árvore); fora do
+   * escopo ou inexistente → 404 (não revela existência).
+   */
+  async getContractInstallments(
+    viewer: ScopeViewer,
+    contractId: string,
+  ): Promise<ContractInstallmentsList> {
+    const canView = await this.scope.canDirectlyViewContract(
+      contractId,
+      viewer.userId,
+    );
+    if (!canView) {
+      throw new NotFoundException('Contrato não encontrado.');
+    }
+
+    const rows = await this.prisma.$queryRaw<ContractInstallmentRow[]>`
+      SELECT
+        installment_number,
+        due_date,
+        total_amount,
+        pending_amount,
+        payment_date,
+        CASE
+          WHEN status = 'paid' THEN 'paid'
+          WHEN due_date < CURRENT_DATE THEN 'overdue'
+          WHEN due_date = CURRENT_DATE THEN 'due_today'
+          ELSE 'upcoming'
+        END AS display_status
+      FROM public.installments
+      WHERE contract_id = ${contractId}::uuid
+      ORDER BY installment_number ASC
+    `;
+
+    return { items: rows.map((row) => this.mapInstallmentRow(row)) };
   }
 
   /** Parcela em aberto mais próxima do vencimento; sem nenhuma aberta, a última. */
@@ -156,6 +216,19 @@ export class ContractsService {
       LIMIT 1
     `;
     return lastRow ? Number(lastRow.installment_number) : null;
+  }
+
+  private mapInstallmentRow(
+    row: ContractInstallmentRow,
+  ): ContractInstallmentItem {
+    return {
+      number: Number(row.installment_number),
+      dueDate: row.due_date,
+      totalAmount: toNum(row.total_amount),
+      pendingAmount: toNum(row.pending_amount),
+      paymentDate: row.payment_date ?? undefined,
+      displayStatus: row.display_status as ContractInstallmentDisplayStatus,
+    };
   }
 
   private mapItem(row: ContractListRow): ContractListItem {
