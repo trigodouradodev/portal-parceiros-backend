@@ -292,6 +292,8 @@ describe('ContractsService.getContractInstallments (AUREA-346)', () => {
       pending_amount: '0',
       payment_date: new Date('2026-07-09T00:00:00Z'),
       display_status: 'paid',
+      days_overdue: -40,
+      followups_count: 0,
     },
     {
       installment_number: 2,
@@ -300,6 +302,8 @@ describe('ContractsService.getContractInstallments (AUREA-346)', () => {
       pending_amount: '500',
       payment_date: null,
       display_status: 'overdue',
+      days_overdue: 9,
+      followups_count: 3,
     },
   ];
 
@@ -317,6 +321,8 @@ describe('ContractsService.getContractInstallments (AUREA-346)', () => {
           pendingAmount: 0,
           paymentDate: ROWS[0].payment_date,
           displayStatus: 'paid',
+          daysOverdue: undefined,
+          followUpsCount: undefined,
         },
         {
           number: 2,
@@ -325,9 +331,29 @@ describe('ContractsService.getContractInstallments (AUREA-346)', () => {
           pendingAmount: 500,
           paymentDate: undefined,
           displayStatus: 'overdue',
+          daysOverdue: 9,
+          followUpsCount: 3,
         },
       ],
     });
+  });
+
+  it('não expõe atraso/follow-ups pra parcela não atrasada, mesmo que a linha traga os campos', async () => {
+    const { service } = await buildInstallmentsService({
+      rows: [
+        {
+          ...ROWS[0],
+          display_status: 'due_today',
+          days_overdue: 0,
+          followups_count: 1,
+        },
+      ],
+    });
+
+    const result = await service.getContractInstallments(VIEWER, CONTRACT_ID);
+
+    expect(result.items[0].daysOverdue).toBeUndefined();
+    expect(result.items[0].followUpsCount).toBeUndefined();
   });
 
   it('404 quando o usuário não tem acesso direto ao contrato', async () => {

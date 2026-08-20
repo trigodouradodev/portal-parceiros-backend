@@ -34,6 +34,20 @@ export class ContractInstallmentItem {
     description: 'paga / atrasada / vence hoje / a vencer.',
   })
   displayStatus: ContractInstallmentDisplayStatus;
+
+  @ApiPropertyOptional({
+    example: 12,
+    description:
+      'Dias de atraso. Só presente quando displayStatus é "overdue".',
+  })
+  daysOverdue?: number;
+
+  @ApiPropertyOptional({
+    example: 2,
+    description:
+      'Quantidade de follow-ups registrados pra essa parcela. Só presente quando displayStatus é "overdue".',
+  })
+  followUpsCount?: number;
 }
 
 /** Todas as parcelas de um contrato, pra tela de lista da Carteira (AUREA-346). */

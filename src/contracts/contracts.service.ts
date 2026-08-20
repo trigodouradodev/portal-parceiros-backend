@@ -171,20 +171,27 @@ export class ContractsService {
 
     const rows = await this.prisma.$queryRaw<ContractInstallmentRow[]>`
       SELECT
-        installment_number,
-        due_date,
-        total_amount,
-        pending_amount,
-        payment_date,
+        i.installment_number,
+        i.due_date,
+        i.total_amount,
+        i.pending_amount,
+        i.payment_date,
         CASE
-          WHEN status = 'paid' THEN 'paid'
-          WHEN due_date < CURRENT_DATE THEN 'overdue'
-          WHEN due_date = CURRENT_DATE THEN 'due_today'
+          WHEN i.status = 'paid' THEN 'paid'
+          WHEN i.due_date < CURRENT_DATE THEN 'overdue'
+          WHEN i.due_date = CURRENT_DATE THEN 'due_today'
           ELSE 'upcoming'
-        END AS display_status
-      FROM public.installments
-      WHERE contract_id = ${contractId}::uuid
-      ORDER BY installment_number ASC
+        END AS display_status,
+        (CURRENT_DATE - i.due_date)::int AS days_overdue,
+        (
+          SELECT COUNT(*)::int
+          FROM public.installment_followups f
+          WHERE f.contract_id = i.contract_id
+            AND f.installment_number = i.installment_number
+        ) AS followups_count
+      FROM public.installments i
+      WHERE i.contract_id = ${contractId}::uuid
+      ORDER BY i.installment_number ASC
     `;
 
     return { items: rows.map((row) => this.mapInstallmentRow(row)) };
@@ -221,13 +228,20 @@ export class ContractsService {
   private mapInstallmentRow(
     row: ContractInstallmentRow,
   ): ContractInstallmentItem {
+    const displayStatus =
+      row.display_status as ContractInstallmentDisplayStatus;
+    // AUREA-346: atraso/follow-ups só fazem sentido pra parcela atrasada —
+    // omitidos (em vez de 0) nas demais, pra não sugerir "0 dias de atraso".
+    const isOverdue = displayStatus === 'overdue';
     return {
       number: Number(row.installment_number),
       dueDate: row.due_date,
       totalAmount: toNum(row.total_amount),
       pendingAmount: toNum(row.pending_amount),
       paymentDate: row.payment_date ?? undefined,
-      displayStatus: row.display_status as ContractInstallmentDisplayStatus,
+      displayStatus,
+      daysOverdue: isOverdue ? Number(row.days_overdue) : undefined,
+      followUpsCount: isOverdue ? Number(row.followups_count) : undefined,
     };
   }
 
