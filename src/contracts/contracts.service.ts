@@ -336,6 +336,31 @@ export class ContractsService {
         WHERE r.contract_id = c.id
       )`);
     }
+    if (query.onlyDueToday) {
+      // Mesma regra do KPI Home/Vencem hoje: contrato de carteira ativa com
+      // alguma parcela aberta vencendo no dia corrente.
+      conditions.push(Prisma.sql`c.status IN ('disbursed', 'active')`);
+      conditions.push(Prisma.sql`EXISTS (
+        SELECT 1
+        FROM public.installments due_today_installment
+        WHERE due_today_installment.contract_id = c.id
+          AND due_today_installment.status IN ('not_paid', 'partially_paid')
+          AND due_today_installment.due_date = CURRENT_DATE
+      )`);
+    }
+    if (query.onlyUpcomingRenewal) {
+      // Mesma regra do KPI Home/Renovação próxima: última parcela entre o
+      // início do mês atual (inclusive) e o início do mês + 4 meses (exclusive).
+      conditions.push(Prisma.sql`c.status IN ('disbursed', 'active')`);
+      conditions.push(Prisma.sql`EXISTS (
+        SELECT 1
+        FROM public.installments renewal_installment
+        WHERE renewal_installment.contract_id = c.id
+        GROUP BY renewal_installment.contract_id
+        HAVING MAX(renewal_installment.due_date) >= date_trunc('month', CURRENT_DATE)
+          AND MAX(renewal_installment.due_date) < date_trunc('month', CURRENT_DATE) + INTERVAL '4 months'
+      )`);
+    }
 
     return Prisma.join(conditions, ' AND ');
   }
