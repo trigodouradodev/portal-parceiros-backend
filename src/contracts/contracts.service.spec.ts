@@ -210,6 +210,8 @@ describe('ContractsService.getContracts', () => {
         onlyActive: true,
         onlyDelinquency: true,
         onlyRenegotiated: true,
+        onlyDueToday: true,
+        onlyUpcomingRenewal: true,
       }),
     );
 
