@@ -6,4 +6,6 @@ export interface ContractInstallmentRow {
   pending_amount: string | number;
   payment_date: Date | null;
   display_status: string;
+  days_overdue: number;
+  followups_count: number;
 }
