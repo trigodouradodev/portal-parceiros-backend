@@ -38,9 +38,7 @@ WITH base AS (
       AND (c_1.disbursement_date IS NOT NULL)
       AND (
         (c_1.status) :: text <> ALL (
-          (
-            ARRAY ['cancelled'::character varying, 'rejected'::character varying]
-          ) :: text []
+          ARRAY [('cancelled'::character varying)::text, ('rejected'::character varying)::text]
         )
       )
     )
@@ -79,9 +77,7 @@ calculada AS (
         WHEN (
           (
             (b.status) :: text = ANY (
-              (
-                ARRAY ['not_paid'::character varying, 'partially_paid'::character varying]
-              ) :: text []
+              ARRAY [('not_paid'::character varying)::text, ('partially_paid'::character varying)::text]
             )
           )
           AND (b.due_date < CURRENT_DATE)
@@ -94,28 +90,28 @@ calculada AS (
     base b
 )
 SELECT
-  c.id AS id_parcela,
-  c.contract_id AS id_contrato,
-  c.contract_number AS numero_contrato,
-  c.installment_number AS numero_parcela,
-  c.total_amount AS valor_total_parcela,
-  c.total_paid AS valor_total_pago,
-  c.valor_pendente,
-  c.present_value AS valor_presente_parcela,
-  c.due_date AS data_vencimento,
-  c.payment_date AS data_pagamento,
+  id AS id_parcela,
+  contract_id AS id_contrato,
+  contract_number AS numero_contrato,
+  installment_number AS numero_parcela,
+  total_amount AS valor_total_parcela,
+  total_paid AS valor_total_pago,
+  valor_pendente,
+  present_value AS valor_presente_parcela,
+  due_date AS data_vencimento,
+  payment_date AS data_pagamento,
   CASE
-    c.status
+    STATUS
     WHEN 'paid' :: text THEN 'PAGA' :: text
     WHEN 'not_paid' :: text THEN 'NÃO PAGA' :: text
     WHEN 'partially_paid' :: text THEN 'PARCIALMENTE PAGA' :: text
-    ELSE upper((c.status) :: text)
+    ELSE upper((STATUS) :: text)
   END AS status_parcela,
   CASE
-    c.status_contrato_raw
+    status_contrato_raw
     WHEN 'disbursed' :: text THEN 'DESEMBOLSADO' :: text
     WHEN 'closed' :: text THEN 'ENCERRADO' :: text
-    ELSE upper((c.status_contrato_raw) :: text)
+    ELSE upper((status_contrato_raw) :: text)
   END AS status_contrato,
   (
     EXISTS (
@@ -127,37 +123,35 @@ SELECT
         (r.contract_id = c.contract_id)
     )
   ) AS flag_renegociado,
-  c.dias_atraso_corridos,
+  dias_atraso_corridos,
   CASE
     WHEN (
-      (c.valor_pendente > (0) :: numeric)
-      AND (c.dias_atraso_corridos > 0)
+      (valor_pendente > (0) :: numeric)
+      AND (dias_atraso_corridos > 0)
     ) THEN CASE
-      WHEN (c.dias_atraso_corridos <= 5) THEN 'D1 a D5' :: text
-      WHEN (c.dias_atraso_corridos <= 15) THEN 'D6 a D15' :: text
-      WHEN (c.dias_atraso_corridos <= 30) THEN 'D16 a D30' :: text
-      WHEN (c.dias_atraso_corridos <= 45) THEN 'D31 a D45' :: text
-      WHEN (c.dias_atraso_corridos <= 60) THEN 'D46 a D60' :: text
-      WHEN (c.dias_atraso_corridos <= 90) THEN 'D61 a D90' :: text
+      WHEN (dias_atraso_corridos <= 5) THEN 'D1 a D5' :: text
+      WHEN (dias_atraso_corridos <= 15) THEN 'D6 a D15' :: text
+      WHEN (dias_atraso_corridos <= 30) THEN 'D16 a D30' :: text
+      WHEN (dias_atraso_corridos <= 45) THEN 'D31 a D45' :: text
+      WHEN (dias_atraso_corridos <= 60) THEN 'D46 a D60' :: text
+      WHEN (dias_atraso_corridos <= 90) THEN 'D61 a D90' :: text
       ELSE 'D90+' :: text
     END
     ELSE NULL :: text
   END AS faixa_aging_dias_corridos,
   CASE
     WHEN (
-      (c.status) :: text <> ALL (
-        (
-          ARRAY ['not_paid'::character varying, 'partially_paid'::character varying]
-        ) :: text []
+      (STATUS) :: text <> ALL (
+        ARRAY [('not_paid'::character varying)::text, ('partially_paid'::character varying)::text]
       )
     ) THEN (0) :: numeric
-    WHEN (c.maior_atraso_contrato > 30) THEN GREATEST((c.total_amount - c.total_paid), (0) :: numeric)
-    WHEN (c.due_date < CURRENT_DATE) THEN GREATEST((c.total_amount - c.total_paid), (0) :: numeric)
+    WHEN (maior_atraso_contrato > 30) THEN GREATEST((total_amount - total_paid), (0) :: numeric)
+    WHEN (due_date < CURRENT_DATE) THEN GREATEST((total_amount - total_paid), (0) :: numeric)
     ELSE (0) :: numeric
   END AS valor_contribuicao_inadimplencia,
-  c.company_id AS id_empresa,
-  c.client_id AS id_cliente,
-  c.consultant_id AS id_consultor,
-  c.current_collection_agent_id AS id_agente_cobranca
+  company_id AS id_empresa,
+  client_id AS id_cliente,
+  consultant_id AS id_consultor,
+  current_collection_agent_id AS id_agente_cobranca
 FROM
   calculada c;

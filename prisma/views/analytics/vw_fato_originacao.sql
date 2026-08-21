@@ -13,9 +13,7 @@ WITH contratos_validos AS (
       (c_1.disbursement_date IS NOT NULL)
       AND (
         (c_1.status) :: text <> ALL (
-          (
-            ARRAY ['failed'::character varying, 'cancelled'::character varying, 'not_processed'::character varying]
-          ) :: text []
+          ARRAY [('failed'::character varying)::text, ('cancelled'::character varying)::text, ('not_processed'::character varying)::text]
         )
       )
     )
@@ -196,9 +194,7 @@ WHERE
     (c.disbursement_date IS NOT NULL)
     AND (
       (c.status) :: text <> ALL (
-        (
-          ARRAY ['failed'::character varying, 'cancelled'::character varying, 'not_processed'::character varying]
-        ) :: text []
+        ARRAY [('failed'::character varying)::text, ('cancelled'::character varying)::text, ('not_processed'::character varying)::text]
       )
     )
   );
