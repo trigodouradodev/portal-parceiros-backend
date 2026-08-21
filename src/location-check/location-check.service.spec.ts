@@ -8,6 +8,7 @@ import { LocationCheckService } from './location-check.service';
 import { GeocodingService, GeocodeResult } from './geocoding.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { VerifyLocationDto } from './dto/verify-location.dto';
+import { FollowUpParty } from '../follow-up/enums/follow-up.enums';
 
 const CONTRACT_ID = '11111111-1111-1111-1111-111111111111';
 const CLIENT_ID = '22222222-2222-2222-2222-222222222222';
@@ -35,7 +36,11 @@ function geocodeResult(overrides: Partial<GeocodeResult> = {}): GeocodeResult {
 }
 
 interface BuildOptions {
-  contract?: { id: string; client_id: string } | null;
+  contract?: {
+    id: string;
+    client_id: string;
+    quotes?: { guarantor: unknown } | null;
+  } | null;
   installment?: { id: string } | null;
   address?: Partial<typeof ADDRESS> | null;
   geocode?: GeocodeResult | null;
@@ -44,7 +49,7 @@ interface BuildOptions {
 
 async function build(options: BuildOptions = {}) {
   const {
-    contract = { id: CONTRACT_ID, client_id: CLIENT_ID },
+    contract = { id: CONTRACT_ID, client_id: CLIENT_ID, quotes: null },
     installment = { id: 'installment-1' },
     address = ADDRESS,
     geocode = geocodeResult(),
@@ -126,6 +131,35 @@ describe('verify — pré-condições', () => {
       { is_primary: { sort: 'desc', nulls: 'last' } },
       { created_at: 'desc' },
     ]);
+  });
+
+  it('usa o endereço do avalista da proposta quando party é guarantor', async () => {
+    const { service, prisma, geocoding } = await build({
+      contract: {
+        id: CONTRACT_ID,
+        client_id: CLIENT_ID,
+        quotes: {
+          guarantor: {
+            name: 'Avalista Teste',
+            address: {
+              streetName: 'Rua do Avalista',
+              streetNumber: '77',
+              streetDistrict: 'Centro',
+              city: 'Salvador',
+              state: 'BA',
+              zipCode: '40000-000',
+            },
+          },
+        },
+      },
+    });
+
+    await service.verify(dto({ party: FollowUpParty.GUARANTOR }));
+
+    expect(prisma.addresses.findFirst).not.toHaveBeenCalled();
+    expect(geocoding.geocode).toHaveBeenCalledWith(
+      'Rua do Avalista, 77, Centro, Salvador - BA, 40000-000, Brasil',
+    );
   });
 });
 

@@ -4,6 +4,8 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { mapGuarantor } from '../activities/activities.mapper';
+import { FollowUpParty } from '../follow-up/enums/follow-up.enums';
 import { PrismaService } from '../prisma/prisma.service';
 import { VerifyLocationDto } from './dto/verify-location.dto';
 import { GeocodingService } from './geocoding.service';
@@ -33,14 +35,20 @@ export class LocationCheckService {
 
   /**
    * Verifica se a coordenada capturada pelo agente está a até `RADIUS_METERS`
-   * do endereço cadastrado do cliente do contrato. O endereço é resolvido
-   * (primário; fallback mais recente), geocodificado e comparado por Haversine.
+   * do endereço cadastrado do destinatário da visita. Para o cliente, o
+   * endereço é resolvido com prioridade para o primário; para o avalista, vem
+   * do JSON da proposta de origem. Ambos são geocodificados e comparados por
+   * Haversine.
    * Responde sempre 200 com `withinRadius`; "fora do raio" é resultado válido.
    */
   async verify(dto: VerifyLocationDto): Promise<LocationCheckResult> {
     const contract = await this.prisma.contracts.findUnique({
       where: { id: dto.contractId },
-      select: { id: true, client_id: true },
+      select: {
+        id: true,
+        client_id: true,
+        quotes: { select: { guarantor: true } },
+      },
     });
     if (!contract) {
       throw new NotFoundException('Contrato não encontrado.');
@@ -57,24 +65,11 @@ export class LocationCheckService {
       throw new NotFoundException('Parcela não encontrada para o contrato.');
     }
 
-    const address = await this.prisma.addresses.findFirst({
-      where: { client_id: contract.client_id },
-      orderBy: [
-        { is_primary: { sort: 'desc', nulls: 'last' } },
-        { created_at: 'desc' },
-      ],
-      select: {
-        street: true,
-        number: true,
-        neighborhood: true,
-        city: true,
-        state: true,
-        zip_code: true,
-      },
-    });
-    if (!address) {
-      throw new NotFoundException('Endereço do cliente não encontrado.');
-    }
+    const party = dto.party ?? FollowUpParty.CLIENT;
+    const address =
+      party === FollowUpParty.GUARANTOR
+        ? this.resolveGuarantorAddress(contract.quotes?.guarantor)
+        : await this.findClientAddress(contract.client_id);
 
     const geo = await this.geocoding.geocode(this.buildAddressText(address));
     if (!geo) {
@@ -108,6 +103,49 @@ export class LocationCheckService {
       matchedAddress: geo.formattedAddress,
       locationType: geo.locationType,
       partialMatch: geo.partialMatch,
+    };
+  }
+
+  private async findClientAddress(
+    clientId: string,
+  ): Promise<AddressForGeocoding> {
+    const address = await this.prisma.addresses.findFirst({
+      where: { client_id: clientId },
+      orderBy: [
+        { is_primary: { sort: 'desc', nulls: 'last' } },
+        { created_at: 'desc' },
+      ],
+      select: {
+        street: true,
+        number: true,
+        neighborhood: true,
+        city: true,
+        state: true,
+        zip_code: true,
+      },
+    });
+    if (!address) {
+      throw new NotFoundException('Endereço do cliente não encontrado.');
+    }
+
+    return address;
+  }
+
+  private resolveGuarantorAddress(
+    rawGuarantor: Parameters<typeof mapGuarantor>[0],
+  ): AddressForGeocoding {
+    const address = mapGuarantor(rawGuarantor)?.address;
+    if (!address) {
+      throw new NotFoundException('Endereço do avalista não encontrado.');
+    }
+
+    return {
+      street: address.street,
+      number: address.number,
+      neighborhood: address.neighborhood,
+      city: address.city,
+      state: address.state ?? null,
+      zip_code: address.zipCode,
     };
   }
 

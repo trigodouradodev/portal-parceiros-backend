@@ -32,6 +32,15 @@ export class FollowUpHistoryItem {
   @ApiPropertyOptional({ example: 'Cliente prometeu pagar na sexta.' })
   note?: string;
 
+  @ApiPropertyOptional({ example: 'call' })
+  followUpType?: string;
+
+  @ApiPropertyOptional({ example: 'client' })
+  party?: string;
+
+  @ApiPropertyOptional({ example: 'collection_letter' })
+  automaticAction?: string;
+
   @ApiPropertyOptional({
     example: 'will_pay_on_date',
     description: 'Resultado esperado do contato.',
