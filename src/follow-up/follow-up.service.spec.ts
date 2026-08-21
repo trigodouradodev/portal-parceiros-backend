@@ -97,14 +97,14 @@ describe('FollowUpService.create — modelo estruturado', () => {
           status: FollowUpStatus.GUARANTOR_VISIT,
           followup_type: FollowUpType.VISIT,
           party: FollowUpParty.GUARANTOR,
-        }),
+        }) as unknown,
       }),
     );
     expect(tx.geolocations.create).toHaveBeenCalledWith({
       data: {
         installment_followup_id: 'followup-1',
-        latitude: expect.any(Prisma.Decimal),
-        longitude: expect.any(Prisma.Decimal),
+        latitude: expect.any(Prisma.Decimal) as unknown,
+        longitude: expect.any(Prisma.Decimal) as unknown,
       },
     });
   });
@@ -128,7 +128,7 @@ describe('FollowUpService.create — modelo estruturado', () => {
           followup_type: FollowUpType.AUTOMATIC,
           party: FollowUpParty.GUARANTOR,
           automatic_action: AutomaticFollowUpAction.NEGATIVATION,
-        }),
+        }) as unknown,
       }),
     );
   });
@@ -180,7 +180,7 @@ describe('FollowUpService.create — modelo estruturado', () => {
           followup_type: null,
           party: null,
           automatic_action: null,
-        }),
+        }) as unknown,
       }),
     );
   });
