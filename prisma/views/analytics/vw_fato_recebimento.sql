@@ -124,8 +124,6 @@ FROM
 WHERE
   (
     (c.status) :: text <> ALL (
-      (
-        ARRAY ['cancelled'::character varying, 'rejected'::character varying]
-      ) :: text []
+      ARRAY [('cancelled'::character varying)::text, ('rejected'::character varying)::text]
     )
   );

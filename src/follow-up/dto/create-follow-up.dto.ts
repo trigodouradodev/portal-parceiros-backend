@@ -12,8 +12,11 @@ import {
   ValidateIf,
 } from 'class-validator';
 import {
+  AutomaticFollowUpAction,
   FollowUpExpectedResult,
+  FollowUpParty,
   FollowUpStatus,
+  FollowUpType,
 } from '../enums/follow-up.enums';
 
 /** Payload para registrar um follow-up de parcela. */
@@ -32,12 +35,38 @@ export class CreateFollowUpDto {
   @Min(1)
   installmentNumber?: number;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     enum: FollowUpStatus,
-    description: 'Tipo/canal da ação (espelha o enum do banco).',
+    description:
+      'Status do payload legado. Não enviar junto do modelo estruturado.',
   })
+  @IsOptional()
   @IsEnum(FollowUpStatus)
-  status: FollowUpStatus;
+  status?: FollowUpStatus;
+
+  @ApiPropertyOptional({
+    enum: FollowUpType,
+    description: 'Tipo do follow-up no modelo estruturado.',
+  })
+  @IsOptional()
+  @IsEnum(FollowUpType)
+  followUpType?: FollowUpType;
+
+  @ApiPropertyOptional({
+    enum: FollowUpParty,
+    description: 'Parte envolvida: cliente ou avalista.',
+  })
+  @IsOptional()
+  @IsEnum(FollowUpParty)
+  party?: FollowUpParty;
+
+  @ApiPropertyOptional({
+    enum: AutomaticFollowUpAction,
+    description: 'Ação obrigatória apenas para follow-up automático.',
+  })
+  @IsOptional()
+  @IsEnum(AutomaticFollowUpAction)
+  automaticAction?: AutomaticFollowUpAction;
 
   @ApiPropertyOptional({ description: 'Observações livres (opcional).' })
   @IsOptional()

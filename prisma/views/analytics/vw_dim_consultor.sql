@@ -81,26 +81,22 @@ hierarquia AS (
     (child.user_id <> ALL (parent.caminho_hierarquia))
 )
 SELECT
-  hierarquia.id_consultor,
-  hierarquia.nome_consultor,
-  hierarquia.id_gestor_direto,
-  hierarquia.nome_gestor_direto,
-  hierarquia.id_empresa,
-  hierarquia.flag_ativo,
-  hierarquia.nivel_hierarquia,
-  hierarquia.nivel_1_nome AS nome_diretor,
-  COALESCE(hierarquia.nivel_2_nome, hierarquia.nivel_1_nome) AS nome_gerente_nivel_1,
+  id_consultor,
+  nome_consultor,
+  id_gestor_direto,
+  nome_gestor_direto,
+  id_empresa,
+  flag_ativo,
+  nivel_hierarquia,
+  nivel_1_nome AS nome_diretor,
+  COALESCE(nivel_2_nome, nivel_1_nome) AS nome_gerente_nivel_1,
+  COALESCE(nivel_3_nome, nivel_2_nome, nivel_1_nome) AS nome_gerente_nivel_2,
   COALESCE(
-    hierarquia.nivel_3_nome,
-    hierarquia.nivel_2_nome,
-    hierarquia.nivel_1_nome
-  ) AS nome_gerente_nivel_2,
-  COALESCE(
-    hierarquia.nivel_4_nome,
-    hierarquia.nivel_3_nome,
-    hierarquia.nivel_2_nome,
-    hierarquia.nivel_1_nome
+    nivel_4_nome,
+    nivel_3_nome,
+    nivel_2_nome,
+    nivel_1_nome
   ) AS nome_supervisor,
-  hierarquia.caminho_hierarquia
+  caminho_hierarquia
 FROM
   hierarquia;
