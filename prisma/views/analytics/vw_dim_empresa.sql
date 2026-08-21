@@ -1,18 +1,16 @@
 SELECT
-  c.id AS id_empresa,
-  c.name AS nome_empresa,
-  c.cnpj,
-  c.uses_brx_integration AS flag_utiliza_integracao_brx,
-  c.uses_celcoin_integration AS flag_utiliza_integracao_celcoin,
-  c.charges_iof AS flag_cobra_iof,
-  c.is_active AS flag_ativo
+  id AS id_empresa,
+  name AS nome_empresa,
+  cnpj,
+  uses_brx_integration AS flag_utiliza_integracao_brx,
+  uses_celcoin_integration AS flag_utiliza_integracao_celcoin,
+  charges_iof AS flag_cobra_iof,
+  is_active AS flag_ativo
 FROM
   companies c
 WHERE
   (
-    (c.name) :: text <> ALL (
-      (
-        ARRAY ['Trigo Dourado'::character varying, 'Castro'::character varying]
-      ) :: text []
+    (name) :: text <> ALL (
+      ARRAY [('Trigo Dourado'::character varying)::text, ('Castro'::character varying)::text]
     )
   );

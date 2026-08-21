@@ -532,6 +532,46 @@ describe('getDetail — campos expandidos do contrato (AUREA-346)', () => {
     expect(detail.guarantor).toBeNull();
   });
 
+  it('mapeia os campos estruturados do histórico de follow-up', async () => {
+    const { service } = await buildService({
+      contract: contractDetailRow(),
+      installment: detailInstallmentRow(),
+      followUps: [
+        {
+          id: 'followup-1',
+          status: 'guarantor_collection_letter',
+          note: 'Carta emitida para o avalista.',
+          followup_type: 'automatic',
+          party: 'guarantor',
+          automatic_action: 'collection_letter',
+          expected_result: null,
+          payment_forecast: null,
+          created_at: new Date('2026-08-20T12:00:00Z'),
+          trigo_users: { id: 'user-1', full_name: 'Maria Souza' },
+          geolocations: null,
+        },
+      ],
+    });
+
+    const detail = await service.getDetail(VIEWER, CONTRACT_ID, 3);
+
+    expect(detail.followups).toEqual([
+      {
+        id: 'followup-1',
+        status: 'guarantor_collection_letter',
+        note: 'Carta emitida para o avalista.',
+        followUpType: 'automatic',
+        party: 'guarantor',
+        automaticAction: 'collection_letter',
+        expectedResult: undefined,
+        paymentForecast: undefined,
+        createdAt: new Date('2026-08-20T12:00:00Z'),
+        author: { id: 'user-1', name: 'Maria Souza' },
+        geolocation: undefined,
+      },
+    ]);
+  });
+
   it('mapeia o histórico de mudanças de status', async () => {
     const { service } = await buildService({
       contract: contractDetailRow(),

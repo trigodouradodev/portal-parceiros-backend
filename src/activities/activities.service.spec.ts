@@ -287,7 +287,7 @@ describe('reschedule', () => {
       ([strings]: [TemplateStringsArray]) =>
         strings.join(' ').includes('UPDATE activity_tasks'),
     );
-    expect((updateCall![0] as TemplateStringsArray).join(' ')).toContain(
+    expect(updateCall![0].join(' ')).toContain(
       'reschedule_count = reschedule_count + 1',
     );
   });
