@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { DetailGuarantor } from '../../activities/interfaces/installment-detail.interface';
 import { ClientInfo } from './overdue-collection.interface';
 import { ContractResponsible } from './responsible.interface';
 
@@ -31,6 +32,15 @@ export class FollowUpHistoryItem {
   @ApiPropertyOptional({ example: 'Cliente prometeu pagar na sexta.' })
   note?: string;
 
+  @ApiPropertyOptional({ example: 'call' })
+  followUpType?: string;
+
+  @ApiPropertyOptional({ example: 'client' })
+  party?: string;
+
+  @ApiPropertyOptional({ example: 'collection_letter' })
+  automaticAction?: string;
+
   @ApiPropertyOptional({
     example: 'will_pay_on_date',
     description: 'Resultado esperado do contato.',
@@ -62,11 +72,52 @@ export class ContractDetailInfo {
   @ApiProperty()
   number: string;
 
+  @ApiProperty({
+    example: 'disbursed',
+    description:
+      'Status bruto do contrato (contracts.status) — vocabulário controlado por integrações externas, não editável no portal.',
+  })
+  status: string;
+
   @ApiProperty({ example: 12 })
   totalInstallments: number;
 
   @ApiProperty({ example: 12000.0, description: 'Valor total do contrato.' })
   totalAmount: number;
+
+  @ApiPropertyOptional({
+    example: 12987.5,
+    description: 'Valor total com IOF.',
+  })
+  totalWithIof?: number;
+
+  @ApiPropertyOptional({ example: 987.5, description: 'Valor do IOF.' })
+  iofAmount?: number;
+
+  @ApiPropertyOptional({
+    example: 150.0,
+    description: 'TAC (Tarifa de Abertura de Crédito) da proposta de origem.',
+  })
+  tacAmount?: number;
+
+  @ApiPropertyOptional({
+    example: 'CRÉDITO PESSOAL',
+    description: 'Nome do produto financeiro da proposta de origem.',
+  })
+  productName?: string;
+
+  @ApiPropertyOptional({
+    example: 'CELCOIN',
+    description: 'Empresa/origem do contrato.',
+  })
+  companyName?: string;
+
+  @ApiPropertyOptional({
+    example: 'Maria Souza',
+    description:
+      'Consultor responsável pela proposta de origem (pode diferir do consultor atual do contrato, se reatribuído).',
+  })
+  originationConsultantName?: string;
 
   @ApiPropertyOptional({
     type: String,
@@ -83,6 +134,27 @@ export class ContractDetailInfo {
     description: 'Fim do contrato (vencimento da última parcela).',
   })
   endDate?: Date;
+}
+
+/** Item do histórico de mudança de status do contrato. */
+export class ContractStatusHistoryItem {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ example: 'pending' })
+  oldStatus: string;
+
+  @ApiProperty({ example: 'disbursed' })
+  newStatus: string;
+
+  @ApiPropertyOptional({ example: 'Confirmação de desembolso via webhook.' })
+  reason?: string;
+
+  @ApiProperty({ example: 'Maria Souza' })
+  changedByName: string;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  createdAt: Date;
 }
 
 /** A parcela selecionada, no detalhe. */
@@ -128,4 +200,18 @@ export class CollectionDetail {
     description: 'Preventivo: histórico de follow-up da parcela.',
   })
   followups: FollowUpHistoryItem[];
+
+  @ApiPropertyOptional({
+    type: DetailGuarantor,
+    nullable: true,
+    description:
+      'Avalista da proposta de origem (quotes.guarantor, JSON sem schema fixo — null quando ausente/vazio).',
+  })
+  guarantor?: DetailGuarantor | null;
+
+  @ApiProperty({
+    type: [ContractStatusHistoryItem],
+    description: 'Histórico de mudanças de status do contrato.',
+  })
+  statusHistory: ContractStatusHistoryItem[];
 }

@@ -32,6 +32,7 @@ function lockedTask(overrides: Partial<LockedTaskRow> = {}): LockedTaskRow {
     assigned_to: USER_ID,
     was_postponed: false,
     was_rescheduled: false,
+    reschedule_count: 0,
     ...overrides,
   };
 }
@@ -46,6 +47,7 @@ const ACTION_ROW = {
   expire_date: new Date('2026-07-31T00:00:00Z'),
   was_postponed: true,
   was_rescheduled: false,
+  reschedule_count: 0,
 };
 
 const INTERACTION_ROW = {
@@ -269,11 +271,33 @@ describe('reschedule', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
-  it('409 quando a visita já foi reagendada — é 1× por tarefa', async () => {
+  it('permite o segundo reagendamento da visita e incrementa o contador', async () => {
+    const { service, tx } = await build({
+      task: lockedTask({
+        task_type: ActivityTaskType.VISIT,
+        was_rescheduled: true,
+        reschedule_count: 1,
+      }),
+    });
+    await expect(
+      service.reschedule(TASK_ID, USER_ID, { date: '2026-08-03' }),
+    ).resolves.toMatchObject({ id: TASK_ID });
+
+    const updateCall = tx.$queryRaw.mock.calls.find(
+      ([strings]: [TemplateStringsArray]) =>
+        strings.join(' ').includes('UPDATE activity_tasks'),
+    );
+    expect(updateCall![0].join(' ')).toContain(
+      'reschedule_count = reschedule_count + 1',
+    );
+  });
+
+  it('409 quando a visita já foi reagendada duas vezes', async () => {
     const { service } = await build({
       task: lockedTask({
         task_type: ActivityTaskType.VISIT,
         was_rescheduled: true,
+        reschedule_count: 2,
       }),
     });
     await expect(

@@ -76,6 +76,7 @@ model activity_tasks {
   cancelled_at                                                 DateTime?              @db.Timestamptz(6)
   cancellation_reason                                          String?                @db.VarChar(255)
   parent_task_id                                               String?                @db.Uuid
+  reschedule_count                                             Int                    @default(0)
   activity_interactions                                        activity_interactions?
   trigo_users_activity_tasks_assigned_toTotrigo_users          trigo_users?           @relation("activity_tasks_assigned_toTotrigo_users", fields: [assigned_to], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_assigned_to_foreign")
   trigo_users_activity_tasks_completed_by_user_idTotrigo_users trigo_users?           @relation("activity_tasks_completed_by_user_idTotrigo_users", fields: [completed_by_user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_completed_by_user_id_foreign")
@@ -594,6 +595,7 @@ model contracts {
   collaterals                                                    collaterals[]
   contract_amortization                                          contract_amortization[]
   contract_cobransaas_agreements                                 contract_cobransaas_agreements[]
+  contract_events                                                contract_events[]
   contract_letter_history                                        contract_letter_history[]
   contract_status_history                                        contract_status_history[]
   contract_surveys                                               contract_surveys[]
@@ -977,6 +979,9 @@ model installment_followups {
   updated_at         DateTime      @default(now()) @db.Timestamptz(6)
   payment_forecast   DateTime?     @db.Timestamp(6)
   expected_result    String?
+  followup_type      String?
+  party              String?
+  automatic_action   String?
   geolocations       geolocations?
   contracts          contracts     @relation(fields: [contract_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   trigo_users        trigo_users   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "installment_followups_user_id_foreign")
@@ -1469,6 +1474,8 @@ model quotes {
   serasa_kyc_status                                           String?                      @default("pending") @db.VarChar(20)
   serasa_result                                               Json?
   serasa_kyc_response_message                                 String?                      @db.VarChar(255)
+  manager_opinion                                             String?
+  credit_analyst_opinion                                      String?
   celcoin_integration_status                                  celcoin_integration_status[]
   contracts                                                   contracts[]
   contracts_ccbs                                              contracts_ccbs[]
@@ -1478,6 +1485,7 @@ model quotes {
   quote_approval_history                                      quote_approval_history[]
   quote_approvals                                             quote_approvals[]
   quote_edit_history                                          quote_edit_history[]
+  quote_events                                                quote_events[]
   quote_lemit_analysis                                        quote_lemit_analysis[]
   quote_lemit_validation                                      quote_lemit_validation[]
   quote_serasa_analysis                                       quote_serasa_analysis[]
@@ -1822,6 +1830,7 @@ model trigo_users {
   consultant_finance_products                                                    consultant_finance_products[]
   consultants_consultants_manager_idTotrigo_users                                consultants[]                  @relation("consultants_manager_idTotrigo_users")
   consultants_consultants_user_idTotrigo_users                                   consultants[]                  @relation("consultants_user_idTotrigo_users")
+  contract_events                                                                contract_events[]
   contract_status_history                                                        contract_status_history[]
   contract_surveys_contract_surveys_created_byTotrigo_users                      contract_surveys[]             @relation("contract_surveys_created_byTotrigo_users")
   contract_surveys_contract_surveys_updated_byTotrigo_users                      contract_surveys[]             @relation("contract_surveys_updated_byTotrigo_users")
@@ -1839,6 +1848,7 @@ model trigo_users {
   quote_approval_history                                                         quote_approval_history[]
   quote_approvals                                                                quote_approvals[]
   quote_edit_history                                                             quote_edit_history[]
+  quote_events                                                                   quote_events[]
   quotes_quotes_current_collection_agent_idTotrigo_users                         quotes[]                       @relation("quotes_current_collection_agent_idTotrigo_users")
   quotes_quotes_current_sales_agent_idTotrigo_users                              quotes[]                       @relation("quotes_current_sales_agent_idTotrigo_users")
   renegotiation_simulations_renegotiation_simulations_decision_userTotrigo_users renegotiation_simulations[]    @relation("renegotiation_simulations_decision_userTotrigo_users")
@@ -2013,6 +2023,65 @@ model whatsapp_messages_sent {
   installments   installments? @relation(fields: [installment_id], references: [id], onUpdate: SetNull, map: "whatsapp_sent_messages_installments_fk")
 
   @@index([sid], map: "whatsapp_sent_messages_sid_idx")
+  @@schema("public")
+}
+
+model client_auth_method_events {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cpf        String
+  method     String
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([cpf], map: "idx_client_auth_method_events_cpf")
+  @@index([created_at], map: "idx_client_auth_method_events_created_at")
+  @@schema("public")
+}
+
+model client_identity_hints_ip_attempts {
+  ip                String   @id
+  count             Int
+  window_started_at DateTime @db.Timestamptz(6)
+  updated_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("public")
+}
+
+model client_identity_verification_attempts {
+  cpf              String   @id
+  count            Int
+  first_attempt_at DateTime @db.Timestamptz(6)
+  updated_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("public")
+}
+
+model contract_events {
+  id            String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  contract_id   String      @db.Uuid
+  event_type    String      @db.VarChar(100)
+  actor_user_id String      @db.Uuid
+  metadata      Json        @default("{}")
+  created_at    DateTime    @default(now()) @db.Timestamptz(6)
+  trigo_users   trigo_users @relation(fields: [actor_user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "contract_events_actor_user_id_foreign")
+  contracts     contracts   @relation(fields: [contract_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "contract_events_contract_id_foreign")
+
+  @@index([contract_id, event_type], map: "contract_events_contract_id_event_type_index")
+  @@index([contract_id], map: "contract_events_contract_id_index")
+  @@schema("public")
+}
+
+model quote_events {
+  id            String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  quote_id      String      @db.Uuid
+  event_type    String      @db.VarChar(100)
+  actor_user_id String      @db.Uuid
+  metadata      Json        @default("{}")
+  created_at    DateTime    @default(now()) @db.Timestamptz(6)
+  trigo_users   trigo_users @relation(fields: [actor_user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "quote_events_actor_user_id_foreign")
+  quotes        quotes      @relation(fields: [quote_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "quote_events_quote_id_foreign")
+
+  @@index([quote_id, event_type], map: "quote_events_quote_id_event_type_index")
+  @@index([quote_id], map: "quote_events_quote_id_index")
   @@schema("public")
 }
 

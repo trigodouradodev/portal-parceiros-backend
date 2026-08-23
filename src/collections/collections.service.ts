@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { toNum } from '../common/query.util';
 import { ScopeService, ScopeViewer } from '../scope/scope.service';
+import { mapGuarantor } from '../activities/activities.mapper';
 import {
   ClientAddress,
   OverdueCollectionItem,
@@ -14,6 +15,7 @@ import {
 } from './interfaces/preventive-collection.interface';
 import {
   CollectionDetail,
+  ContractStatusHistoryItem,
   FollowUpHistoryItem,
 } from './interfaces/collection-detail.interface';
 import {
@@ -503,7 +505,10 @@ export class CollectionsService {
       where: { id: contractId },
       select: {
         contract_number: true,
+        status: true,
         total_amount: true,
+        total_with_iof: true,
+        iof_amount: true,
         total_installments: true,
         disbursement_date: true,
         clients: {
@@ -511,6 +516,7 @@ export class CollectionsService {
             name: true,
             tax_id: true,
             phone: true,
+            email: true,
             // Endereço primário; fallback para o mais recente (mesma regra das listas).
             addresses: {
               select: {
@@ -527,6 +533,21 @@ export class CollectionsService {
                 { created_at: 'desc' },
               ],
               take: 1,
+            },
+          },
+        },
+        companies: {
+          select: { name: true },
+        },
+        // Proposta de origem: produto, TAC e avalista não têm coluna espelho
+        // em `contracts` — só existem na quote que originou o contrato.
+        quotes: {
+          select: {
+            tac_amount: true,
+            guarantor: true,
+            finance_products: { select: { product_name: true } },
+            trigo_users_quotes_current_sales_agent_idTotrigo_users: {
+              select: { full_name: true },
             },
           },
         },
@@ -570,11 +591,27 @@ export class CollectionsService {
         id: true,
         status: true,
         note: true,
+        followup_type: true,
+        party: true,
+        automatic_action: true,
         expected_result: true,
         payment_forecast: true,
         created_at: true,
         trigo_users: { select: { id: true, full_name: true } },
         geolocations: { select: { latitude: true, longitude: true } },
+      },
+    });
+
+    const statusHistory = await this.prisma.contract_status_history.findMany({
+      where: { contract_id: contractId },
+      orderBy: { created_at: 'desc' },
+      select: {
+        id: true,
+        old_status: true,
+        new_status: true,
+        reason: true,
+        created_at: true,
+        trigo_users: { select: { full_name: true } },
       },
     });
 
@@ -597,13 +634,30 @@ export class CollectionsService {
       : undefined;
 
     const totalInstallments = Number(contract.total_installments ?? 0);
+    const quote = contract.quotes;
+    const originationConsultant =
+      quote?.trigo_users_quotes_current_sales_agent_idTotrigo_users;
 
     return {
       contract: {
         id: contractId,
         number: contract.contract_number,
+        status: contract.status,
         totalInstallments,
         totalAmount: toNum(contract.total_amount),
+        totalWithIof:
+          contract.total_with_iof !== null
+            ? toNum(contract.total_with_iof)
+            : undefined,
+        iofAmount:
+          contract.iof_amount !== null ? toNum(contract.iof_amount) : undefined,
+        tacAmount:
+          quote?.tac_amount !== null && quote?.tac_amount !== undefined
+            ? toNum(quote.tac_amount)
+            : undefined,
+        productName: quote?.finance_products.product_name ?? undefined,
+        companyName: contract.companies?.name ?? undefined,
+        originationConsultantName: originationConsultant?.full_name,
         startDate: contract.disbursement_date ?? undefined,
         endDate: lastInstallment._max.due_date ?? undefined,
       },
@@ -611,6 +665,7 @@ export class CollectionsService {
         name: contract.clients.name,
         taxId: contract.clients.tax_id,
         phone: contract.clients.phone ?? undefined,
+        email: contract.clients.email ?? undefined,
         address: addr
           ? {
               street: addr.street,
@@ -638,6 +693,9 @@ export class CollectionsService {
           id: f.id,
           status: f.status,
           note: f.note ?? undefined,
+          followUpType: f.followup_type ?? undefined,
+          party: f.party ?? undefined,
+          automaticAction: f.automatic_action ?? undefined,
           expectedResult: f.expected_result ?? undefined,
           paymentForecast: f.payment_forecast ?? undefined,
           createdAt: f.created_at,
@@ -651,6 +709,18 @@ export class CollectionsService {
                 longitude: toNum(f.geolocations.longitude),
               }
             : undefined,
+        }),
+      ),
+      guarantor: mapGuarantor(quote?.guarantor),
+      statusHistory: statusHistory.map(
+        (h): ContractStatusHistoryItem => ({
+          id: h.id,
+          oldStatus: h.old_status,
+          newStatus: h.new_status,
+          reason: h.reason ?? undefined,
+          changedByName: h.trigo_users.full_name,
+          // Coluna tem default now() no banco; null só em anomalia de dados.
+          createdAt: h.created_at ?? new Date(0),
         }),
       ),
     };

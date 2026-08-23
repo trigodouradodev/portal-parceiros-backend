@@ -49,6 +49,7 @@ export function mapTaskAction(row: TaskActionRow): TaskActionResult {
     expireDate: row.expire_date,
     wasPostponed: row.was_postponed,
     wasRescheduled: row.was_rescheduled,
+    rescheduleCount: row.reschedule_count,
   };
 }
 
@@ -72,6 +73,7 @@ export function mapCard(row: QueueRow, position: number): QueueTaskCard {
     expireDate: row.expire_date,
     wasPostponed: row.was_postponed,
     wasRescheduled: row.was_rescheduled,
+    rescheduleCount: row.reschedule_count,
     client: {
       name: row.client_name,
       taxId: row.client_tax_id,

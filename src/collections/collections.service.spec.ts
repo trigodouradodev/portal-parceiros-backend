@@ -70,6 +70,69 @@ interface BuildOptions {
   total?: number;
   rows?: Record<string, unknown>[];
   canDirectlyViewContract?: boolean;
+  contract?: Record<string, unknown> | null;
+  installment?: Record<string, unknown> | null;
+  lastDueDate?: Date | null;
+  followUps?: Record<string, unknown>[];
+  statusHistory?: Record<string, unknown>[];
+}
+
+/** Linha do `contracts.findUnique` de `getDetail`, com todos os joins novos. */
+function contractDetailRow(overrides: Record<string, unknown> = {}) {
+  return {
+    contract_number: 'CT-001',
+    status: 'disbursed',
+    total_amount: '2000.00',
+    total_with_iof: '2150.00',
+    iof_amount: '150.00',
+    total_installments: 9,
+    disbursement_date: new Date('2026-06-26T00:00:00Z'),
+    clients: {
+      name: 'Maria Souza',
+      tax_id: '12345678909',
+      phone: '11987654321',
+      email: 'maria@email.com',
+      addresses: [
+        {
+          street: 'R. das Flores',
+          number: '123',
+          complement: null,
+          neighborhood: 'Centro',
+          city: 'São Paulo',
+          state: 'SP',
+          zip_code: '01001000',
+        },
+      ],
+    },
+    companies: { name: 'CELCOIN' },
+    quotes: {
+      tac_amount: '50.00',
+      guarantor: null,
+      finance_products: { product_name: 'CRÉDITO PESSOAL' },
+      trigo_users_quotes_current_sales_agent_idTotrigo_users: {
+        full_name: 'Vendedor Um',
+      },
+    },
+    trigo_users_contracts_current_collection_agent_idTotrigo_users: null,
+    trigo_users_contracts_consultant_idTotrigo_users: {
+      id: 'consultor-1',
+      full_name: 'Consultor Dois',
+    },
+    ...overrides,
+  };
+}
+
+/** Linha do `installments.findFirst` de `getDetail`. */
+function detailInstallmentRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'installment-1',
+    installment_number: 3,
+    due_date: new Date('2026-07-01T00:00:00Z'),
+    total_amount: '406.52',
+    pending_amount: '406.52',
+    status: 'not_paid',
+    ...overrides,
+  };
 }
 
 function build(options: BuildOptions = {}) {
@@ -78,6 +141,11 @@ function build(options: BuildOptions = {}) {
     total = 1,
     rows = [overdueRow()],
     canDirectlyViewContract = true,
+    contract = null,
+    installment = null,
+    lastDueDate = null,
+    followUps = [],
+    statusHistory = [],
   } = options;
 
   let queryCall = 0;
@@ -87,8 +155,17 @@ function build(options: BuildOptions = {}) {
       queryCall += 1;
       return Promise.resolve(queryCall === 1 ? [{ total }] : rows);
     }),
-    contracts: { findUnique: jest.fn().mockResolvedValue(null) },
-    installments: { findFirst: jest.fn().mockResolvedValue(null) },
+    contracts: { findUnique: jest.fn().mockResolvedValue(contract) },
+    installments: {
+      findFirst: jest.fn().mockResolvedValue(installment),
+      aggregate: jest
+        .fn()
+        .mockResolvedValue({ _max: { due_date: lastDueDate } }),
+    },
+    installment_followups: { findMany: jest.fn().mockResolvedValue(followUps) },
+    contract_status_history: {
+      findMany: jest.fn().mockResolvedValue(statusHistory),
+    },
   };
   const scope = {
     buildDirectContractScopeSql: jest.fn().mockReturnValue(scopeClause),
@@ -371,5 +448,184 @@ describe('getDetail — gating de acesso', () => {
       CONTRACT_ID,
       'user-1',
     );
+  });
+});
+
+describe('getDetail — campos expandidos do contrato (AUREA-346)', () => {
+  it('mapeia status, produto, empresa, IOF/TAC, e-mail e consultor da proposta', async () => {
+    const { service } = await buildService({
+      contract: contractDetailRow(),
+      installment: detailInstallmentRow(),
+    });
+
+    const detail = await service.getDetail(VIEWER, CONTRACT_ID, 3);
+
+    expect(detail.contract).toMatchObject({
+      status: 'disbursed',
+      productName: 'CRÉDITO PESSOAL',
+      companyName: 'CELCOIN',
+      totalWithIof: 2150,
+      iofAmount: 150,
+      tacAmount: 50,
+      originationConsultantName: 'Vendedor Um',
+    });
+    expect(detail.client.email).toBe('maria@email.com');
+  });
+
+  it('omite os campos financeiros da proposta quando o contrato não tem quote vinculada', async () => {
+    const { service } = await buildService({
+      contract: contractDetailRow({ quotes: null }),
+      installment: detailInstallmentRow(),
+    });
+
+    const detail = await service.getDetail(VIEWER, CONTRACT_ID, 3);
+
+    expect(detail.contract.productName).toBeUndefined();
+    expect(detail.contract.tacAmount).toBeUndefined();
+    expect(detail.contract.originationConsultantName).toBeUndefined();
+    expect(detail.guarantor).toBeNull();
+  });
+
+  it('mapeia o avalista a partir de quotes.guarantor', async () => {
+    const { service } = await buildService({
+      contract: contractDetailRow({
+        quotes: {
+          tac_amount: '50.00',
+          guarantor: { name: 'João Avalista', document: '987.654.321-00' },
+          finance_products: { product_name: 'CRÉDITO PESSOAL' },
+          trigo_users_quotes_current_sales_agent_idTotrigo_users: {
+            full_name: 'Vendedor Um',
+          },
+        },
+      }),
+      installment: detailInstallmentRow(),
+    });
+
+    const detail = await service.getDetail(VIEWER, CONTRACT_ID, 3);
+
+    expect(detail.guarantor).toEqual({
+      name: 'João Avalista',
+      taxId: '98765432100',
+      phone: undefined,
+      email: undefined,
+      address: undefined,
+    });
+  });
+
+  it('null quando o avalista da quote está vazio (sem nome nem documento)', async () => {
+    const { service } = await buildService({
+      contract: contractDetailRow({
+        quotes: {
+          tac_amount: '50.00',
+          guarantor: { telephone: '11987654321' },
+          finance_products: { product_name: 'CRÉDITO PESSOAL' },
+          trigo_users_quotes_current_sales_agent_idTotrigo_users: {
+            full_name: 'Vendedor Um',
+          },
+        },
+      }),
+      installment: detailInstallmentRow(),
+    });
+
+    const detail = await service.getDetail(VIEWER, CONTRACT_ID, 3);
+
+    expect(detail.guarantor).toBeNull();
+  });
+
+  it('mapeia os campos estruturados do histórico de follow-up', async () => {
+    const { service } = await buildService({
+      contract: contractDetailRow(),
+      installment: detailInstallmentRow(),
+      followUps: [
+        {
+          id: 'followup-1',
+          status: 'guarantor_collection_letter',
+          note: 'Carta emitida para o avalista.',
+          followup_type: 'automatic',
+          party: 'guarantor',
+          automatic_action: 'collection_letter',
+          expected_result: null,
+          payment_forecast: null,
+          created_at: new Date('2026-08-20T12:00:00Z'),
+          trigo_users: { id: 'user-1', full_name: 'Maria Souza' },
+          geolocations: null,
+        },
+      ],
+    });
+
+    const detail = await service.getDetail(VIEWER, CONTRACT_ID, 3);
+
+    expect(detail.followups).toEqual([
+      {
+        id: 'followup-1',
+        status: 'guarantor_collection_letter',
+        note: 'Carta emitida para o avalista.',
+        followUpType: 'automatic',
+        party: 'guarantor',
+        automaticAction: 'collection_letter',
+        expectedResult: undefined,
+        paymentForecast: undefined,
+        createdAt: new Date('2026-08-20T12:00:00Z'),
+        author: { id: 'user-1', name: 'Maria Souza' },
+        geolocation: undefined,
+      },
+    ]);
+  });
+
+  it('mapeia o histórico de mudanças de status', async () => {
+    const { service } = await buildService({
+      contract: contractDetailRow(),
+      installment: detailInstallmentRow(),
+      statusHistory: [
+        {
+          id: 'hist-2',
+          old_status: 'active',
+          new_status: 'disbursed',
+          reason: null,
+          created_at: new Date('2026-06-27T10:00:00Z'),
+          trigo_users: { full_name: 'Sistema Webhook' },
+        },
+        {
+          id: 'hist-1',
+          old_status: 'pending',
+          new_status: 'active',
+          reason: 'Aprovação concluída',
+          created_at: new Date('2026-06-26T09:00:00Z'),
+          trigo_users: { full_name: 'Maria Souza' },
+        },
+      ],
+    });
+
+    const detail = await service.getDetail(VIEWER, CONTRACT_ID, 3);
+
+    expect(detail.statusHistory).toEqual([
+      {
+        id: 'hist-2',
+        oldStatus: 'active',
+        newStatus: 'disbursed',
+        reason: undefined,
+        changedByName: 'Sistema Webhook',
+        createdAt: new Date('2026-06-27T10:00:00Z'),
+      },
+      {
+        id: 'hist-1',
+        oldStatus: 'pending',
+        newStatus: 'active',
+        reason: 'Aprovação concluída',
+        changedByName: 'Maria Souza',
+        createdAt: new Date('2026-06-26T09:00:00Z'),
+      },
+    ]);
+  });
+
+  it('lista vazia quando não há histórico de status', async () => {
+    const { service } = await buildService({
+      contract: contractDetailRow(),
+      installment: detailInstallmentRow(),
+    });
+
+    const detail = await service.getDetail(VIEWER, CONTRACT_ID, 3);
+
+    expect(detail.statusHistory).toEqual([]);
   });
 });

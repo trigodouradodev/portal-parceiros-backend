@@ -23,10 +23,34 @@ export enum FollowUpStatus {
   WHATSAPP_MESSAGE = 'whatsapp_message',
 }
 
+/** Coluna `followup_type` — modelo estruturado de follow-up. */
+export enum FollowUpType {
+  CALL = 'call',
+  MESSAGE = 'message',
+  VISIT = 'visit',
+  AUTOMATIC = 'automatic',
+}
+
+/** Coluna `party` — parte envolvida no follow-up. */
+export enum FollowUpParty {
+  CLIENT = 'client',
+  GUARANTOR = 'guarantor',
+}
+
+/** Coluna `automatic_action` — obrigatória em follow-ups automáticos. */
+export enum AutomaticFollowUpAction {
+  COLLECTION_LETTER = 'collection_letter',
+  NEGATIVATION = 'negativation',
+  RENEGOTIATION = 'renegotiation',
+}
+
 /** Coluna `expected_result` — CHECK `installment_followups_expected_result_check`. */
 export enum FollowUpExpectedResult {
   WILL_PAY_ON_DATE = 'will_pay_on_date', // Pagará no dia
   NO_RETURN = 'no_return', // Sem retorno
   REQUESTED_EXTENSION = 'requested_extension', // Pediu prazo extra
+  DISPUTE = 'dispute', // Disputa / contestação
   WANTS_RENEGOTIATION = 'wants_renegotiation', // Quer renegociar
+  DECEASED = 'deceased', // Falecido
+  OTHER = 'other', // Outro
 }

@@ -10,6 +10,7 @@ import { trigo_users } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
+import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
 
 jest.mock('bcrypt');
 
@@ -39,10 +40,21 @@ function user(overrides: Partial<trigo_users> = {}): trigo_users {
 interface BuildOptions {
   found?: trigo_users | null;
   permissions?: string[];
+  quoteActivityPermissions?: {
+    canSimulateQuote: boolean;
+    canCreateQuote: boolean;
+  };
 }
 
 async function build(options: BuildOptions = {}) {
-  const { found = user(), permissions = ['INSTALLMENT_VIEW'] } = options;
+  const {
+    found = user(),
+    permissions = ['INSTALLMENT_VIEW'],
+    quoteActivityPermissions = {
+      canSimulateQuote: true,
+      canCreateQuote: true,
+    },
+  } = options;
 
   const usersService = {
     findByEmail: jest.fn().mockResolvedValue(found),
@@ -58,6 +70,9 @@ async function build(options: BuildOptions = {}) {
   const configService = {
     getOrThrow: jest.fn((key: string) => CONFIG[key]),
   };
+  const quoteActivityPermissionsService = {
+    getPermissions: jest.fn().mockResolvedValue(quoteActivityPermissions),
+  };
 
   const module: TestingModule = await Test.createTestingModule({
     providers: [
@@ -65,10 +80,19 @@ async function build(options: BuildOptions = {}) {
       { provide: UsersService, useValue: usersService },
       { provide: JwtService, useValue: jwtService },
       { provide: ConfigService, useValue: configService },
+      {
+        provide: QuoteActivityPermissionsService,
+        useValue: quoteActivityPermissionsService,
+      },
     ],
   }).compile();
 
-  return { service: module.get(AuthService), usersService, jwtService };
+  return {
+    service: module.get(AuthService),
+    usersService,
+    jwtService,
+    quoteActivityPermissionsService,
+  };
 }
 
 beforeEach(() => {
@@ -88,6 +112,8 @@ describe('login', () => {
     expect(result.accessToken).toBe('token-assinado');
     expect(result.refreshToken).toBe('token-assinado');
     expect(result.user.permissions).toEqual(['INSTALLMENT_VIEW']);
+    expect(result.user.canSimulateQuote).toBe(true);
+    expect(result.user.canCreateQuote).toBe(true);
     expect(usersService.updateLastLogin).toHaveBeenCalledWith(USER_ID);
   });
 
@@ -245,7 +271,38 @@ describe('getProfile', () => {
       phone_number: '11987654321',
       role: 'consultant',
       permissions: ['INSTALLMENT_VIEW'],
+      canSimulateQuote: true,
+      canCreateQuote: true,
     });
+  });
+
+  it('inclui as permissões comerciais calculadas pelas atividades', async () => {
+    const { service, quoteActivityPermissionsService } = await build({
+      permissions: [
+        'ROLE_CONSULTANT',
+        'QUOTE_ACTIVITY_GATES',
+        'INSTALLMENT_VIEW',
+      ],
+      quoteActivityPermissions: {
+        canSimulateQuote: true,
+        canCreateQuote: false,
+      },
+    });
+
+    await expect(service.getProfile(USER_ID)).resolves.toMatchObject({
+      canSimulateQuote: true,
+      canCreateQuote: false,
+    });
+    expect(quoteActivityPermissionsService.getPermissions).toHaveBeenCalledWith(
+      {
+        userId: USER_ID,
+        permissions: [
+          'ROLE_CONSULTANT',
+          'QUOTE_ACTIVITY_GATES',
+          'INSTALLMENT_VIEW',
+        ],
+      },
+    );
   });
 
   it.each([

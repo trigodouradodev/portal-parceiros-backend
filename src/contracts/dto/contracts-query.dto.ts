@@ -124,4 +124,24 @@ export class ContractsQueryDto {
   @Transform(({ value }) => parseOptionalBoolean(value))
   @IsBoolean()
   onlyRenegotiated?: boolean;
+
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'Quando true, retorna somente contratos disbursed/active com ao menos uma parcela em aberto vencendo hoje (mesma regra do KPI Home/Vencem hoje).',
+  })
+  @IsOptional()
+  @Transform(({ value }) => parseOptionalBoolean(value))
+  @IsBoolean()
+  onlyDueToday?: boolean;
+
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'Quando true, retorna somente contratos disbursed/active cuja última parcela vence entre o início do mês atual e o início do mês + 4 meses (mesma regra do KPI Home/Renovação próxima).',
+  })
+  @IsOptional()
+  @Transform(({ value }) => parseOptionalBoolean(value))
+  @IsBoolean()
+  onlyUpcomingRenewal?: boolean;
 }

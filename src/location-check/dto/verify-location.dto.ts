@@ -1,5 +1,14 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsInt, IsLatitude, IsLongitude, IsUUID, Min } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsEnum,
+  IsInt,
+  IsLatitude,
+  IsLongitude,
+  IsOptional,
+  IsUUID,
+  Min,
+} from 'class-validator';
+import { FollowUpParty } from '../../follow-up/enums/follow-up.enums';
 
 /**
  * Payload da verificação de localização: a coordenada capturada pelo agente em
@@ -17,6 +26,16 @@ export class VerifyLocationDto {
   @IsInt()
   @Min(1)
   installmentNumber: number;
+
+  @ApiPropertyOptional({
+    enum: FollowUpParty,
+    default: FollowUpParty.CLIENT,
+    description:
+      'Destinatário da visita. Ausente mantém a compatibilidade e usa o cliente.',
+  })
+  @IsOptional()
+  @IsEnum(FollowUpParty)
+  party?: FollowUpParty;
 
   @ApiProperty({
     example: -23.56321,

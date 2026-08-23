@@ -46,6 +46,7 @@ function queueRow(overrides: Partial<QueueRow> = {}): QueueRow {
     expire_date: new Date('2026-08-01T00:00:00Z'),
     was_postponed: false,
     was_rescheduled: false,
+    reschedule_count: 0,
     priority: 3,
     tone: 'firm',
     installment_id: 'installment-1',
@@ -127,6 +128,7 @@ describe('mapTaskAction', () => {
       expire_date: new Date('2026-08-02T00:00:00Z'),
       was_postponed: true,
       was_rescheduled: false,
+      reschedule_count: 0,
     };
 
     expect(mapTaskAction(row)).toEqual({
@@ -139,6 +141,7 @@ describe('mapTaskAction', () => {
       expireDate: new Date('2026-08-02T00:00:00Z'),
       wasPostponed: true,
       wasRescheduled: false,
+      rescheduleCount: 0,
     });
   });
 });

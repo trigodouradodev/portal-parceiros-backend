@@ -120,6 +120,9 @@ export class ClientInfo {
   @ApiPropertyOptional({ example: '11987654321' })
   phone?: string;
 
+  @ApiPropertyOptional({ example: 'cliente@email.com' })
+  email?: string;
+
   @ApiPropertyOptional({ type: ClientAddress })
   address?: ClientAddress;
 }
