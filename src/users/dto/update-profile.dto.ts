@@ -1,6 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  IsEmail,
   IsOptional,
   IsString,
   MaxLength,
@@ -9,11 +8,8 @@ import {
 } from 'class-validator';
 
 export class UpdateProfileDto {
-  @ApiPropertyOptional({ example: 'maria@trigodourado.com', format: 'email' })
-  @ValidateIf((_, value) => value !== undefined)
-  @IsEmail()
-  @MaxLength(255)
-  email?: string;
+  // E-mail não é editável por aqui: é o login do usuário. Alterá-lo é uma
+  // operação administrativa, fora do escopo desta rota.
 
   @ApiPropertyOptional({ example: 'Maria Souza' })
   @ValidateIf((_, value) => value !== undefined)

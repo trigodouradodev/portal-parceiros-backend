@@ -11,6 +11,7 @@ import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
 import { UpdateProfileDto } from '../users/dto/update-profile.dto';
+import { PermissionKey } from './permissions/permission-keys';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
@@ -43,6 +44,21 @@ export class AuthService {
     }
 
     const permissions = await this.usersService.getPermissionKeys(user.id);
+
+    // Acesso ao Portal Parceiro é opt-in via QUOTE_ACTIVITY_GATES, mesmo
+    // rollout usado pra travar simulação/criação de proposta (ver
+    // QuoteActivityPermissionsService). ROLE_ADMIN sempre passa, igual ao
+    // resto do app (PermissionsGuard).
+    const permissionSet = new Set(permissions);
+    const hasPortalAccess =
+      permissionSet.has(PermissionKey.QUOTE_ACTIVITY_GATES) ||
+      permissionSet.has(PermissionKey.ROLE_ADMIN);
+    if (!hasPortalAccess) {
+      throw new ForbiddenException(
+        'Você não tem permissão para acessar o Portal do Parceiro.',
+      );
+    }
+
     const tokens = await this.generateTokens(user, permissions);
     await this.usersService.updateLastLogin(user.id);
 

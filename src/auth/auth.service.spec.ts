@@ -49,7 +49,10 @@ interface BuildOptions {
 async function build(options: BuildOptions = {}) {
   const {
     found = user(),
-    permissions = ['INSTALLMENT_VIEW'],
+    // QUOTE_ACTIVITY_GATES é exigido pro login (ver testes dedicados abaixo)
+    // — vai no padrão pra não quebrar os outros testes deste arquivo, que
+    // não são sobre esse gate.
+    permissions = ['INSTALLMENT_VIEW', 'QUOTE_ACTIVITY_GATES'],
     quoteActivityPermissions = {
       canSimulateQuote: true,
       canCreateQuote: true,
@@ -111,7 +114,10 @@ describe('login', () => {
 
     expect(result.accessToken).toBe('token-assinado');
     expect(result.refreshToken).toBe('token-assinado');
-    expect(result.user.permissions).toEqual(['INSTALLMENT_VIEW']);
+    expect(result.user.permissions).toEqual([
+      'INSTALLMENT_VIEW',
+      'QUOTE_ACTIVITY_GATES',
+    ]);
     expect(result.user.canSimulateQuote).toBe(true);
     expect(result.user.canCreateQuote).toBe(true);
     expect(usersService.updateLastLogin).toHaveBeenCalledWith(USER_ID);
@@ -183,6 +189,50 @@ describe('login', () => {
     ).rejects.toThrow(UnauthorizedException);
 
     expect(usersService.updateLastLogin).not.toHaveBeenCalled();
+  });
+});
+
+describe('login — gate de acesso (QUOTE_ACTIVITY_GATES)', () => {
+  it('403 quando o usuário não tem QUOTE_ACTIVITY_GATES nem ROLE_ADMIN', async () => {
+    const { service, usersService } = await build({
+      permissions: ['INSTALLMENT_VIEW'],
+    });
+
+    await expect(
+      service.login({ email: 'parceiro@trigodourado.com', password: 'x' }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(usersService.updateLastLogin).not.toHaveBeenCalled();
+  });
+
+  it('loga normalmente com QUOTE_ACTIVITY_GATES', async () => {
+    const { service } = await build({
+      permissions: ['QUOTE_ACTIVITY_GATES'],
+    });
+
+    await expect(
+      service.login({ email: 'parceiro@trigodourado.com', password: 'x' }),
+    ).resolves.toHaveProperty('accessToken');
+  });
+
+  it('ROLE_ADMIN loga mesmo sem QUOTE_ACTIVITY_GATES', async () => {
+    // Mesma regra do PermissionsGuard: admin tem visão global, nunca fica
+    // trancado de fora por um gate de rollout.
+    const { service } = await build({
+      permissions: ['ROLE_ADMIN'],
+    });
+
+    await expect(
+      service.login({ email: 'parceiro@trigodourado.com', password: 'x' }),
+    ).resolves.toHaveProperty('accessToken');
+  });
+
+  it('não checa o gate antes de validar a senha', async () => {
+    const { service } = await build({ permissions: ['INSTALLMENT_VIEW'] });
+    (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+
+    await expect(
+      service.login({ email: 'parceiro@trigodourado.com', password: 'x' }),
+    ).rejects.toThrow(UnauthorizedException);
   });
 });
 
@@ -270,7 +320,7 @@ describe('getProfile', () => {
       full_name: 'Maria Souza',
       phone_number: '11987654321',
       role: 'consultant',
-      permissions: ['INSTALLMENT_VIEW'],
+      permissions: ['INSTALLMENT_VIEW', 'QUOTE_ACTIVITY_GATES'],
       canSimulateQuote: true,
       canCreateQuote: true,
     });

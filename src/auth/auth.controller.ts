@@ -13,7 +13,7 @@ import {
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiBody,
-  ApiConflictResponse,
+  ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -45,6 +45,10 @@ export class AuthController {
   @ApiOkResponse({ type: LoginResponseDto })
   @ApiBadRequestResponse({ description: 'Payload inválido.' })
   @ApiUnauthorizedResponse({ description: 'Credenciais inválidas.' })
+  @ApiForbiddenResponse({
+    description:
+      'Usuário sem permissão para acessar o Portal do Parceiro (falta QUOTE_ACTIVITY_GATES).',
+  })
   @Public()
   @HttpCode(HttpStatus.OK)
   @Post('login')
@@ -84,7 +88,9 @@ export class AuthController {
   }
 
   @ApiOperation({
-    summary: 'Edita o próprio perfil (nome, email, telefone).',
+    summary: 'Edita o próprio perfil (nome, telefone).',
+    description:
+      'E-mail não é editável por aqui — é o login do usuário; alterá-lo é uma operação administrativa.',
   })
   @ApiOkResponse({ type: ProfileResponseDto })
   @ApiBadRequestResponse({
@@ -92,7 +98,6 @@ export class AuthController {
       'Payload inválido, campo não permitido ou nada para atualizar.',
   })
   @ApiUnauthorizedResponse({ description: 'Token ausente ou inválido.' })
-  @ApiConflictResponse({ description: 'Email já em uso por outro usuário.' })
   @ApiBearerAuth('access-token')
   @Patch('me')
   updateMe(@CurrentUser('sub') userId: string, @Body() dto: UpdateProfileDto) {
