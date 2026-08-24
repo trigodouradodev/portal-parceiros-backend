@@ -35,6 +35,7 @@ import {
 } from './interfaces/activity-interaction.interface';
 import { TodayQueue } from './interfaces/task-queue.interface';
 import { InstallmentDetail } from './interfaces/installment-detail.interface';
+import { SubordinateOption } from './interfaces/subordinate-option.interface';
 
 @ApiTags('activities')
 @ApiBearerAuth('access-token')
@@ -45,17 +46,19 @@ export class ActivitiesController {
   constructor(private readonly activitiesService: ActivitiesService) {}
 
   /**
-   * Fila "Ações de hoje" do usuário logado: active (#1) / locked / scheduled /
-   * completedToday + counter. Ordenada por prioridade do segmento e maior atraso.
+   * Fila "Ações de hoje" do usuário ou de um subordinado selecionado: active
+   * (#1) / locked / scheduled / completedToday + counter. Ordenada por
+   * prioridade do segmento e maior atraso.
    */
   @ApiOperation({
     summary:
-      'Fila de cobrança do dia (home), limitada aos contratos diretamente vinculados ao usuário.',
+      'Fila de cobrança do dia (home) do usuário ou de um subordinado selecionado.',
   })
   @ApiOkResponse({ type: TodayQueue })
   @RequirePermissions(
     PermissionKey.INSTALLMENT_VIEW,
     PermissionKey.INSTALLMENT_VIEW_ALL,
+    PermissionKey.ROLE_BACKOFFICE,
   )
   @Get('tasks/today')
   getTodayQueue(
@@ -66,12 +69,31 @@ export class ActivitiesController {
       { userId: user.sub, permissions: user.permissions },
       query.page,
       query.limit,
+      query.assignedToId,
     );
+  }
+
+  @ApiOperation({
+    summary:
+      'Lista responsáveis para filtrar a fila (subárvore ou parceiros do rollout para admin/backoffice).',
+  })
+  @ApiOkResponse({ type: [SubordinateOption] })
+  @RequirePermissions(
+    PermissionKey.INSTALLMENT_VIEW,
+    PermissionKey.INSTALLMENT_VIEW_ALL,
+    PermissionKey.ROLE_BACKOFFICE,
+  )
+  @Get('subordinates')
+  getSubordinates(@CurrentUser() user: JwtPayload) {
+    return this.activitiesService.getSubordinates({
+      userId: user.sub,
+      permissions: user.permissions,
+    });
   }
 
   /**
    * Detalhe da parcela: contrato, cliente, responsável e o histórico completo de tarefas
-   * da parcela (cada uma com sua interação). Escopado por vínculo direto do usuário.
+   * da parcela (cada uma com sua interação). Escopado pela hierarquia do usuário.
    */
   @ApiOperation({
     summary:
@@ -84,6 +106,7 @@ export class ActivitiesController {
   @RequirePermissions(
     PermissionKey.INSTALLMENT_VIEW,
     PermissionKey.INSTALLMENT_VIEW_ALL,
+    PermissionKey.ROLE_BACKOFFICE,
   )
   @Get('installments/:installmentId')
   getInstallmentDetail(

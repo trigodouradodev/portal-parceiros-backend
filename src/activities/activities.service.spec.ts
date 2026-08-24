@@ -8,6 +8,8 @@ import {
 import { ActivitiesService } from './activities.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScopeService } from '../scope/scope.service';
+import { PermissionKey } from '../auth/permissions/permission-keys';
+import { Prisma } from '@prisma/client';
 import {
   ActivityChannel,
   ActivityInteractionResult,
@@ -21,6 +23,7 @@ import { LockedTaskRow } from './interfaces/activity-row.interface';
 const TASK_ID = 'task-1';
 const USER_ID = 'user-1';
 const OTHER_USER_ID = 'user-2';
+const SUBORDINATE_USER_ID = 'subordinate-1';
 
 function lockedTask(overrides: Partial<LockedTaskRow> = {}): LockedTaskRow {
   return {
@@ -142,6 +145,235 @@ async function build(
   }).compile();
   return { service: module.get(ActivitiesService), tx };
 }
+
+async function buildQueue(
+  scopeClause: Prisma.Sql | null,
+  scopeUserIds = [USER_ID, SUBORDINATE_USER_ID],
+) {
+  const prisma = {
+    $queryRaw: jest.fn().mockResolvedValue([]),
+    trigo_users: { findMany: jest.fn().mockResolvedValue([]) },
+  };
+  const scope = {
+    buildContractScopeSql: jest.fn().mockResolvedValue(scopeClause),
+    getViewerScopeIds: jest.fn().mockResolvedValue({ userIds: scopeUserIds }),
+  };
+  const module: TestingModule = await Test.createTestingModule({
+    providers: [
+      ActivitiesService,
+      { provide: PrismaService, useValue: prisma },
+      { provide: ScopeService, useValue: scope },
+    ],
+  }).compile();
+  return { service: module.get(ActivitiesService), prisma, scope };
+}
+
+async function buildInstallmentAccess(canView: boolean) {
+  const prisma = {
+    installments: {
+      findUnique: jest.fn().mockResolvedValue({ contract_id: 'contract-1' }),
+    },
+  };
+  const scope = { canViewContract: jest.fn().mockResolvedValue(canView) };
+  const module: TestingModule = await Test.createTestingModule({
+    providers: [
+      ActivitiesService,
+      { provide: PrismaService, useValue: prisma },
+      { provide: ScopeService, useValue: scope },
+    ],
+  }).compile();
+  return { service: module.get(ActivitiesService), prisma, scope };
+}
+
+describe('getInstallmentDetail — escopo', () => {
+  const viewer = {
+    userId: USER_ID,
+    permissions: [PermissionKey.INSTALLMENT_VIEW],
+  };
+
+  it('usa o escopo hierárquico e preserva 404 fora dele', async () => {
+    const { service, scope } = await buildInstallmentAccess(false);
+
+    await expect(
+      service.getInstallmentDetail('installment-1', viewer),
+    ).rejects.toThrow(NotFoundException);
+
+    expect(scope.canViewContract).toHaveBeenCalledWith('contract-1', viewer, [
+      PermissionKey.INSTALLMENT_VIEW_ALL,
+      PermissionKey.ROLE_BACKOFFICE,
+    ]);
+  });
+});
+
+describe('getTodayQueue', () => {
+  const viewer = {
+    userId: USER_ID,
+    permissions: [PermissionKey.INSTALLMENT_VIEW],
+  };
+
+  it('sem filtro retorna apenas a fila do próprio usuário', async () => {
+    const { service, prisma, scope } = await buildQueue(Prisma.sql`TRUE`);
+
+    await expect(service.getTodayQueue(viewer)).resolves.toMatchObject({
+      active: null,
+      counter: 0,
+      locked: { pagination: { total: 0 } },
+    });
+
+    expect(scope.buildContractScopeSql).toHaveBeenCalledWith(viewer, [
+      PermissionKey.INSTALLMENT_VIEW_ALL,
+      PermissionKey.ROLE_BACKOFFICE,
+    ]);
+    expect(scope.getViewerScopeIds).toHaveBeenCalledWith(USER_ID);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(6);
+    expect(prisma.$queryRaw.mock.calls[0]).toContainEqual(
+      expect.objectContaining({ values: [USER_ID, USER_ID] }),
+    );
+    for (const [, ...values] of prisma.$queryRaw.mock.calls.slice(1)) {
+      expect(values).toContainEqual(
+        expect.objectContaining({ values: [USER_ID] }),
+      );
+    }
+  });
+
+  it('devolve uma fila vazia sem consultar atividades quando não há escopo', async () => {
+    const { service, prisma } = await buildQueue(null);
+
+    await expect(service.getTodayQueue(viewer, 2, 10)).resolves.toEqual({
+      active: null,
+      counter: 0,
+      segments: [],
+      locked: {
+        items: [],
+        pagination: {
+          page: 2,
+          limit: 10,
+          total: 0,
+          totalPages: 0,
+          hasNextPage: false,
+        },
+      },
+      scheduled: [],
+      completedToday: [],
+    });
+
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it('aceita filtrar por um subordinado e aplica o filtro a todas as listas', async () => {
+    const { service, prisma, scope } = await buildQueue(Prisma.sql`TRUE`);
+
+    await service.getTodayQueue(viewer, 1, 30, SUBORDINATE_USER_ID);
+
+    expect(scope.getViewerScopeIds).toHaveBeenCalledWith(USER_ID);
+    // Não há card ativo do viewer quando a fila foi filtrada para subordinado.
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(5);
+    for (const [, ...values] of prisma.$queryRaw.mock.calls) {
+      expect(values).toContainEqual(
+        expect.objectContaining({ values: [SUBORDINATE_USER_ID] }),
+      );
+    }
+  });
+
+  it('rejeita filtro para usuário fora da hierarquia antes de consultar atividades', async () => {
+    const { service, prisma } = await buildQueue(Prisma.sql`TRUE`);
+
+    await expect(
+      service.getTodayQueue(viewer, 1, 30, OTHER_USER_ID),
+    ).rejects.toThrow(ForbiddenException);
+
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+});
+
+describe('getSubordinates', () => {
+  const viewer = {
+    userId: USER_ID,
+    permissions: [PermissionKey.INSTALLMENT_VIEW],
+  };
+
+  it('devolve a subárvore sem incluir o próprio usuário', async () => {
+    const { service, prisma } = await buildQueue(Prisma.sql`TRUE`);
+    prisma.trigo_users.findMany.mockResolvedValue([
+      { id: SUBORDINATE_USER_ID, full_name: 'Ana Subordinada' },
+    ]);
+
+    await expect(service.getSubordinates(viewer)).resolves.toEqual([
+      { id: SUBORDINATE_USER_ID, name: 'Ana Subordinada' },
+    ]);
+    expect(prisma.trigo_users.findMany).toHaveBeenCalledWith({
+      where: {
+        id: { in: [SUBORDINATE_USER_ID] },
+        is_deleted: false,
+      },
+      select: { id: true, full_name: true },
+      orderBy: [{ full_name: 'asc' }, { id: 'asc' }],
+    });
+  });
+
+  it('não consulta usuários quando a hierarquia não tem subordinados', async () => {
+    const { service, prisma } = await buildQueue(Prisma.sql`TRUE`, [USER_ID]);
+
+    await expect(service.getSubordinates(viewer)).resolves.toEqual([]);
+    expect(prisma.trigo_users.findMany).not.toHaveBeenCalled();
+  });
+
+  it('devolve parceiros habilitados no rollout para ROLE_ADMIN', async () => {
+    const { service, prisma } = await buildQueue(Prisma.sql`TRUE`);
+    prisma.trigo_users.findMany.mockResolvedValue([
+      { id: SUBORDINATE_USER_ID, full_name: 'Ana do Rollout' },
+    ]);
+
+    await expect(
+      service.getSubordinates({
+        userId: USER_ID,
+        permissions: [PermissionKey.ROLE_ADMIN],
+      }),
+    ).resolves.toEqual([{ id: SUBORDINATE_USER_ID, name: 'Ana do Rollout' }]);
+
+    expect(prisma.trigo_users.findMany).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('fila de acompanhamento do rollout', () => {
+  const observer = {
+    userId: USER_ID,
+    permissions: [PermissionKey.ROLE_BACKOFFICE],
+  };
+
+  it('não devolve atividades próprias para admin ou backoffice sem filtro', async () => {
+    const { service, prisma, scope } = await buildQueue(Prisma.sql`TRUE`);
+
+    await expect(service.getTodayQueue(observer)).resolves.toMatchObject({
+      active: null,
+      counter: 0,
+      locked: { items: [] },
+    });
+
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(scope.buildContractScopeSql).not.toHaveBeenCalled();
+  });
+
+  it('aceita acompanhar um parceiro habilitado no rollout', async () => {
+    const { service, prisma } = await buildQueue(Prisma.sql`TRUE`);
+    prisma.trigo_users.findMany.mockResolvedValue([
+      { id: SUBORDINATE_USER_ID, full_name: 'Ana do Rollout' },
+    ]);
+
+    await service.getTodayQueue(observer, 1, 30, SUBORDINATE_USER_ID);
+
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(5);
+  });
+
+  it('rejeita acompanhar quem não está habilitado no rollout', async () => {
+    const { service, prisma } = await buildQueue(Prisma.sql`TRUE`);
+
+    await expect(
+      service.getTodayQueue(observer, 1, 30, OTHER_USER_ID),
+    ).rejects.toThrow(ForbiddenException);
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+});
 
 function interactionDto(
   overrides: Partial<RegisterInteractionDto> = {},

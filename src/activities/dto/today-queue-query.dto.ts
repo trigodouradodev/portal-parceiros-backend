@@ -1,9 +1,18 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
 
 /** Paginação da lista `locked` da fila do dia. */
 export class TodayQueueQueryDto {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Responsável da fila. Ausente retorna as atividades do próprio usuário; quando informado, deve ser alguém de sua hierarquia.',
+  })
+  @IsOptional()
+  @IsUUID()
+  assignedToId?: string;
+
   @ApiPropertyOptional({
     minimum: 1,
     default: 1,
