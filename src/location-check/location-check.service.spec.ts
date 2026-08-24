@@ -294,6 +294,35 @@ describe('verify — addressLikelyWrong (AUREA-352)', () => {
     expect(result.addressLikelyWrong).toBe(true);
   });
 
+  it('true quando locationType não é ROOFTOP, mesmo citando a cidade certa no texto', async () => {
+    // Caso real reportado (AUREA-352): parceiro confirmadamente no endereço
+    // certo (GPS bateu com o ponto real da via, verificado à parte via
+    // OpenStreetMap) — Google devolveu RANGE_INTERPOLATED, com a cidade
+    // certa no texto, mas errou o ponto por ~35km. A palavra do texto não
+    // detecta esse tipo de erro; só o locationType detecta.
+    const { service } = await build({
+      geocode: geocodeResult({
+        formattedAddress:
+          "Rua Pau d'Arco, São Judas Tadeu, São Paulo - SP, Brasil",
+        locationType: 'RANGE_INTERPOLATED',
+        partialMatch: true,
+      }),
+    });
+    const result = await service.verify(dto());
+
+    expect(result.addressLikelyWrong).toBe(true);
+  });
+
+  it('true também para GEOMETRIC_CENTER e APPROXIMATE — só ROOFTOP é confiável', async () => {
+    for (const locationType of ['GEOMETRIC_CENTER', 'APPROXIMATE']) {
+      const { service } = await build({
+        geocode: geocodeResult({ locationType }),
+      });
+      const result = await service.verify(dto());
+      expect(result.addressLikelyWrong).toBe(true);
+    }
+  });
+
   it('compara sem diferenciar acentos ou caixa', async () => {
     const { service } = await build({
       address: { city: 'Jequié' },

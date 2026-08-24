@@ -68,11 +68,12 @@ export class LocationCheckResult {
   @ApiProperty({
     example: false,
     description:
-      'true quando o endereço formatado devolvido pelo geocoding não ' +
-      'menciona a cidade cadastrada — sinal de que o Google pode ter ' +
-      'casado com uma via de mesmo nome em outro município (não é só ' +
-      'impreciso, é provavelmente errado). Nesse caso a distância não é ' +
-      'confiável.',
+      'true quando o ponto do geocoding não é confiável pro raio de ' +
+      '100m: locationType diferente de ROOFTOP (RANGE_INTERPOLATED/' +
+      'GEOMETRIC_CENTER/APPROXIMATE podem errar o ponto por vários km ' +
+      'mesmo dentro da cidade certa), ou o endereço formatado nem ' +
+      'menciona a cidade cadastrada (via de mesmo nome em outro ' +
+      'município). Em ambos os casos a distância não é confiável.',
   })
   addressLikelyWrong: boolean;
 }
