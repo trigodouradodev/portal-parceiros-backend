@@ -13,6 +13,7 @@ import {
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiBody,
+  ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -44,6 +45,10 @@ export class AuthController {
   @ApiOkResponse({ type: LoginResponseDto })
   @ApiBadRequestResponse({ description: 'Payload inválido.' })
   @ApiUnauthorizedResponse({ description: 'Credenciais inválidas.' })
+  @ApiForbiddenResponse({
+    description:
+      'Usuário sem permissão para acessar o Portal do Parceiro (falta QUOTE_ACTIVITY_GATES).',
+  })
   @Public()
   @HttpCode(HttpStatus.OK)
   @Post('login')
