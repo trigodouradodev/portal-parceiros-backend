@@ -8,6 +8,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScopeService, ScopeViewer } from '../scope/scope.service';
+import { PermissionKey } from '../auth/permissions/permission-keys';
 import { RegisterInteractionDto } from './dto/register-interaction.dto';
 import { RescheduleTaskDto } from './dto/reschedule-task.dto';
 import {
@@ -32,6 +33,7 @@ import {
 } from './interfaces/activity-row.interface';
 import { SegmentSummary, TodayQueue } from './interfaces/task-queue.interface';
 import { InstallmentDetail } from './interfaces/installment-detail.interface';
+import { SubordinateOption } from './interfaces/subordinate-option.interface';
 import { ResponsibleType } from '../collections/interfaces/responsible.interface';
 import { toNum } from '../common/query.util';
 import { daysOverdue } from './activities.util';
@@ -43,6 +45,16 @@ import {
   mapTaskAction,
 } from './activities.mapper';
 
+const ROLLOUT_PARTNER_ROLES = [
+  PermissionKey.ROLE_CONSULTANT,
+  PermissionKey.ROLE_COLLECTION_AGENT,
+];
+
+const ROLLOUT_OBSERVER_ROLES = [
+  PermissionKey.ROLE_ADMIN,
+  PermissionKey.ROLE_BACKOFFICE,
+];
+
 @Injectable()
 export class ActivitiesService {
   constructor(
@@ -51,8 +63,9 @@ export class ActivitiesService {
   ) {}
 
   /**
-   * Fila "Ações de hoje" da home, com ownership direto: o usuário vê somente
-   * contratos em que é consultor ou agente de cobrança.
+   * Fila "Ações de hoje" da home, sempre de um único responsável: por padrão
+   * o próprio viewer, ou um subordinado recursivo escolhido pelo filtro. A
+   * árvore hierárquica só define quais responsáveis podem ser selecionados.
    *
    * Grupos: `active` = a tarefa RECOMENDADA do viewer (a de maior prioridade
    * `assigned_to` = ele). Desde AUREA-319, isso não é mais a única executável: toda
@@ -66,19 +79,37 @@ export class ActivitiesService {
     viewer: ScopeViewer,
     page = 1,
     limit = 30,
+    assignedToId?: string,
   ): Promise<TodayQueue> {
-    const scopeClause = this.scope.buildDirectContractScopeSql(viewer.userId);
+    if (this.isRolloutObserver(viewer.permissions) && !assignedToId) {
+      return this.emptyTodayQueue(page, limit);
+    }
+    const scopeClause = await this.scope.buildContractScopeSql(viewer, [
+      PermissionKey.INSTALLMENT_VIEW_ALL,
+      PermissionKey.ROLE_BACKOFFICE,
+    ]);
+    if (!scopeClause) {
+      return this.emptyTodayQueue(page, limit);
+    }
+    const selectedAssigneeId = assignedToId ?? viewer.userId;
+    const assigneeFilter = await this.buildAssigneeFilter(
+      viewer,
+      selectedAssigneeId,
+    );
 
     const pendingToday = Prisma.sql`at.status = 'pending' AND at.expire_date <= CURRENT_DATE`;
     const order = Prisma.sql`ORDER BY rs.priority ASC NULLS LAST, days_overdue DESC, at.created_at ASC`;
 
     // active = a #1 executável do viewer (maior prioridade `assigned_to` = ele).
-    const [activeRow] = await this.fetchCards(
-      scopeClause,
-      Prisma.sql`AND ${pendingToday} AND at.assigned_to = ${viewer.userId}::uuid`,
-      Prisma.sql`${order} LIMIT 1`,
-      true,
-    );
+    const canHaveOwnActive = selectedAssigneeId === viewer.userId;
+    const [activeRow] = canHaveOwnActive
+      ? await this.fetchCards(
+          scopeClause,
+          Prisma.sql`AND ${pendingToday} ${assigneeFilter} AND at.assigned_to = ${viewer.userId}::uuid`,
+          Prisma.sql`${order} LIMIT 1`,
+          true,
+        )
+      : [];
     const activeId = activeRow?.task_id ?? null;
     const activeOffset = activeId ? 1 : 0;
     const notActive = activeId
@@ -88,11 +119,11 @@ export class ActivitiesService {
     // counter (total de hoje no escopo) e totalizadores por segmento (travadas).
     const counter = await this.countTasks(
       scopeClause,
-      Prisma.sql`AND ${pendingToday}`,
+      Prisma.sql`AND ${pendingToday} ${assigneeFilter}`,
     );
     const segments = await this.segmentCounts(
       scopeClause,
-      Prisma.sql`AND ${pendingToday} ${notActive}`,
+      Prisma.sql`AND ${pendingToday} ${assigneeFilter} ${notActive}`,
     );
 
     // locked = travadas paginadas no banco, com is_active por responsável.
@@ -102,6 +133,7 @@ export class ActivitiesService {
       activeId,
       limit,
       offset,
+      assigneeFilter,
     );
     const lockedTotal = counter - activeOffset;
     const totalPages = Math.ceil(lockedTotal / limit);
@@ -109,13 +141,13 @@ export class ActivitiesService {
     // scheduled (postergadas/reagendadas) e completedToday — listas cheias por ora.
     const scheduledRows = await this.fetchCards(
       scopeClause,
-      Prisma.sql`AND at.status = 'pending' AND at.expire_date > CURRENT_DATE`,
+      Prisma.sql`AND at.status = 'pending' AND at.expire_date > CURRENT_DATE ${assigneeFilter}`,
       order,
       false,
     );
     const completedRows = await this.fetchCards(
       scopeClause,
-      Prisma.sql`AND at.status = 'completed' AND at.completed_at::date = CURRENT_DATE`,
+      Prisma.sql`AND at.status = 'completed' AND at.completed_at::date = CURRENT_DATE ${assigneeFilter}`,
       order,
       false,
     );
@@ -141,10 +173,122 @@ export class ActivitiesService {
     };
   }
 
+  async getSubordinates(viewer: ScopeViewer): Promise<SubordinateOption[]> {
+    if (this.isRolloutObserver(viewer.permissions)) {
+      return this.findRolloutPartners();
+    }
+
+    const scope = await this.scope.getViewerScopeIds(viewer.userId);
+    const subordinateIds = scope.userIds.filter((id) => id !== viewer.userId);
+    if (subordinateIds.length === 0) return [];
+
+    const users = await this.prisma.trigo_users.findMany({
+      where: { id: { in: subordinateIds }, is_deleted: false },
+      select: { id: true, full_name: true },
+      orderBy: [{ full_name: 'asc' }, { id: 'asc' }],
+    });
+    return users.map((user) => ({ id: user.id, name: user.full_name }));
+  }
+
+  private emptyTodayQueue(page: number, limit: number): TodayQueue {
+    return {
+      active: null,
+      counter: 0,
+      segments: [],
+      locked: {
+        items: [],
+        pagination: {
+          page,
+          limit,
+          total: 0,
+          totalPages: 0,
+          hasNextPage: false,
+        },
+      },
+      scheduled: [],
+      completedToday: [],
+    };
+  }
+
+  private async buildAssigneeFilter(
+    viewer: ScopeViewer,
+    assignedToId: string,
+  ): Promise<Prisma.Sql> {
+    if (this.isRolloutObserver(viewer.permissions)) {
+      const rolloutPartner = await this.findRolloutPartners(assignedToId);
+      if (rolloutPartner.length === 0) {
+        throw new ForbiddenException('assignee_outside_viewer_scope');
+      }
+      return Prisma.sql`AND at.assigned_to = ${assignedToId}::uuid`;
+    }
+
+    const scope = await this.scope.getViewerScopeIds(viewer.userId);
+    if (!scope.userIds.includes(assignedToId)) {
+      throw new ForbiddenException('assignee_outside_viewer_scope');
+    }
+    return Prisma.sql`AND at.assigned_to = ${assignedToId}::uuid`;
+  }
+
+  private isRolloutObserver(permissions: string[]): boolean {
+    return ROLLOUT_OBSERVER_ROLES.some((role) => permissions.includes(role));
+  }
+
+  private async findRolloutPartners(
+    userId?: string,
+  ): Promise<SubordinateOption[]> {
+    const users = await this.prisma.trigo_users.findMany({
+      where: {
+        ...(userId ? { id: userId } : {}),
+        is_active: true,
+        is_deleted: false,
+        AND: [
+          {
+            trigo_group_members: {
+              some: {
+                trigo_groups: {
+                  is_active: true,
+                  is_deleted: false,
+                  trigo_group_permissions: {
+                    some: {
+                      permissions: {
+                        permission_key: PermissionKey.QUOTE_ACTIVITY_GATES,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          {
+            trigo_group_members: {
+              some: {
+                trigo_groups: {
+                  is_active: true,
+                  is_deleted: false,
+                  trigo_group_permissions: {
+                    some: {
+                      permissions: {
+                        permission_key: { in: ROLLOUT_PARTNER_ROLES },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        ],
+      },
+      select: { id: true, full_name: true },
+      orderBy: [{ full_name: 'asc' }, { id: 'asc' }],
+    });
+    return users.map((user) => ({ id: user.id, name: user.full_name }));
+  }
+
   /**
    * Detalhe da PARCELA (por installmentId): contrato, cliente, responsável e o histórico
    * completo de tarefas da parcela — cada uma com a sua interação. Escopo por
-   * ownership direto; fora do escopo ou inexistente → 404 (não revela existência).
+   * hierarquia; admin, backoffice e INSTALLMENT_VIEW_ALL têm visão global. Fora
+   * do escopo ou inexistente → 404 (não revela existência).
    */
   async getInstallmentDetail(
     installmentId: string,
@@ -165,10 +309,10 @@ export class ActivitiesService {
     const contractId = installment.contract_id;
     if (!contractId) throw new NotFoundException('installment_not_found');
 
-    const canView = await this.scope.canDirectlyViewContract(
-      contractId,
-      viewer.userId,
-    );
+    const canView = await this.scope.canViewContract(contractId, viewer, [
+      PermissionKey.INSTALLMENT_VIEW_ALL,
+      PermissionKey.ROLE_BACKOFFICE,
+    ]);
     if (!canView) throw new NotFoundException('installment_not_found');
 
     const contract = await this.prisma.contracts.findUnique({
@@ -411,6 +555,7 @@ export class ActivitiesService {
     activeId: string | null,
     limit: number,
     offset: number,
+    assigneeFilter: Prisma.Sql,
   ): Promise<QueueRow[]> {
     const notActive = activeId
       ? Prisma.sql`WHERE r.task_id <> ${activeId}::uuid`
@@ -425,7 +570,7 @@ export class ActivitiesService {
         LEFT JOIN activity_ruler_stages rs ON rs.id = at.ruler_stage_id
         JOIN installments i ON i.id = at.installment_id
         JOIN contracts c ON c.id = at.contract_id
-        WHERE ${scopeClause} AND at.status = 'pending' AND at.expire_date <= CURRENT_DATE
+        WHERE ${scopeClause} AND at.status = 'pending' AND at.expire_date <= CURRENT_DATE ${assigneeFilter}
         ORDER BY at.assigned_to, rs.priority ASC NULLS LAST, (CURRENT_DATE - i.due_date) DESC, at.created_at ASC
       ),
       ranked AS (
@@ -441,7 +586,7 @@ export class ActivitiesService {
         JOIN installments i ON i.id = at.installment_id
         JOIN contracts c ON c.id = at.contract_id
         JOIN leaders l ON l.assigned_to = at.assigned_to
-        WHERE ${scopeClause} AND at.status = 'pending' AND at.expire_date <= CURRENT_DATE
+        WHERE ${scopeClause} AND at.status = 'pending' AND at.expire_date <= CURRENT_DATE ${assigneeFilter}
       )
       SELECT
         at.id AS task_id, at.segment_code, at.task_type, at.status,
