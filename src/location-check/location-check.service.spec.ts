@@ -273,6 +273,52 @@ describe('verify — resposta', () => {
   });
 });
 
+describe('verify — addressLikelyWrong (AUREA-352)', () => {
+  it('false quando o endereço formatado cita a cidade cadastrada', async () => {
+    const { service } = await build();
+    const result = await service.verify(dto());
+
+    expect(result.addressLikelyWrong).toBe(false);
+  });
+
+  it('true quando o endereço formatado não cita a cidade cadastrada — provável match errado', async () => {
+    const { service } = await build({
+      geocode: geocodeResult({
+        formattedAddress: 'R. das Flores, 123 - Centro, Curitiba - PR, Brasil',
+        locationType: 'RANGE_INTERPOLATED',
+        partialMatch: true,
+      }),
+    });
+    const result = await service.verify(dto());
+
+    expect(result.addressLikelyWrong).toBe(true);
+  });
+
+  it('compara sem diferenciar acentos ou caixa', async () => {
+    const { service } = await build({
+      address: { city: 'Jequié' },
+      geocode: geocodeResult({
+        formattedAddress: "Rua Pau d'Arco, 28 - JEQUIE - BA, Brasil",
+      }),
+    });
+    const result = await service.verify(dto());
+
+    expect(result.addressLikelyWrong).toBe(false);
+  });
+
+  it('não sinaliza como errado quando a cidade cadastrada está vazia — nada pra comparar', async () => {
+    const { service } = await build({
+      address: { city: '' },
+      geocode: geocodeResult({
+        formattedAddress: 'Endereço sem cidade reconhecível, Brasil',
+      }),
+    });
+    const result = await service.verify(dto());
+
+    expect(result.addressLikelyWrong).toBe(false);
+  });
+});
+
 describe('verify — texto enviado ao geocoder', () => {
   async function textFor(address: Partial<typeof ADDRESS>): Promise<string> {
     const { service, geocoding } = await build({ address });

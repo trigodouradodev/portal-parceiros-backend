@@ -103,7 +103,34 @@ export class LocationCheckService {
       matchedAddress: geo.formattedAddress,
       locationType: geo.locationType,
       partialMatch: geo.partialMatch,
+      addressLikelyWrong: this.isAddressLikelyWrong(
+        geo.formattedAddress,
+        address.city,
+      ),
     };
+  }
+
+  /**
+   * true quando o endereço formatado devolvido pelo geocoding não menciona a
+   * cidade cadastrada — sinal de que o Google casou com uma via de mesmo
+   * nome em outro município (AUREA-352: erro de ~35km numa via "RANGE_
+   * INTERPOLATED"/"APPROXIMATE" cujo endereço formatado citava outra
+   * cidade). Diferente de partialMatch/locationType, que só indicam
+   * imprecisão dentro do lugar certo.
+   */
+  private isAddressLikelyWrong(
+    formattedAddress: string,
+    registeredCity: string,
+  ): boolean {
+    if (!registeredCity.trim()) return false;
+    return !this.normalizeText(formattedAddress).includes(
+      this.normalizeText(registeredCity),
+    );
+  }
+
+  /** Sem acentos e em minúsculas, pra comparar texto vindo de fontes diferentes. */
+  private normalizeText(value: string): string {
+    return value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   }
 
   private async findClientAddress(

@@ -64,4 +64,15 @@ export class LocationCheckResult {
       'número). Indica resultado pouco confiável para o raio.',
   })
   partialMatch: boolean;
+
+  @ApiProperty({
+    example: false,
+    description:
+      'true quando o endereço formatado devolvido pelo geocoding não ' +
+      'menciona a cidade cadastrada — sinal de que o Google pode ter ' +
+      'casado com uma via de mesmo nome em outro município (não é só ' +
+      'impreciso, é provavelmente errado). Nesse caso a distância não é ' +
+      'confiável.',
+  })
+  addressLikelyWrong: boolean;
 }
