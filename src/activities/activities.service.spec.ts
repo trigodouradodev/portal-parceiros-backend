@@ -8,6 +8,7 @@ import {
 import { ActivitiesService } from './activities.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScopeService } from '../scope/scope.service';
+import { FollowUpService } from '../follow-up/follow-up.service';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { Prisma } from '@prisma/client';
 import {
@@ -29,6 +30,7 @@ function lockedTask(overrides: Partial<LockedTaskRow> = {}): LockedTaskRow {
   return {
     id: TASK_ID,
     installment_id: 'installment-1',
+    installment_number: 3,
     contract_id: 'contract-1',
     task_type: ActivityTaskType.CONTACT,
     status: ActivityTaskStatus.PENDING,
@@ -129,10 +131,13 @@ function createTx(options: TxOptions = {}) {
 
 type Tx = ReturnType<typeof createTx>;
 
-async function build(
-  options: TxOptions = {},
-): Promise<{ service: ActivitiesService; tx: Tx }> {
+async function build(options: TxOptions = {}): Promise<{
+  service: ActivitiesService;
+  tx: Tx;
+  followUpService: { createWithinTransaction: jest.Mock };
+}> {
   const tx = createTx(options);
+  const followUpService = { createWithinTransaction: jest.fn() };
   const prisma = {
     $transaction: jest.fn((fn: (client: Tx) => unknown) => fn(tx)),
   };
@@ -141,9 +146,10 @@ async function build(
       ActivitiesService,
       { provide: PrismaService, useValue: prisma },
       { provide: ScopeService, useValue: {} },
+      { provide: FollowUpService, useValue: followUpService },
     ],
   }).compile();
-  return { service: module.get(ActivitiesService), tx };
+  return { service: module.get(ActivitiesService), tx, followUpService };
 }
 
 async function buildQueue(
@@ -163,6 +169,7 @@ async function buildQueue(
       ActivitiesService,
       { provide: PrismaService, useValue: prisma },
       { provide: ScopeService, useValue: scope },
+      { provide: FollowUpService, useValue: {} },
     ],
   }).compile();
   return { service: module.get(ActivitiesService), prisma, scope };
@@ -180,6 +187,7 @@ async function buildInstallmentAccess(canView: boolean) {
       ActivitiesService,
       { provide: PrismaService, useValue: prisma },
       { provide: ScopeService, useValue: scope },
+      { provide: FollowUpService, useValue: {} },
     ],
   }).compile();
   return { service: module.get(ActivitiesService), prisma, scope };
@@ -564,7 +572,7 @@ describe('reschedule', () => {
 
 describe('registerInteraction', () => {
   it('conclui a tarefa e grava a interação', async () => {
-    const { service, tx } = await build();
+    const { service, tx, followUpService } = await build();
     const { interaction } = await service.registerInteraction(
       TASK_ID,
       USER_ID,
@@ -574,7 +582,58 @@ describe('registerInteraction', () => {
     expect(interaction.id).toBe('interaction-1');
     // A conclusão da tarefa é um $executeRaw separado do INSERT da interação.
     expect(tx.$executeRaw).toHaveBeenCalled();
+    expect(followUpService.createWithinTransaction).toHaveBeenCalledWith(
+      tx,
+      USER_ID,
+      expect.objectContaining({
+        contractId: 'contract-1',
+        installmentNumber: 3,
+        followUpType: 'call',
+        party: 'client',
+        expectedResult: 'no_return',
+      }) as unknown,
+    );
   });
+
+  it.each([
+    [
+      'sem previsão',
+      lockedTask(),
+      interactionDto({ result: ActivityInteractionResult.NO_FORECAST }),
+      'no_forecast',
+    ],
+    [
+      'visita sem localizar o destinatário',
+      lockedTask({ task_type: ActivityTaskType.VISIT }),
+      interactionDto({
+        channel: ActivityChannel.VISIT,
+        result: ActivityInteractionResult.NOT_LOCATED,
+      }),
+      'not_located',
+    ],
+    [
+      'promessa de pagamento',
+      lockedTask(),
+      interactionDto({
+        result: ActivityInteractionResult.PAYMENT_PROMISE,
+        promiseDate: '2026-08-05',
+      }),
+      'will_pay_on_date',
+    ],
+  ])(
+    'mapeia %s para o resultado do follow-up',
+    async (_description, task, dto, expectedResult) => {
+      const { service, followUpService } = await build({ task });
+
+      await service.registerInteraction(TASK_ID, USER_ID, dto);
+
+      expect(followUpService.createWithinTransaction).toHaveBeenCalledWith(
+        expect.anything(),
+        USER_ID,
+        expect.objectContaining({ expectedResult }) as unknown,
+      );
+    },
+  );
 
   describe('canal e resultado válidos por tipo de tarefa', () => {
     it('aceita whatsapp em tarefa de contato', async () => {

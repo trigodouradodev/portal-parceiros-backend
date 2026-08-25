@@ -37,40 +37,62 @@ export class FollowUpService {
       throw new NotFoundException('Contrato não encontrado.');
     }
 
+    const normalized = this.normalize(dto);
+    return this.prisma.$transaction((tx) =>
+      this.persistWithinTransaction(tx, userId, dto, normalized),
+    );
+  }
+
+  /**
+   * Persiste um follow-up usando uma transação já aberta pelo chamador.
+   * Usado pela execução de atividades para tornar tarefa, interação e
+   * follow-up uma única operação atômica.
+   */
+  async createWithinTransaction(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    dto: CreateFollowUpDto,
+  ) {
+    const normalized = this.normalize(dto);
+    return this.persistWithinTransaction(tx, userId, dto, normalized);
+  }
+
+  private async persistWithinTransaction(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    dto: CreateFollowUpDto,
+    normalized: NormalizedFollowUp,
+  ) {
     const hasGeolocation =
       dto.latitude !== undefined && dto.longitude !== undefined;
-    const normalized = this.normalize(dto);
+    const followup = await tx.installment_followups.create({
+      data: {
+        contract_id: dto.contractId,
+        installment_number: dto.installmentNumber ?? null,
+        status: normalized.status,
+        note: dto.note ?? null,
+        followup_type: normalized.followupType,
+        party: normalized.party,
+        automatic_action: normalized.automaticAction,
+        expected_result: dto.expectedResult ?? null,
+        payment_forecast: dto.paymentForecast
+          ? new Date(dto.paymentForecast)
+          : null,
+        user_id: userId,
+      },
+    });
 
-    return this.prisma.$transaction(async (tx) => {
-      const followup = await tx.installment_followups.create({
+    if (hasGeolocation) {
+      await tx.geolocations.create({
         data: {
-          contract_id: dto.contractId,
-          installment_number: dto.installmentNumber ?? null,
-          status: normalized.status,
-          note: dto.note ?? null,
-          followup_type: normalized.followupType,
-          party: normalized.party,
-          automatic_action: normalized.automaticAction,
-          expected_result: dto.expectedResult ?? null,
-          payment_forecast: dto.paymentForecast
-            ? new Date(dto.paymentForecast)
-            : null,
-          user_id: userId,
+          installment_followup_id: followup.id,
+          latitude: new Prisma.Decimal(dto.latitude!),
+          longitude: new Prisma.Decimal(dto.longitude!),
         },
       });
+    }
 
-      if (hasGeolocation) {
-        await tx.geolocations.create({
-          data: {
-            installment_followup_id: followup.id,
-            latitude: new Prisma.Decimal(dto.latitude!),
-            longitude: new Prisma.Decimal(dto.longitude!),
-          },
-        });
-      }
-
-      return followup;
-    });
+    return followup;
   }
 
   private normalize(dto: CreateFollowUpDto): NormalizedFollowUp {
