@@ -64,4 +64,16 @@ export class LocationCheckResult {
       'número). Indica resultado pouco confiável para o raio.',
   })
   partialMatch: boolean;
+
+  @ApiProperty({
+    example: false,
+    description:
+      'true quando o ponto do geocoding não é confiável pro raio de ' +
+      '100m: locationType diferente de ROOFTOP (RANGE_INTERPOLATED/' +
+      'GEOMETRIC_CENTER/APPROXIMATE podem errar o ponto por vários km ' +
+      'mesmo dentro da cidade certa), ou o endereço formatado nem ' +
+      'menciona a cidade cadastrada (via de mesmo nome em outro ' +
+      'município). Em ambos os casos a distância não é confiável.',
+  })
+  addressLikelyWrong: boolean;
 }
