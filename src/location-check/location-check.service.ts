@@ -103,7 +103,36 @@ export class LocationCheckService {
       matchedAddress: geo.formattedAddress,
       locationType: geo.locationType,
       partialMatch: geo.partialMatch,
+      addressLikelyWrong: this.isAddressLikelyWrong(geo, address.city),
     };
+  }
+
+  /**
+   * true quando o ponto do geocoding não é confiável pro raio de 100 m —
+   * ou porque o Google não tem certeza ROOFTOP do ponto (RANGE_INTERPOLATED/
+   * GEOMETRIC_CENTER/APPROXIMATE podem interpolar/aproximar o ponto errado
+   * mesmo dentro da cidade certa — caso real do AUREA-352: parceiro
+   * confirmadamente no endereço certo, Google devolveu RANGE_INTERPOLATED e
+   * errou o ponto por ~35km), ou porque o endereço formatado nem menciona a
+   * cidade cadastrada (sinal mais grave: via de mesmo nome em outro
+   * município). O primeiro caso é o mais comum na prática — não dá pra
+   * confiar no texto pra detectar "cidade errada dentro do ponto certo".
+   */
+  private isAddressLikelyWrong(
+    geo: { formattedAddress: string; locationType: string },
+    registeredCity: string,
+  ): boolean {
+    if (geo.locationType !== 'ROOFTOP') return true;
+
+    if (!registeredCity.trim()) return false;
+    return !this.normalizeText(geo.formattedAddress).includes(
+      this.normalizeText(registeredCity),
+    );
+  }
+
+  /** Sem acentos e em minúsculas, pra comparar texto vindo de fontes diferentes. */
+  private normalizeText(value: string): string {
+    return value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   }
 
   private async findClientAddress(

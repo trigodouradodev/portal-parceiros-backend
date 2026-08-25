@@ -43,6 +43,7 @@ export interface RawGuarantor {
 export interface LockedTaskRow {
   id: string;
   installment_id: string;
+  installment_number: number;
   contract_id: string;
   task_type: string;
   status: string;

@@ -1,10 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import {
-  BadRequestException,
-  ConflictException,
-  UnauthorizedException,
-} from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -20,27 +15,16 @@ const UPDATED_USER = {
 interface BuildOptions {
   /** Linha devolvida ao checar se o usuário existe dentro da transação. */
   existing?: { id: string } | null;
-  /** Linha devolvida ao checar se o email já está em uso por outro usuário. */
-  emailTaken?: { id: string } | null;
   /** Erro lançado pelo UPDATE em trigo_users. */
   updateError?: Error;
 }
 
 function createTx(options: BuildOptions) {
-  const {
-    existing = { id: USER_ID },
-    emailTaken = null,
-    updateError,
-  } = options;
-  let findFirstCall = 0;
+  const { existing = { id: USER_ID }, updateError } = options;
 
   return {
     trigo_users: {
-      // 1ª chamada: existência do usuário. 2ª: email já em uso por outro.
-      findFirst: jest.fn(() => {
-        findFirstCall += 1;
-        return Promise.resolve(findFirstCall === 1 ? existing : emailTaken);
-      }),
+      findFirst: jest.fn(() => Promise.resolve(existing)),
       update: jest.fn(() =>
         updateError
           ? Promise.reject(updateError)
@@ -81,16 +65,6 @@ describe('updateProfile — validação de entrada', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('normaliza o email para minúsculas e sem espaços', async () => {
-    const { service, tx } = await build();
-    await service.updateProfile(USER_ID, { email: '  Novo@Trigo.com  ' });
-
-    const [args] = tx.trigo_users.update.mock.calls[0] as [
-      { data: { email: string } },
-    ];
-    expect(args.data.email).toBe('novo@trigo.com');
-  });
-
   it('apara o nome completo', async () => {
     const { service, tx } = await build();
     await service.updateProfile(USER_ID, { fullName: '  Maria Souza  ' });
@@ -126,61 +100,8 @@ describe('updateProfile — telefone: limpar vs. não tocar', () => {
   });
 });
 
-describe('updateProfile — conflitos de email', () => {
-  it('409 quando outro usuário já tem o email', async () => {
-    const { service } = await build({ emailTaken: { id: 'outro-user' } });
-    await expect(
-      service.updateProfile(USER_ID, { email: 'ocupado@trigo.com' }),
-    ).rejects.toThrow(ConflictException);
-  });
-
-  it('checa o email sem filtrar soft delete', async () => {
-    // O índice único de trigo_users.email é do banco e não conhece is_deleted:
-    // um usuário deletado segurando o email faria o UPDATE estourar depois.
-    const { service, tx } = await build();
-    await service.updateProfile(USER_ID, { email: 'novo@trigo.com' });
-
-    const [args] = tx.trigo_users.findFirst.mock.calls[1] as [
-      { where: Record<string, unknown> },
-    ];
-    expect(args.where).not.toHaveProperty('is_deleted');
-    expect(args.where).toMatchObject({ id: { not: USER_ID } });
-  });
-
-  it('compara o email sem diferenciar caixa', async () => {
-    const { service, tx } = await build();
-    await service.updateProfile(USER_ID, { email: 'novo@trigo.com' });
-
-    const [args] = tx.trigo_users.findFirst.mock.calls[1] as [
-      { where: { email: { mode: string } } },
-    ];
-    expect(args.where.email.mode).toBe('insensitive');
-  });
-
-  it('não checa duplicidade quando o email não está sendo alterado', async () => {
-    const { service, tx } = await build();
-    await service.updateProfile(USER_ID, { fullName: 'Maria' });
-
-    // Só a checagem de existência do usuário.
-    expect(tx.trigo_users.findFirst).toHaveBeenCalledTimes(1);
-  });
-
-  it('409 quando o UNIQUE de um perfil legado estoura no espelhamento', async () => {
-    // consultants.email tem UNIQUE próprio: pode colidir com o perfil legado de
-    // OUTRO usuário mesmo com trigo_users limpo. A transação inteira reverte.
-    const { service } = await build({
-      updateError: new Prisma.PrismaClientKnownRequestError('duplicado', {
-        code: 'P2002',
-        clientVersion: 'test',
-      }),
-    });
-
-    await expect(
-      service.updateProfile(USER_ID, { email: 'novo@trigo.com' }),
-    ).rejects.toThrow(ConflictException);
-  });
-
-  it('propaga erros que não são de duplicidade', async () => {
+describe('updateProfile — propagação de erros', () => {
+  it('propaga qualquer erro lançado pelo UPDATE', async () => {
     const { service } = await build({
       updateError: new Error('falha de rede'),
     });
@@ -204,7 +125,6 @@ describe('updateProfile — espelhamento nos perfis legados', () => {
   it('replica os campos em consultants e collection_agents', async () => {
     const { service, tx } = await build();
     await service.updateProfile(USER_ID, {
-      email: 'novo@trigo.com',
       fullName: 'Maria Souza',
       phoneNumber: '11999998888',
     });
@@ -212,7 +132,6 @@ describe('updateProfile — espelhamento nos perfis legados', () => {
     const esperado = {
       where: { user_id: USER_ID },
       data: {
-        email: 'novo@trigo.com',
         name: 'Maria Souza',
         phone_number: '11999998888',
       },
