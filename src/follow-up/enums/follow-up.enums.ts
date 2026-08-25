@@ -20,6 +20,7 @@ export enum FollowUpStatus {
   RENEGOTIATION = 'renegotiation',
   DECEASED = 'deceased',
   NO_FORECAST = 'no_forecast',
+  NOT_LOCATED = 'not_located',
   WHATSAPP_MESSAGE = 'whatsapp_message',
 }
 
@@ -52,5 +53,7 @@ export enum FollowUpExpectedResult {
   DISPUTE = 'dispute', // Disputa / contestação
   WANTS_RENEGOTIATION = 'wants_renegotiation', // Quer renegociar
   DECEASED = 'deceased', // Falecido
+  NO_FORECAST = 'no_forecast', // Sem previsão
+  NOT_LOCATED = 'not_located', // Não localizado
   OTHER = 'other', // Outro
 }

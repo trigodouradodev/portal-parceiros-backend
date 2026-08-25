@@ -5,5 +5,6 @@ import { FollowUpService } from './follow-up.service';
 @Module({
   controllers: [FollowUpController],
   providers: [FollowUpService],
+  exports: [FollowUpService],
 })
 export class FollowUpModule {}

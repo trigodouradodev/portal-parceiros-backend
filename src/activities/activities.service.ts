@@ -11,8 +11,17 @@ import { ScopeService, ScopeViewer } from '../scope/scope.service';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { RegisterInteractionDto } from './dto/register-interaction.dto';
 import { RescheduleTaskDto } from './dto/reschedule-task.dto';
+import { CreateFollowUpDto } from '../follow-up/dto/create-follow-up.dto';
+import { FollowUpService } from '../follow-up/follow-up.service';
 import {
+  FollowUpExpectedResult,
+  FollowUpParty,
+  FollowUpType,
+} from '../follow-up/enums/follow-up.enums';
+import {
+  ActivityChannel,
   ActivityInteractionResult,
+  ActivityRecipientType,
   ActivityTaskStatus,
   ActivityTaskType,
   CHANNELS_BY_TASK_TYPE,
@@ -60,6 +69,7 @@ export class ActivitiesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly scope: ScopeService,
+    private readonly followUpService: FollowUpService,
   ) {}
 
   /**
@@ -710,6 +720,12 @@ export class ActivitiesService {
         };
       }
 
+      await this.followUpService.createWithinTransaction(
+        tx,
+        userId,
+        this.mapInteractionToFollowUp(task, dto, promiseDate),
+      );
+
       return { interaction };
     });
   }
@@ -783,10 +799,12 @@ export class ActivitiesService {
     taskId: string,
   ): Promise<LockedTaskRow> {
     const rows = await tx.$queryRaw<LockedTaskRow[]>`
-      SELECT id, installment_id, contract_id, task_type, status, assigned_to,
-             was_postponed, was_rescheduled, reschedule_count
-      FROM activity_tasks
-      WHERE id = ${taskId}::uuid
+      SELECT at.id, at.installment_id, i.installment_number, at.contract_id,
+             at.task_type, at.status, at.assigned_to, at.was_postponed,
+             at.was_rescheduled, at.reschedule_count
+      FROM activity_tasks at
+      JOIN installments i ON i.id = at.installment_id
+      WHERE at.id = ${taskId}::uuid
       FOR UPDATE
     `;
     const task = rows[0];
@@ -851,6 +869,71 @@ export class ActivitiesService {
     }
     if (!RESULTS_BY_TASK_TYPE[taskType]?.includes(dto.result)) {
       throw new BadRequestException('result_invalid_for_task_type');
+    }
+  }
+
+  private mapInteractionToFollowUp(
+    task: LockedTaskRow,
+    dto: RegisterInteractionDto,
+    promiseDate: string | null,
+  ): CreateFollowUpDto {
+    return {
+      contractId: task.contract_id,
+      installmentNumber: task.installment_number,
+      followUpType: this.mapChannelToFollowUpType(dto.channel),
+      party: this.mapRecipientToFollowUpParty(dto.recipientType),
+      expectedResult: this.mapResultToExpectedResult(dto.result),
+      paymentForecast: promiseDate ?? undefined,
+      note: dto.observation,
+      latitude: dto.latitude,
+      longitude: dto.longitude,
+    };
+  }
+
+  private mapChannelToFollowUpType(channel: ActivityChannel): FollowUpType {
+    switch (channel) {
+      case ActivityChannel.CALL:
+        return FollowUpType.CALL;
+      case ActivityChannel.WHATSAPP:
+        return FollowUpType.MESSAGE;
+      case ActivityChannel.VISIT:
+        return FollowUpType.VISIT;
+    }
+  }
+
+  private mapRecipientToFollowUpParty(
+    recipientType: ActivityRecipientType,
+  ): FollowUpParty {
+    switch (recipientType) {
+      case ActivityRecipientType.CLIENT:
+        return FollowUpParty.CLIENT;
+      case ActivityRecipientType.GUARANTOR:
+        return FollowUpParty.GUARANTOR;
+      case ActivityRecipientType.OTHER:
+        throw new BadRequestException('recipient_unsupported_for_follow_up');
+    }
+  }
+
+  private mapResultToExpectedResult(
+    result: ActivityInteractionResult,
+  ): FollowUpExpectedResult {
+    switch (result) {
+      case ActivityInteractionResult.NO_RESPONSE:
+        return FollowUpExpectedResult.NO_RETURN;
+      case ActivityInteractionResult.NOT_LOCATED:
+        return FollowUpExpectedResult.NOT_LOCATED;
+      case ActivityInteractionResult.PAYMENT_PROMISE:
+        return FollowUpExpectedResult.WILL_PAY_ON_DATE;
+      case ActivityInteractionResult.DISPUTE:
+        return FollowUpExpectedResult.DISPUTE;
+      case ActivityInteractionResult.RENEGOTIATION:
+        return FollowUpExpectedResult.WANTS_RENEGOTIATION;
+      case ActivityInteractionResult.DECEASED:
+        return FollowUpExpectedResult.DECEASED;
+      case ActivityInteractionResult.NO_FORECAST:
+        return FollowUpExpectedResult.NO_FORECAST;
+      case ActivityInteractionResult.OTHER:
+        return FollowUpExpectedResult.OTHER;
     }
   }
 
