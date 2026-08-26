@@ -44,7 +44,7 @@ interface SimulationRow {
 }
 
 @Injectable()
-export class OriginationService {
+export class SimulationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly quoteActivityPermissions: QuoteActivityPermissionsService,
@@ -68,7 +68,7 @@ export class OriginationService {
         s.installment_amount,
         s.simulation_result,
         s.created_at
-      FROM public.partner_simulations s
+      FROM public.simulations s
       JOIN public.finance_products fp ON fp.id = s.finance_product_id
       WHERE s.user_id = ${userId}::uuid
       ORDER BY s.created_at DESC, s.id DESC
@@ -135,7 +135,7 @@ export class OriginationService {
     const [row] = await this.prisma.$queryRaw<
       Omit<SimulationRow, 'product_name'>[]
     >`
-      INSERT INTO public.partner_simulations (
+      INSERT INTO public.simulations (
         user_id,
         finance_product_id,
         client_name,

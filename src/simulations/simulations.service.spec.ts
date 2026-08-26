@@ -3,7 +3,7 @@ import { PermissionKey } from '../auth/permissions/permission-keys';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSimulationDto } from './dto/create-simulation.dto';
-import { calcInstallment, OriginationService } from './origination.service';
+import { calcInstallment, SimulationsService } from './simulations.service';
 
 const USER_ID = '269b0843-0aa8-40ab-af66-8304909930a6';
 const PRODUCT_ID = '11111111-1111-4111-8111-111111111111';
@@ -69,7 +69,7 @@ function buildService(options?: {
       }
       return [product];
     }
-    if (sql.includes('INSERT INTO public.partner_simulations')) {
+    if (sql.includes('INSERT INTO public.simulations')) {
       return [
         options?.inserted ?? {
           id: 'sim-1',
@@ -101,7 +101,7 @@ function buildService(options?: {
   } as unknown as QuoteActivityPermissionsService;
 
   return {
-    service: new OriginationService(prisma, quoteActivityPermissions),
+    service: new SimulationsService(prisma, quoteActivityPermissions),
     queryRaw,
     quoteActivityPermissions,
   };
@@ -117,7 +117,7 @@ describe('calcInstallment', () => {
   });
 });
 
-describe('OriginationService.createSimulation', () => {
+describe('SimulationsService.createSimulation', () => {
   it('persiste a simulação do parceiro e devolve o snapshot em inglês', async () => {
     const { service, queryRaw } = buildService();
 
@@ -135,7 +135,7 @@ describe('OriginationService.createSimulation', () => {
     expect(result.createdAt).toBe('2026-08-26T12:00:00.000Z');
 
     const insertSql = queryRaw.mock.calls[1][0].join(' ');
-    expect(insertSql).toContain('INSERT INTO public.partner_simulations');
+    expect(insertSql).toContain('INSERT INTO public.simulations');
   });
 
   it('bloqueia quando a fila de cobrança impede simular', async () => {
@@ -178,14 +178,14 @@ describe('OriginationService.createSimulation', () => {
   });
 });
 
-describe('OriginationService.listSimulations', () => {
+describe('SimulationsService.listSimulations', () => {
   it('lista só as simulações do usuário autenticado, mais recente primeiro', async () => {
     const queryRaw = jest.fn().mockResolvedValue([]);
     const prisma = { $queryRaw: queryRaw } as unknown as PrismaService;
     const quoteActivityPermissions = {
       getPermissions: jest.fn(),
     } as unknown as QuoteActivityPermissionsService;
-    const service = new OriginationService(prisma, quoteActivityPermissions);
+    const service = new SimulationsService(prisma, quoteActivityPermissions);
 
     await service.listSimulations(USER_ID);
 
@@ -194,7 +194,7 @@ describe('OriginationService.listSimulations', () => {
       string,
     ];
     const sql = strings.join(' ');
-    expect(sql).toContain('FROM public.partner_simulations s');
+    expect(sql).toContain('FROM public.simulations s');
     expect(sql).toContain('WHERE s.user_id =');
     expect(sql).toContain('ORDER BY s.created_at DESC');
     expect(userId).toBe(USER_ID);

@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-/** Snapshot persistido da simulação (AUREA-428). Campos em camelCase EN. */
+/** Snapshot persistido da simulação. Campos em camelCase EN. */
 export class SimulationSnapshot {
   @ApiProperty({ format: 'uuid' })
   id: string;

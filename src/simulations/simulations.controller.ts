@@ -15,24 +15,24 @@ import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { CreateSimulationDto } from './dto/create-simulation.dto';
 import { SimulationSnapshot } from './interfaces/simulation.interface';
-import { OriginationService } from './origination.service';
+import { SimulationsService } from './simulations.service';
 
-@ApiTags('origination')
+@ApiTags('simulations')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ description: 'Token ausente ou inválido.' })
 @ApiForbiddenResponse({ description: 'Permissão insuficiente.' })
-@Controller('origination')
-export class OriginationController {
-  constructor(private readonly originationService: OriginationService) {}
+@Controller('simulations')
+export class SimulationsController {
+  constructor(private readonly simulationsService: SimulationsService) {}
 
   @ApiOperation({
     summary: 'Lista as simulações persistidas do parceiro autenticado.',
   })
   @ApiOkResponse({ type: [SimulationSnapshot] })
   @RequirePermissions(PermissionKey.QUOTE_CREATE)
-  @Get('simulations')
+  @Get()
   listSimulations(@CurrentUser('sub') userId: string) {
-    return this.originationService.listSimulations(userId);
+    return this.simulationsService.listSimulations(userId);
   }
 
   @ApiOperation({
@@ -46,11 +46,11 @@ export class OriginationController {
     description: 'Fila de cobrança impede simular proposta.',
   })
   @RequirePermissions(PermissionKey.QUOTE_CREATE)
-  @Post('simulations')
+  @Post()
   createSimulation(
     @CurrentUser() user: JwtPayload,
     @Body() dto: CreateSimulationDto,
   ) {
-    return this.originationService.createSimulation(user, dto);
+    return this.simulationsService.createSimulation(user, dto);
   }
 }

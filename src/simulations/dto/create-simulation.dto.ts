@@ -13,7 +13,7 @@ import {
   MinLength,
 } from 'class-validator';
 
-/** Payload para persistir uma simulação do parceiro autenticado. */
+/** Payload para criar uma simulação do parceiro autenticado. */
 export class CreateSimulationDto {
   @ApiProperty({ example: 'Maria Souza' })
   @IsString()
