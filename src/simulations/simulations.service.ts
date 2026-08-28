@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
@@ -43,6 +44,20 @@ interface SimulationRow {
   created_at: Date;
 }
 
+interface PreparedSimulation {
+  name: string;
+  document: string;
+  telephone: string;
+  email: string;
+  birthDate: Date;
+  firstInstallmentDate: Date;
+  product: LinkedProduct;
+  amount: number;
+  installments: number;
+  interestRate: number;
+  installmentAmount: number;
+}
+
 @Injectable()
 export class SimulationsService {
   constructor(
@@ -81,6 +96,120 @@ export class SimulationsService {
     user: JwtPayload,
     dto: CreateSimulationDto,
   ): Promise<SimulationSnapshot> {
+    const prepared = await this.prepareSimulation(user, dto);
+    const [row] = await this.prisma.$queryRaw<
+      Omit<SimulationRow, 'product_name'>[]
+    >`
+      INSERT INTO public.simulations (
+        user_id,
+        finance_product_id,
+        client_name,
+        document,
+        birth_date,
+        email,
+        telephone,
+        finance_amount,
+        interest_rate,
+        installment_numbers,
+        first_installment_date,
+        installment_amount
+      )
+      VALUES (
+        ${user.sub}::uuid,
+        ${prepared.product.id}::uuid,
+        ${prepared.name},
+        ${prepared.document},
+        ${toSqlDate(prepared.birthDate)}::date,
+        ${prepared.email},
+        ${prepared.telephone},
+        ${prepared.amount},
+        ${prepared.interestRate},
+        ${prepared.installments},
+        ${toSqlDate(prepared.firstInstallmentDate)}::date,
+        ${prepared.installmentAmount}
+      )
+      RETURNING
+        id,
+        finance_product_id,
+        client_name,
+        document,
+        birth_date,
+        email,
+        telephone,
+        finance_amount,
+        interest_rate,
+        installment_numbers,
+        first_installment_date,
+        installment_amount,
+        simulation_result,
+        created_at
+    `;
+
+    if (!row) {
+      throw new BadRequestException('Não foi possível persistir a simulação.');
+    }
+
+    return this.toSnapshot({
+      ...row,
+      product_name: prepared.product.product_name,
+    });
+  }
+
+  async updateSimulation(
+    user: JwtPayload,
+    id: string,
+    dto: CreateSimulationDto,
+  ): Promise<SimulationSnapshot> {
+    const prepared = await this.prepareSimulation(user, dto);
+    const [row] = await this.prisma.$queryRaw<
+      Omit<SimulationRow, 'product_name'>[]
+    >`
+      UPDATE public.simulations
+      SET
+        finance_product_id = ${prepared.product.id}::uuid,
+        client_name = ${prepared.name},
+        document = ${prepared.document},
+        birth_date = ${toSqlDate(prepared.birthDate)}::date,
+        email = ${prepared.email},
+        telephone = ${prepared.telephone},
+        finance_amount = ${prepared.amount},
+        interest_rate = ${prepared.interestRate},
+        installment_numbers = ${prepared.installments},
+        first_installment_date = ${toSqlDate(prepared.firstInstallmentDate)}::date,
+        installment_amount = ${prepared.installmentAmount}
+      WHERE id = ${id}::uuid
+        AND user_id = ${user.sub}::uuid
+      RETURNING
+        id,
+        finance_product_id,
+        client_name,
+        document,
+        birth_date,
+        email,
+        telephone,
+        finance_amount,
+        interest_rate,
+        installment_numbers,
+        first_installment_date,
+        installment_amount,
+        simulation_result,
+        created_at
+    `;
+
+    if (!row) {
+      throw new NotFoundException('Simulação não encontrada.');
+    }
+
+    return this.toSnapshot({
+      ...row,
+      product_name: prepared.product.product_name,
+    });
+  }
+
+  private async prepareSimulation(
+    user: JwtPayload,
+    dto: CreateSimulationDto,
+  ): Promise<PreparedSimulation> {
     const gates = await this.quoteActivityPermissions.getPermissions({
       userId: user.sub,
       permissions: user.permissions,
@@ -126,68 +255,23 @@ export class SimulationsService {
       );
     }
 
-    const installmentAmount = calcInstallment(
-      dto.amount,
-      dto.installments,
+    return {
+      name: dto.name.trim(),
+      document,
+      telephone,
+      email: dto.email.trim().toLowerCase(),
+      birthDate,
+      firstInstallmentDate,
+      product,
+      amount: dto.amount,
+      installments: dto.installments,
       interestRate,
-    );
-
-    const [row] = await this.prisma.$queryRaw<
-      Omit<SimulationRow, 'product_name'>[]
-    >`
-      INSERT INTO public.simulations (
-        user_id,
-        finance_product_id,
-        client_name,
-        document,
-        birth_date,
-        email,
-        telephone,
-        finance_amount,
-        interest_rate,
-        installment_numbers,
-        first_installment_date,
-        installment_amount
-      )
-      VALUES (
-        ${user.sub}::uuid,
-        ${product.id}::uuid,
-        ${dto.name.trim()},
-        ${document},
-        ${toSqlDate(birthDate)}::date,
-        ${dto.email.trim().toLowerCase()},
-        ${telephone},
-        ${dto.amount},
-        ${interestRate},
-        ${dto.installments},
-        ${toSqlDate(firstInstallmentDate)}::date,
-        ${installmentAmount}
-      )
-      RETURNING
-        id,
-        finance_product_id,
-        client_name,
-        document,
-        birth_date,
-        email,
-        telephone,
-        finance_amount,
-        interest_rate,
-        installment_numbers,
-        first_installment_date,
-        installment_amount,
-        simulation_result,
-        created_at
-    `;
-
-    if (!row) {
-      throw new BadRequestException('Não foi possível persistir a simulação.');
-    }
-
-    return this.toSnapshot({
-      ...row,
-      product_name: product.product_name,
-    });
+      installmentAmount: calcInstallment(
+        dto.amount,
+        dto.installments,
+        interestRate,
+      ),
+    };
   }
 
   private async findLinkedProduct(

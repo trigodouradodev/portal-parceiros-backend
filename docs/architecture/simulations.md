@@ -8,6 +8,9 @@ partner portal. Its public HTTP contract is:
 - `GET /simulations`: lists simulations owned by the authenticated partner.
 - `POST /simulations`: calculates and persists a simulation for the
   authenticated partner.
+- `PATCH /simulations/:id`: updates a simulation owned by the authenticated
+  partner, using the same payload and business rules as `POST`. Ownership is
+  enforced in the `UPDATE` (`id` + `user_id`); a miss returns 404.
 
 ## Boundary
 
