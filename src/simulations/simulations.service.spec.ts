@@ -193,7 +193,8 @@ describe('SimulationsService.listSimulations', () => {
   }
 
   function whereSql(queryRaw: jest.Mock): Prisma.Sql {
-    return queryRaw.mock.calls[0][1] as Prisma.Sql;
+    const [, where] = queryRaw.mock.calls[0] as [unknown, Prisma.Sql];
+    return where;
   }
 
   it('lista só as simulações do usuário autenticado, mais recente primeiro', async () => {
