@@ -6,6 +6,9 @@
 partner portal. Its public HTTP contract is:
 
 - `GET /simulations`: lists simulations owned by the authenticated partner.
+  Optional `name` (case-insensitive contains) and `document` (digits-only
+  contains) query params combine with AND. Empty query lists all of the
+  partner's simulations, newest first.
 - `POST /simulations`: calculates and persists a simulation for the
   authenticated partner.
 

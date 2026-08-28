@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -14,6 +14,7 @@ import { RequirePermissions } from '../auth/decorators/require-permissions.decor
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { CreateSimulationDto } from './dto/create-simulation.dto';
+import { ListSimulationsQueryDto } from './dto/list-simulations-query.dto';
 import { SimulationSnapshot } from './interfaces/simulation.interface';
 import { SimulationsService } from './simulations.service';
 
@@ -27,12 +28,17 @@ export class SimulationsController {
 
   @ApiOperation({
     summary: 'Lista as simulações persistidas do parceiro autenticado.',
+    description:
+      'Filtros opcionais `name` (contains, case-insensitive) e `document` (CPF, só dígitos). Combinam com AND no recorte do parceiro.',
   })
   @ApiOkResponse({ type: [SimulationSnapshot] })
   @RequirePermissions(PermissionKey.QUOTE_CREATE)
   @Get()
-  listSimulations(@CurrentUser('sub') userId: string) {
-    return this.simulationsService.listSimulations(userId);
+  listSimulations(
+    @CurrentUser('sub') userId: string,
+    @Query() query: ListSimulationsQueryDto,
+  ) {
+    return this.simulationsService.listSimulations(userId, query);
   }
 
   @ApiOperation({

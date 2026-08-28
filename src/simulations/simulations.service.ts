@@ -8,6 +8,7 @@ import { QuoteActivityPermissionsService } from '../activities/quote-activity-pe
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSimulationDto } from './dto/create-simulation.dto';
+import { ListSimulationsQueryDto } from './dto/list-simulations-query.dto';
 import { SimulationSnapshot } from './interfaces/simulation.interface';
 
 const ALLOWED_DUE_DAYS = [5, 10, 15, 20];
@@ -50,7 +51,11 @@ export class SimulationsService {
     private readonly quoteActivityPermissions: QuoteActivityPermissionsService,
   ) {}
 
-  async listSimulations(userId: string): Promise<SimulationSnapshot[]> {
+  async listSimulations(
+    userId: string,
+    query: ListSimulationsQueryDto = {},
+  ): Promise<SimulationSnapshot[]> {
+    const whereClause = this.buildListWhereClause(userId, query);
     const rows = await this.prisma.$queryRaw<SimulationRow[]>`
       SELECT
         s.id,
@@ -70,7 +75,7 @@ export class SimulationsService {
         s.created_at
       FROM public.simulations s
       JOIN public.finance_products fp ON fp.id = s.finance_product_id
-      WHERE s.user_id = ${userId}::uuid
+      WHERE ${whereClause}
       ORDER BY s.created_at DESC, s.id DESC
     `;
 
@@ -188,6 +193,25 @@ export class SimulationsService {
       ...row,
       product_name: product.product_name,
     });
+  }
+
+  private buildListWhereClause(
+    userId: string,
+    query: ListSimulationsQueryDto,
+  ): Prisma.Sql {
+    const conditions: Prisma.Sql[] = [Prisma.sql`s.user_id = ${userId}::uuid`];
+
+    const name = query.name?.trim();
+    if (name) {
+      conditions.push(Prisma.sql`s.client_name ILIKE ${`%${name}%`}`);
+    }
+
+    const document = query.document?.replace(/\D/g, '') ?? '';
+    if (document) {
+      conditions.push(Prisma.sql`s.document LIKE ${`%${document}%`}`);
+    }
+
+    return Prisma.join(conditions, ' AND ');
   }
 
   private async findLinkedProduct(
