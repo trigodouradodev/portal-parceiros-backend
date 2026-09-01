@@ -16,6 +16,7 @@ import { ContractsModule } from './contracts/contracts.module';
 import { ProductsModule } from './products/products.module';
 import { QuotesModule } from './quotes/quotes.module';
 import { SimulationsModule } from './simulations/simulations.module';
+import { EligibilityModule } from './eligibility/eligibility.module';
 import configuration from './config/configuration';
 import { envValidationSchema } from './config/env.validation';
 
@@ -43,6 +44,7 @@ import { envValidationSchema } from './config/env.validation';
     ProductsModule,
     QuotesModule,
     SimulationsModule,
+    EligibilityModule,
   ],
   controllers: [AppController],
   providers: [AppService],
