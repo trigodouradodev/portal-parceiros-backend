@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
 import { PartiesService } from '../parties/parties.service';
@@ -285,7 +286,7 @@ describe('SimulationsService.updateSimulation', () => {
 });
 
 describe('SimulationsService.listSimulations', () => {
-  it('lista só as simulações do usuário autenticado, mais recente primeiro', async () => {
+  function listService() {
     const queryRaw = jest.fn().mockResolvedValue([]);
     const prisma = { $queryRaw: queryRaw } as unknown as PrismaService;
     const quoteActivityPermissions = {
@@ -294,22 +295,85 @@ describe('SimulationsService.listSimulations', () => {
     const partiesService = {
       resolveForSimulation: jest.fn(),
     } as unknown as PartiesService;
-    const service = new SimulationsService(
-      prisma,
-      quoteActivityPermissions,
-      partiesService,
-    );
+    return {
+      service: new SimulationsService(
+        prisma,
+        quoteActivityPermissions,
+        partiesService,
+      ),
+      queryRaw,
+    };
+  }
+
+  function whereSql(queryRaw: jest.Mock): Prisma.Sql {
+    const [, where] = queryRaw.mock.calls[0] as [unknown, Prisma.Sql];
+    return where;
+  }
+
+  it('lista só as simulações do usuário autenticado, mais recente primeiro', async () => {
+    const { service, queryRaw } = listService();
 
     await service.listSimulations(USER_ID);
 
-    const [strings, userId] = queryRaw.mock.calls[0] as [
-      TemplateStringsArray,
-      string,
-    ];
+    const [strings] = queryRaw.mock.calls[0] as [TemplateStringsArray];
     const sql = strings.join(' ');
     expect(sql).toContain('FROM public.simulations s');
-    expect(sql).toContain('WHERE s.user_id =');
+    expect(sql).toContain('WHERE');
     expect(sql).toContain('ORDER BY s.created_at DESC');
-    expect(userId).toBe(USER_ID);
+
+    const where = whereSql(queryRaw);
+    expect(where.strings.join(' ')).toContain('s.user_id =');
+    expect(where.values).toContain(USER_ID);
+    expect(where.strings.join(' ')).not.toContain('ILIKE');
+    expect(where.strings.join(' ')).not.toContain('s.document LIKE');
+  });
+
+  it('filtra nome com contains case-insensitive', async () => {
+    const { service, queryRaw } = listService();
+
+    await service.listSimulations(USER_ID, { name: 'maria' });
+
+    const where = whereSql(queryRaw);
+    expect(where.strings.join(' ')).toContain('s.client_name ILIKE');
+    expect(where.values).toContain('%maria%');
+  });
+
+  it('ignora espaços no nome e não aplica filtro vazio', async () => {
+    const { service, queryRaw } = listService();
+
+    await service.listSimulations(USER_ID, { name: '   ' });
+
+    const where = whereSql(queryRaw);
+    expect(where.strings.join(' ')).not.toContain('ILIKE');
+  });
+
+  it('filtra CPF com ou sem máscara pelos dígitos', async () => {
+    const { service, queryRaw } = listService();
+
+    await service.listSimulations(USER_ID, { document: '529.982.247-25' });
+
+    const where = whereSql(queryRaw);
+    expect(where.strings.join(' ')).toContain('s.document LIKE');
+    expect(where.values).toContain('%52998224725%');
+    expect(where.values).not.toContain('%529.982.247-25%');
+  });
+
+  it('combina nome e CPF com AND no recorte do parceiro', async () => {
+    const { service, queryRaw } = listService();
+
+    await service.listSimulations(USER_ID, {
+      name: 'Maria',
+      document: '52998224725',
+    });
+
+    const where = whereSql(queryRaw);
+    const text = where.strings.join(' ');
+    expect(text).toContain('s.user_id =');
+    expect(text).toContain('s.client_name ILIKE');
+    expect(text).toContain('s.document LIKE');
+    expect(text).toContain(' AND ');
+    expect(where.values).toEqual(
+      expect.arrayContaining([USER_ID, '%Maria%', '%52998224725%']),
+    );
   });
 });
