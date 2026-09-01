@@ -1,4 +1,8 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
 import { PartiesService } from '../parties/parties.service';
@@ -7,14 +11,21 @@ import { CreateSimulationDto } from './dto/create-simulation.dto';
 import { calcInstallment, SimulationsService } from './simulations.service';
 
 const USER_ID = '269b0843-0aa8-40ab-af66-8304909930a6';
+const OTHER_USER_ID = '369b0843-0aa8-40ab-af66-8304909930a6';
 const PRODUCT_ID = '11111111-1111-4111-8111-111111111111';
 const PARTY_ID = '22222222-2222-4222-8222-222222222222';
+const SIMULATION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
 const actor = {
   sub: USER_ID,
   email: 'parceiro@trigodourado.com',
   role: 'ROLE_CONSULTANT',
   permissions: [PermissionKey.QUOTE_CREATE, PermissionKey.ROLE_CONSULTANT],
+};
+
+const otherActor = {
+  ...actor,
+  sub: OTHER_USER_ID,
 };
 
 const product = {
@@ -58,10 +69,31 @@ function dto(
   };
 }
 
+function simulationRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: SIMULATION_ID,
+    finance_product_id: PRODUCT_ID,
+    client_name: 'Maria Souza',
+    document: '52998224725',
+    birth_date: new Date('1990-05-20T00:00:00.000Z'),
+    email: 'maria@email.com',
+    telephone: '11987654321',
+    finance_amount: 5000,
+    interest_rate: 0.0339,
+    installment_numbers: 10,
+    first_installment_date: new Date(`${futureDueDate()}T00:00:00.000Z`),
+    installment_amount: 598.42,
+    simulation_result: null,
+    created_at: new Date('2026-08-26T12:00:00.000Z'),
+    ...overrides,
+  };
+}
+
 function buildService(options?: {
   canSimulateQuote?: boolean;
   product?: typeof product | null;
   inserted?: Record<string, unknown>;
+  updated?: Record<string, unknown> | null;
 }) {
   const queryRaw = jest.fn((strings: TemplateStringsArray) => {
     const sql = strings.join(' ');
@@ -72,24 +104,13 @@ function buildService(options?: {
       return [product];
     }
     if (sql.includes('INSERT INTO public.simulations')) {
-      return [
-        options?.inserted ?? {
-          id: 'sim-1',
-          finance_product_id: PRODUCT_ID,
-          client_name: 'Maria Souza',
-          document: '52998224725',
-          birth_date: new Date('1990-05-20T00:00:00.000Z'),
-          email: 'maria@email.com',
-          telephone: '11987654321',
-          finance_amount: 5000,
-          interest_rate: 0.0339,
-          installment_numbers: 10,
-          first_installment_date: new Date(`${futureDueDate()}T00:00:00.000Z`),
-          installment_amount: 598.42,
-          simulation_result: null,
-          created_at: new Date('2026-08-26T12:00:00.000Z'),
-        },
-      ];
+      return [options?.inserted ?? simulationRow({ id: 'sim-1' })];
+    }
+    if (sql.includes('UPDATE public.simulations')) {
+      if (options && 'updated' in options) {
+        return options.updated ? [options.updated] : [];
+      }
+      return [simulationRow()];
     }
     return [];
   });
@@ -202,6 +223,64 @@ describe('SimulationsService.createSimulation', () => {
         dto({ firstInstallmentDate: invalidDay.toISOString().slice(0, 10) }),
       ),
     ).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('SimulationsService.updateSimulation', () => {
+  it('recalcula a parcela e atualiza só a linha do parceiro autenticado', async () => {
+    const payload = dto({
+      name: 'Maria Souza Silva',
+      amount: 8000,
+      installments: 12,
+    });
+    const expectedInstallment = calcInstallment(8000, 12, 0.0339);
+    const { service, queryRaw } = buildService({
+      updated: simulationRow({
+        client_name: 'Maria Souza Silva',
+        finance_amount: 8000,
+        installment_numbers: 12,
+        installment_amount: expectedInstallment,
+      }),
+    });
+
+    const result = await service.updateSimulation(
+      actor,
+      SIMULATION_ID,
+      payload,
+    );
+
+    expect(result.id).toBe(SIMULATION_ID);
+    expect(result.name).toBe('Maria Souza Silva');
+    expect(result.amount).toBe(8000);
+    expect(result.installments).toBe(12);
+    expect(result.installmentAmount).toBe(expectedInstallment);
+    expect(result.createdAt).toBe('2026-08-26T12:00:00.000Z');
+
+    const updateCall = queryRaw.mock.calls[1];
+    const updateSql = updateCall[0].join(' ');
+    expect(updateSql).toContain('UPDATE public.simulations');
+    expect(updateSql).toContain('WHERE id =');
+    expect(updateSql).toContain('AND user_id =');
+    expect(updateCall).toContain(expectedInstallment);
+    expect(updateCall).toContain(SIMULATION_ID);
+    expect(updateCall).toContain(USER_ID);
+  });
+
+  it('devolve 404 quando a simulação não é do parceiro autenticado', async () => {
+    const { service } = buildService({ updated: null });
+
+    await expect(
+      service.updateSimulation(otherActor, SIMULATION_ID, dto()),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('bloqueia o PATCH quando a fila de cobrança impede simular', async () => {
+    const { service, queryRaw } = buildService({ canSimulateQuote: false });
+
+    await expect(
+      service.updateSimulation(actor, SIMULATION_ID, dto()),
+    ).rejects.toThrow(ForbiddenException);
+    expect(queryRaw).not.toHaveBeenCalled();
   });
 });
 

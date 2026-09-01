@@ -1,12 +1,37 @@
 import { BadRequestException } from '@nestjs/common';
 
-/** Normaliza CPF para a representação canônica usada em `parties`: 11 dígitos. */
-export function normalizeCpf(value: string): string {
-  const digits = value.replace(/\D/g, '');
+/**
+ * Validação de CPF pelos dígitos verificadores (rejeita sequências iguais).
+ * Espelha a regra do front (`isValidCpf`) e do trigo-connector.
+ */
+export function cpfDigits(value: string): string {
+  return value.replace(/\D/g, '');
+}
 
-  if (digits.length !== 11 || /^(\d)\1{10}$/.test(digits)) {
+export function isValidCpf(value: string): boolean {
+  const digits = cpfDigits(value);
+  if (digits.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(digits)) return false;
+
+  const calcDigit = (base: string, factor: number): number => {
+    let sum = 0;
+    for (let i = 0; i < base.length; i += 1) {
+      sum += Number(base[i]) * (factor - i);
+    }
+    const mod = (sum * 10) % 11;
+    return mod === 10 ? 0 : mod;
+  };
+
+  const d1 = calcDigit(digits.slice(0, 9), 10);
+  const d2 = calcDigit(digits.slice(0, 10), 11);
+  return d1 === Number(digits[9]) && d2 === Number(digits[10]);
+}
+
+/** Normaliza e valida CPF para a representação canônica usada em `parties`. */
+export function normalizeCpf(value: string): string {
+  if (!isValidCpf(value)) {
     throw new BadRequestException('CPF inválido.');
   }
 
-  return digits;
+  return cpfDigits(value);
 }

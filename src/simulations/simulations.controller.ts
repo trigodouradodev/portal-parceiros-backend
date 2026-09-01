@@ -1,9 +1,18 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiCreatedResponse,
   ApiForbiddenResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -52,5 +61,28 @@ export class SimulationsController {
     @Body() dto: CreateSimulationDto,
   ) {
     return this.simulationsService.createSimulation(user, dto);
+  }
+
+  @ApiOperation({
+    summary: 'Atualiza uma simulação persistida do parceiro autenticado.',
+  })
+  @ApiOkResponse({ type: SimulationSnapshot })
+  @ApiBadRequestResponse({
+    description: 'Payload ou regra de negócio inválida.',
+  })
+  @ApiForbiddenResponse({
+    description: 'Fila de cobrança impede simular proposta.',
+  })
+  @ApiNotFoundResponse({
+    description: 'Simulação não encontrada para o parceiro autenticado.',
+  })
+  @RequirePermissions(PermissionKey.QUOTE_CREATE)
+  @Patch(':id')
+  updateSimulation(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateSimulationDto,
+  ) {
+    return this.simulationsService.updateSimulation(user, id, dto);
   }
 }
