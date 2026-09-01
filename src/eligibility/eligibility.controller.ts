@@ -27,12 +27,12 @@ export class EligibilityController {
   })
   @ApiOkResponse({ type: EligibilityResult })
   @ApiBadRequestResponse({
-    description: 'Payload inválido (CPF, nome ou data de nascimento).',
+    description: 'Payload malformado, nome vazio ou data inválida.',
   })
   @RequirePermissions(PermissionKey.QUOTE_CREATE)
   @Post()
   @HttpCode(HttpStatus.OK)
-  check(@Body() dto: CheckEligibilityDto): EligibilityResult {
+  check(@Body() dto: CheckEligibilityDto): Promise<EligibilityResult> {
     return this.eligibilityService.check(dto);
   }
 }

@@ -8,17 +8,25 @@ partner portal. Its public HTTP contract is:
 - `GET /simulations`: lists simulations owned by the authenticated partner.
   Optional `name` (case-insensitive contains) and `document` (digits-only
   contains) query params combine with AND. Empty query lists all of the
-  partner's simulations, newest first.
+  partner's simulations, newest first. Each item exposes the derived status
+  `available` or `converted`.
 - `POST /simulations`: calculates and persists a simulation for the
   authenticated partner.
 - `PATCH /simulations/:id`: updates a simulation owned by the authenticated
-  partner, using the same payload and business rules as `POST`. Ownership is
-  enforced in the `UPDATE` (`id` + `user_id`); a miss returns 404.
+  partner only while it has not originated a quote, using the same payload and
+  business rules as `POST`. A missing/foreign simulation returns 404 and a
+  converted simulation returns 409.
 
 ## Boundary
 
 A simulation is not a quote. It is an input snapshot and calculation result
 that may later be used to start a quote.
+
+Simulation status is not persisted as a second source of truth. `available`
+means no quote references the simulation; `converted` means a quote has a
+`simulation_id` pointing to it. Quote creation and that unique link must be
+committed in the same transaction. Both the preliminary edit check and the
+conditional `UPDATE` enforce immutability after conversion.
 
 Each new simulation resolves the customer identity through `PartiesModule` and
 stores the resulting `party_id`. Name, CPF, birth date, e-mail and telephone

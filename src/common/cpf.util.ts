@@ -2,7 +2,8 @@ import { BadRequestException } from '@nestjs/common';
 
 /**
  * Validação de CPF pelos dígitos verificadores (rejeita sequências iguais).
- * Espelha a regra do front (`isValidCpf`) e do trigo-connector.
+ * Espelha a regra do front (`isValidCpf`). O fluxo novo do portal é mais
+ * restritivo que o legado do trigo-connector, que valida apenas a estrutura.
  */
 export function cpfDigits(value: string): string {
   return value.replace(/\D/g, '');

@@ -1426,6 +1426,7 @@ model quotes {
   credit_analyst_opinion                                      String?
   party_id                                                    String?                      @db.Uuid
   guarantor_party_id                                          String?                      @db.Uuid
+  simulation_id                                               String?                      @unique(map: "quotes_simulation_id_unique") @db.Uuid
   celcoin_integration_status                                  celcoin_integration_status[]
   contracts                                                   contracts[]
   contracts_ccbs                                              contracts_ccbs[]
@@ -1445,6 +1446,7 @@ model quotes {
   parties_quotes_guarantor_party_idToparties                  parties?                     @relation("quotes_guarantor_party_idToparties", fields: [guarantor_party_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "quotes_guarantor_party_id_foreign")
   parties_quotes_party_idToparties                            parties?                     @relation("quotes_party_idToparties", fields: [party_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "quotes_party_id_foreign")
   regions                                                     regions?                     @relation(fields: [region_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "quotes_regions_fk")
+  simulations                                                 simulations?                 @relation(fields: [simulation_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "quotes_simulation_id_foreign")
   vaas_api_calls                                              vaas_api_calls[]
 
   @@index([client_address], map: "idx_quotes_address_gin", type: Gin)
@@ -2185,6 +2187,7 @@ model simulations {
   finance_products       finance_products @relation(fields: [finance_product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "simulations_finance_product_id_foreign")
   parties                parties?         @relation(fields: [party_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "simulations_party_id_foreign")
   trigo_users            trigo_users      @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "simulations_user_id_foreign")
+  quotes                 quotes?
 
   @@index([document], map: "simulations_document_index")
   @@index([party_id], map: "simulations_party_id_index")

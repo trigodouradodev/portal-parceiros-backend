@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { normalizeCpf } from '../common/cpf.util';
 import { PrismaService } from '../prisma/prisma.service';
-import { PartyLookupResponse } from './interfaces/party-lookup-response.interface';
+import { PartyLookupData } from './interfaces/party-lookup-response.interface';
 
 interface PartyRow {
   id: string;
@@ -25,22 +25,17 @@ type PartyQueryClient = PrismaService | Prisma.TransactionClient;
 export class PartiesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async lookupByCpf(value: string): Promise<PartyLookupResponse> {
+  async findDataByCpf(value: string): Promise<PartyLookupData | null> {
     const document = normalizeCpf(value);
-    const party = await this.findByCpf(document, this.prisma);
+    const party = await this.findRecordByCpf(document, this.prisma);
 
-    if (!party) {
-      return { found: false, party: null };
-    }
+    if (!party) return null;
 
     return {
-      found: true,
-      party: {
-        name: party.name,
-        document,
-        email: party.email,
-        telephone: party.phone,
-      },
+      name: party.name,
+      document,
+      email: party.email,
+      telephone: party.phone,
     };
   }
 
@@ -57,7 +52,7 @@ export class PartiesService {
     tx: Prisma.TransactionClient,
   ): Promise<string> {
     const document = normalizeCpf(input.document);
-    const existing = await this.findByCpf(document, tx);
+    const existing = await this.findRecordByCpf(document, tx);
     if (existing) return existing.id;
 
     const [inserted] = await tx.$queryRaw<{ id: string }[]>`
@@ -81,7 +76,7 @@ export class PartiesService {
 
     if (inserted) return inserted.id;
 
-    const raceWinner = await this.findByCpf(document, tx);
+    const raceWinner = await this.findRecordByCpf(document, tx);
     if (!raceWinner) {
       throw new Error(
         'Falha ao resolver identidade: CPF em conflito, mas não encontrado.',
@@ -91,7 +86,7 @@ export class PartiesService {
     return raceWinner.id;
   }
 
-  private async findByCpf(
+  private async findRecordByCpf(
     document: string,
     client: PartyQueryClient,
   ): Promise<PartyRow | undefined> {

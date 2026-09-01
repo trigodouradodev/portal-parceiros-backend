@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { cpfDigits, isValidCpf } from '../common/cpf.util';
+import { PartiesService } from '../parties/parties.service';
 import { CheckEligibilityDto } from './dto/check-eligibility.dto';
 import { EligibilityResult } from './interfaces/eligibility-result.interface';
 
@@ -8,35 +9,46 @@ const MAX_AGE = 120;
 
 @Injectable()
 export class EligibilityService {
+  constructor(private readonly partiesService: PartiesService) {}
+
   /**
    * Consulta elegibilidade do cliente. Hoje: CPF com DV válido + idade
    * 18–120. O ponto de troca para a Receita Federal é o `eligible` abaixo —
    * o contrato HTTP não muda.
    */
-  check(dto: CheckEligibilityDto): EligibilityResult {
+  async check(dto: CheckEligibilityDto): Promise<EligibilityResult> {
     const name = dto.name.trim();
     if (name.length < 3) {
       throw new BadRequestException('Informe o nome.');
     }
 
     const document = cpfDigits(dto.document);
-    if (!isValidCpf(document)) {
-      throw new BadRequestException('CPF inválido.');
+    const birthDate = this.parseDateOnly(dto.birthDate);
+    const normalizedBirthDate = toSqlDate(birthDate);
+
+    if (!isValidCpf(document) || !this.hasEligibleAge(birthDate)) {
+      return {
+        eligible: false,
+        name,
+        document,
+        birthDate: normalizedBirthDate,
+        party: null,
+      };
     }
 
-    const birthDate = this.parseDateOnly(dto.birthDate);
-    this.assertAdultAge(birthDate);
+    const party = await this.partiesService.findDataByCpf(document);
 
     return {
       eligible: true,
       name,
       document,
-      birthDate: toSqlDate(birthDate),
+      birthDate: normalizedBirthDate,
+      party,
     };
   }
 
   private parseDateOnly(value: string): Date {
-    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
     if (!match) {
       throw new BadRequestException('Data de nascimento inválida.');
     }
@@ -54,11 +66,9 @@ export class EligibilityService {
     return date;
   }
 
-  private assertAdultAge(birthDate: Date): void {
+  private hasEligibleAge(birthDate: Date): boolean {
     const age = differenceInUtcYears(birthDate, utcToday());
-    if (age < MIN_AGE || age > MAX_AGE) {
-      throw new BadRequestException('O cliente deve ter entre 18 e 120 anos.');
-    }
+    return age >= MIN_AGE && age <= MAX_AGE;
   }
 }
 
