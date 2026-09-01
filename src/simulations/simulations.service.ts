@@ -9,6 +9,8 @@ import { Prisma } from '@prisma/client';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { normalizeCpf } from '../common/cpf.util';
+import { CelcoinSimulationService } from '../celcoin/celcoin-simulation.service';
+import { CelcoinSimulationResult } from '../celcoin/interfaces/celcoin-simulation.interface';
 import { PartiesService } from '../parties/parties.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSimulationDto } from './dto/create-simulation.dto';
@@ -67,6 +69,7 @@ interface PreparedSimulation {
   installments: number;
   interestRate: number;
   installmentAmount: number;
+  simulationResult: CelcoinSimulationResult;
 }
 
 @Injectable()
@@ -75,6 +78,7 @@ export class SimulationsService {
     private readonly prisma: PrismaService,
     private readonly quoteActivityPermissions: QuoteActivityPermissionsService,
     private readonly partiesService: PartiesService,
+    private readonly celcoinSimulation: CelcoinSimulationService,
   ) {}
 
   async listSimulations(
@@ -149,7 +153,8 @@ export class SimulationsService {
         interest_rate,
         installment_numbers,
         first_installment_date,
-        installment_amount
+        installment_amount,
+        simulation_result
       )
       VALUES (
         ${user.sub}::uuid,
@@ -164,7 +169,8 @@ export class SimulationsService {
         ${prepared.interestRate},
         ${prepared.installments},
         ${toSqlDate(prepared.firstInstallmentDate)}::date,
-        ${prepared.installmentAmount}
+        ${prepared.installmentAmount},
+        ${JSON.stringify(prepared.simulationResult)}::jsonb
       )
       RETURNING
         id,
@@ -233,7 +239,7 @@ export class SimulationsService {
           installment_numbers = ${prepared.installments},
           first_installment_date = ${toSqlDate(prepared.firstInstallmentDate)}::date,
           installment_amount = ${prepared.installmentAmount},
-          simulation_result = NULL,
+          simulation_result = ${JSON.stringify(prepared.simulationResult)}::jsonb,
           updated_at = NOW()
         WHERE s.id = ${id}::uuid
           AND s.user_id = ${user.sub}::uuid
@@ -319,6 +325,14 @@ export class SimulationsService {
       );
     }
 
+    const simulationResult =
+      await this.celcoinSimulation.simulateRequestedAmount({
+        requestedAmount: dto.amount,
+        interestRate,
+        installments: dto.installments,
+        firstPaymentDate: toSqlDate(firstInstallmentDate),
+      });
+
     return {
       name,
       document,
@@ -330,11 +344,8 @@ export class SimulationsService {
       amount: dto.amount,
       installments: dto.installments,
       interestRate,
-      installmentAmount: calcInstallment(
-        dto.amount,
-        dto.installments,
-        interestRate,
-      ),
+      installmentAmount: simulationResult.payment_amount,
+      simulationResult,
     };
   }
 
@@ -423,6 +434,7 @@ export class SimulationsService {
   private toSnapshot(row: SimulationRow): SimulationSnapshot {
     const createdAt = new Date(row.created_at);
     const firstInstallmentDate = new Date(row.first_installment_date);
+    const totalAmountOwed = extractTotalAmountOwed(row.simulation_result);
 
     return {
       id: row.id,
@@ -443,7 +455,7 @@ export class SimulationsService {
       installments: Number(row.installment_numbers),
       firstInstallmentDate: toSqlDate(firstInstallmentDate),
       installmentAmount: toNum(row.installment_amount),
-      simulationResult: row.simulation_result ?? undefined,
+      ...(totalAmountOwed === undefined ? {} : { totalAmountOwed }),
     };
   }
 
@@ -509,21 +521,12 @@ function toNum(value: Prisma.Decimal | number | string): number {
   return Number(value);
 }
 
-function round2(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-/** Price: `i` já é taxa mensal decimal (0.0339), como em finance_products. */
-export function calcInstallment(
-  amount: number,
-  installments: number,
-  monthlyRate: number,
-): number {
-  if (amount <= 0 || installments <= 0) return 0;
-  if (monthlyRate <= 0) return round2(amount / installments);
-  const installment =
-    (amount * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -installments));
-  return round2(installment);
+function extractTotalAmountOwed(value: unknown): number | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const total = (value as Record<string, unknown>).total_amount_owed;
+  return typeof total === 'number' && Number.isFinite(total)
+    ? total
+    : undefined;
 }
 
 function toSqlDate(date: Date): string {

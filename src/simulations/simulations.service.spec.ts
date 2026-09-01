@@ -3,21 +3,30 @@ import {
   ConflictException,
   ForbiddenException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
+import { CelcoinSimulationService } from '../celcoin/celcoin-simulation.service';
+import { CelcoinSimulationResult } from '../celcoin/interfaces/celcoin-simulation.interface';
 import { PartiesService } from '../parties/parties.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSimulationDto } from './dto/create-simulation.dto';
 import { SimulationStatus } from './enums/simulation-status.enum';
-import { calcInstallment, SimulationsService } from './simulations.service';
+import { SimulationsService } from './simulations.service';
 
 const USER_ID = '269b0843-0aa8-40ab-af66-8304909930a6';
 const OTHER_USER_ID = '369b0843-0aa8-40ab-af66-8304909930a6';
 const PRODUCT_ID = '11111111-1111-4111-8111-111111111111';
 const PARTY_ID = '22222222-2222-4222-8222-222222222222';
 const SIMULATION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const celcoinResult: CelcoinSimulationResult = {
+  payment_amount: 612.34,
+  total_amount_owed: 6123.4,
+  iof_amount: 123.45,
+  schedule: [],
+};
 
 const actor = {
   sub: USER_ID,
@@ -85,8 +94,8 @@ function simulationRow(overrides: Record<string, unknown> = {}) {
     interest_rate: 0.0339,
     installment_numbers: 10,
     first_installment_date: new Date(`${futureDueDate()}T00:00:00.000Z`),
-    installment_amount: 598.42,
-    simulation_result: null,
+    installment_amount: celcoinResult.payment_amount,
+    simulation_result: celcoinResult,
     created_at: new Date('2026-08-26T12:00:00.000Z'),
     status: SimulationStatus.AVAILABLE,
     ...overrides,
@@ -99,6 +108,7 @@ function buildService(options?: {
   inserted?: Record<string, unknown>;
   updated?: Record<string, unknown> | null;
   editableState?: 'available' | 'converted' | 'missing';
+  celcoinResult?: CelcoinSimulationResult;
 }) {
   const queryRaw = jest.fn((strings: TemplateStringsArray) => {
     const sql = strings.join(' ');
@@ -145,33 +155,32 @@ function buildService(options?: {
   const partiesService = {
     resolveForSimulation,
   } as unknown as PartiesService;
+  const simulateRequestedAmount = jest
+    .fn()
+    .mockResolvedValue(options?.celcoinResult ?? celcoinResult);
+  const celcoinSimulation = {
+    simulateRequestedAmount,
+  } as unknown as CelcoinSimulationService;
 
   return {
     service: new SimulationsService(
       prisma,
       quoteActivityPermissions,
       partiesService,
+      celcoinSimulation,
     ),
     queryRaw,
     quoteActivityPermissions,
     partiesService,
     resolveForSimulation,
+    simulateRequestedAmount,
   };
 }
 
-describe('calcInstallment', () => {
-  it('calcula Price com taxa decimal do produto', () => {
-    expect(calcInstallment(5000, 10, 0.0339)).toBe(597.88);
-  });
-
-  it('divide o principal quando a taxa é zero', () => {
-    expect(calcInstallment(5000, 10, 0)).toBe(500);
-  });
-});
-
 describe('SimulationsService.createSimulation', () => {
   it('persiste a simulação do parceiro e devolve o snapshot em inglês', async () => {
-    const { service, queryRaw, resolveForSimulation } = buildService();
+    const { service, queryRaw, resolveForSimulation, simulateRequestedAmount } =
+      buildService();
 
     const result = await service.createSimulation(actor, dto());
 
@@ -183,13 +192,23 @@ describe('SimulationsService.createSimulation', () => {
     expect(result.amount).toBe(5000);
     expect(result.installments).toBe(10);
     expect(result.firstInstallmentDate).toBe(futureDueDate());
-    expect(result.installmentAmount).toBe(598.42);
+    expect(result.installmentAmount).toBe(celcoinResult.payment_amount);
+    expect(result.totalAmountOwed).toBe(celcoinResult.total_amount_owed);
+    expect(result).not.toHaveProperty('simulationResult');
     expect(result.createdAt).toBe('2026-08-26T12:00:00.000Z');
     expect(result.status).toBe(SimulationStatus.AVAILABLE);
 
     const insertSql = queryRaw.mock.calls[1][0].join(' ');
     expect(insertSql).toContain('INSERT INTO public.simulations');
     expect(insertSql).toContain('party_id');
+    expect(insertSql).toContain('simulation_result');
+    expect(simulateRequestedAmount).toHaveBeenCalledWith({
+      requestedAmount: 5000,
+      interestRate: 0.0339,
+      installments: 10,
+      firstPaymentDate: futureDueDate(),
+    });
+    expect(queryRaw.mock.calls[1]).toContain(JSON.stringify(celcoinResult));
     expect(resolveForSimulation).toHaveBeenCalledWith(
       {
         name: 'Maria Souza',
@@ -217,6 +236,20 @@ describe('SimulationsService.createSimulation', () => {
     );
   });
 
+  it('não persiste pessoa ou simulação quando a Celcoin falha', async () => {
+    const { service, queryRaw, resolveForSimulation, simulateRequestedAmount } =
+      buildService();
+    simulateRequestedAmount.mockRejectedValueOnce(
+      new ServiceUnavailableException('Celcoin indisponível'),
+    );
+
+    await expect(service.createSimulation(actor, dto())).rejects.toThrow(
+      ServiceUnavailableException,
+    );
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(resolveForSimulation).not.toHaveBeenCalled();
+  });
+
   it('rejeita vencimento fora dos dias 5/10/15/20', async () => {
     const { service } = buildService();
     const today = new Date();
@@ -242,21 +275,28 @@ describe('SimulationsService.createSimulation', () => {
 });
 
 describe('SimulationsService.updateSimulation', () => {
-  it('recalcula a parcela e atualiza só a linha do parceiro autenticado', async () => {
+  it('usa a nova parcela Celcoin e atualiza só a linha do parceiro autenticado', async () => {
     const payload = dto({
       name: 'Maria Souza Silva',
       amount: 8000,
       installments: 12,
     });
-    const expectedInstallment = calcInstallment(8000, 12, 0.0339);
-    const { service, queryRaw, resolveForSimulation } = buildService({
-      updated: simulationRow({
-        client_name: 'Maria Souza Silva',
-        finance_amount: 8000,
-        installment_numbers: 12,
-        installment_amount: expectedInstallment,
-      }),
-    });
+    const updatedCelcoinResult: CelcoinSimulationResult = {
+      ...celcoinResult,
+      payment_amount: 801.23,
+      total_amount_owed: 9614.76,
+    };
+    const { service, queryRaw, resolveForSimulation, simulateRequestedAmount } =
+      buildService({
+        celcoinResult: updatedCelcoinResult,
+        updated: simulationRow({
+          client_name: 'Maria Souza Silva',
+          finance_amount: 8000,
+          installment_numbers: 12,
+          installment_amount: updatedCelcoinResult.payment_amount,
+          simulation_result: updatedCelcoinResult,
+        }),
+      });
 
     const result = await service.updateSimulation(
       actor,
@@ -268,7 +308,9 @@ describe('SimulationsService.updateSimulation', () => {
     expect(result.name).toBe('Maria Souza Silva');
     expect(result.amount).toBe(8000);
     expect(result.installments).toBe(12);
-    expect(result.installmentAmount).toBe(expectedInstallment);
+    expect(result.installmentAmount).toBe(updatedCelcoinResult.payment_amount);
+    expect(result.totalAmountOwed).toBe(updatedCelcoinResult.total_amount_owed);
+    expect(result).not.toHaveProperty('simulationResult');
     expect(result.createdAt).toBe('2026-08-26T12:00:00.000Z');
 
     const updateCall = queryRaw.mock.calls[2];
@@ -277,13 +319,20 @@ describe('SimulationsService.updateSimulation', () => {
     expect(updateSql).toContain('WHERE s.id =');
     expect(updateSql).toContain('AND s.user_id =');
     expect(updateSql).toContain('party_id =');
-    expect(updateSql).toContain('simulation_result = NULL');
+    expect(updateSql).toContain('simulation_result =');
     expect(updateSql).toContain('updated_at = NOW()');
     expect(updateSql).toContain('NOT EXISTS');
-    expect(updateCall).toContain(expectedInstallment);
+    expect(updateCall).toContain(updatedCelcoinResult.payment_amount);
+    expect(updateCall).toContain(JSON.stringify(updatedCelcoinResult));
     expect(updateCall).toContain(SIMULATION_ID);
     expect(updateCall).toContain(USER_ID);
     expect(updateCall).toContain(PARTY_ID);
+    expect(simulateRequestedAmount).toHaveBeenCalledWith({
+      requestedAmount: 8000,
+      interestRate: 0.0339,
+      installments: 12,
+      firstPaymentDate: futureDueDate(),
+    });
     expect(resolveForSimulation).toHaveBeenCalledWith(
       expect.objectContaining({ document: '52998224725' }),
       expect.anything(),
@@ -299,9 +348,10 @@ describe('SimulationsService.updateSimulation', () => {
   });
 
   it('bloqueia edição quando a simulação já originou uma quote', async () => {
-    const { service, queryRaw, resolveForSimulation } = buildService({
-      editableState: 'converted',
-    });
+    const { service, queryRaw, resolveForSimulation, simulateRequestedAmount } =
+      buildService({
+        editableState: 'converted',
+      });
 
     await expect(
       service.updateSimulation(actor, SIMULATION_ID, dto()),
@@ -309,6 +359,7 @@ describe('SimulationsService.updateSimulation', () => {
 
     expect(queryRaw).toHaveBeenCalledTimes(1);
     expect(resolveForSimulation).not.toHaveBeenCalled();
+    expect(simulateRequestedAmount).not.toHaveBeenCalled();
   });
 
   it('fecha a corrida se a quote for criada durante a atualização', async () => {
@@ -330,8 +381,8 @@ describe('SimulationsService.updateSimulation', () => {
 });
 
 describe('SimulationsService.listSimulations', () => {
-  function listService() {
-    const queryRaw = jest.fn().mockResolvedValue([]);
+  function listService(rows: Record<string, unknown>[] = []) {
+    const queryRaw = jest.fn().mockResolvedValue(rows);
     const prisma = { $queryRaw: queryRaw } as unknown as PrismaService;
     const quoteActivityPermissions = {
       getPermissions: jest.fn(),
@@ -339,11 +390,15 @@ describe('SimulationsService.listSimulations', () => {
     const partiesService = {
       resolveForSimulation: jest.fn(),
     } as unknown as PartiesService;
+    const celcoinSimulation = {
+      simulateRequestedAmount: jest.fn(),
+    } as unknown as CelcoinSimulationService;
     return {
       service: new SimulationsService(
         prisma,
         quoteActivityPermissions,
         partiesService,
+        celcoinSimulation,
       ),
       queryRaw,
     };
@@ -375,6 +430,20 @@ describe('SimulationsService.listSimulations', () => {
     expect(where.values).toContain(USER_ID);
     expect(where.strings.join(' ')).not.toContain('ILIKE');
     expect(where.strings.join(' ')).not.toContain('s.document LIKE');
+  });
+
+  it('não expõe o JSON cru e omite o total em simulação legada', async () => {
+    const { service } = listService([
+      simulationRow({
+        product_name: 'CRÉDITO PESSOAL',
+        simulation_result: null,
+      }),
+    ]);
+
+    const [result] = await service.listSimulations(USER_ID);
+
+    expect(result).not.toHaveProperty('simulationResult');
+    expect(result).not.toHaveProperty('totalAmountOwed');
   });
 
   it('filtra nome com contains case-insensitive', async () => {
