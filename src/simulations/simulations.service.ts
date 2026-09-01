@@ -6,6 +6,8 @@ import {
 import { Prisma } from '@prisma/client';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
+import { normalizeCpf } from '../common/cpf.util';
+import { PartiesService } from '../parties/parties.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSimulationDto } from './dto/create-simulation.dto';
 import { SimulationSnapshot } from './interfaces/simulation.interface';
@@ -48,6 +50,7 @@ export class SimulationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly quoteActivityPermissions: QuoteActivityPermissionsService,
+    private readonly partiesService: PartiesService,
   ) {}
 
   async listSimulations(userId: string): Promise<SimulationSnapshot[]> {
@@ -91,7 +94,7 @@ export class SimulationsService {
       );
     }
 
-    const document = this.normalizeCpf(dto.document);
+    const document = normalizeCpf(dto.document);
     const telephone = this.normalizePhone(dto.telephone);
     const birthDate = this.parseDateOnly(dto.birthDate, 'Data de nascimento');
     this.assertAdultAge(birthDate);
@@ -132,53 +135,69 @@ export class SimulationsService {
       interestRate,
     );
 
-    const [row] = await this.prisma.$queryRaw<
-      Omit<SimulationRow, 'product_name'>[]
-    >`
-      INSERT INTO public.simulations (
-        user_id,
-        finance_product_id,
-        client_name,
-        document,
-        birth_date,
-        email,
-        telephone,
-        finance_amount,
-        interest_rate,
-        installment_numbers,
-        first_installment_date,
-        installment_amount
-      )
-      VALUES (
-        ${user.sub}::uuid,
-        ${product.id}::uuid,
-        ${dto.name.trim()},
-        ${document},
-        ${toSqlDate(birthDate)}::date,
-        ${dto.email.trim().toLowerCase()},
-        ${telephone},
-        ${dto.amount},
-        ${interestRate},
-        ${dto.installments},
-        ${toSqlDate(firstInstallmentDate)}::date,
-        ${installmentAmount}
-      )
-      RETURNING
-        id,
-        finance_product_id,
-        client_name,
-        document,
-        birth_date,
-        email,
-        telephone,
-        finance_amount,
-        interest_rate,
-        installment_numbers,
-        first_installment_date,
-        installment_amount,
-        simulation_result,
-        created_at
-    `;
+    const row = await this.prisma.$transaction(async (tx) => {
+      const partyId = await this.partiesService.resolveForSimulation(
+        {
+          name: dto.name,
+          document,
+          email: dto.email,
+          telephone,
+        },
+        tx,
+      );
+
+      const [createdSimulation] = await tx.$queryRaw<
+        Omit<SimulationRow, 'product_name'>[]
+      >`
+        INSERT INTO public.simulations (
+          user_id,
+          party_id,
+          finance_product_id,
+          client_name,
+          document,
+          birth_date,
+          email,
+          telephone,
+          finance_amount,
+          interest_rate,
+          installment_numbers,
+          first_installment_date,
+          installment_amount
+        )
+        VALUES (
+          ${user.sub}::uuid,
+          ${partyId}::uuid,
+          ${product.id}::uuid,
+          ${dto.name.trim()},
+          ${document},
+          ${toSqlDate(birthDate)}::date,
+          ${dto.email.trim().toLowerCase()},
+          ${telephone},
+          ${dto.amount},
+          ${interestRate},
+          ${dto.installments},
+          ${toSqlDate(firstInstallmentDate)}::date,
+          ${installmentAmount}
+        )
+        RETURNING
+          id,
+          finance_product_id,
+          client_name,
+          document,
+          birth_date,
+          email,
+          telephone,
+          finance_amount,
+          interest_rate,
+          installment_numbers,
+          first_installment_date,
+          installment_amount,
+          simulation_result,
+          created_at
+      `;
+
+      return createdSimulation;
+    });
 
     if (!row) {
       throw new BadRequestException('Não foi possível persistir a simulação.');
@@ -233,14 +252,6 @@ export class SimulationsService {
       installmentAmount: toNum(row.installment_amount),
       simulationResult: row.simulation_result ?? undefined,
     };
-  }
-
-  private normalizeCpf(value: string): string {
-    const digits = value.replace(/\D/g, '');
-    if (digits.length !== 11 || /^(\d)\1{10}$/.test(digits)) {
-      throw new BadRequestException('CPF inválido.');
-    }
-    return digits;
   }
 
   private normalizePhone(value: string): string {

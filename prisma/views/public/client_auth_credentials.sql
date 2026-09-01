@@ -1,0 +1,12 @@
+SELECT
+  id,
+  client_id,
+  password_hash,
+  enabled,
+  login_attempts_count,
+  login_attempts_first_at,
+  blocked_until,
+  created_at,
+  updated_at
+FROM
+  app_auth_credentials;

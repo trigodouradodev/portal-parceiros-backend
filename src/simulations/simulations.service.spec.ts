@@ -1,12 +1,14 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
+import { PartiesService } from '../parties/parties.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSimulationDto } from './dto/create-simulation.dto';
 import { calcInstallment, SimulationsService } from './simulations.service';
 
 const USER_ID = '269b0843-0aa8-40ab-af66-8304909930a6';
 const PRODUCT_ID = '11111111-1111-4111-8111-111111111111';
+const PARTY_ID = '22222222-2222-4222-8222-222222222222';
 
 const actor = {
   sub: USER_ID,
@@ -92,18 +94,33 @@ function buildService(options?: {
     return [];
   });
 
-  const prisma = { $queryRaw: queryRaw } as unknown as PrismaService;
+  const prisma = {
+    $queryRaw: queryRaw,
+    $transaction: jest.fn((callback: (tx: PrismaService) => Promise<unknown>) =>
+      callback(prisma),
+    ),
+  } as unknown as PrismaService;
   const quoteActivityPermissions = {
     getPermissions: jest.fn().mockResolvedValue({
       canSimulateQuote: options?.canSimulateQuote ?? true,
       canCreateQuote: true,
     }),
   } as unknown as QuoteActivityPermissionsService;
+  const resolveForSimulation = jest.fn().mockResolvedValue(PARTY_ID);
+  const partiesService = {
+    resolveForSimulation,
+  } as unknown as PartiesService;
 
   return {
-    service: new SimulationsService(prisma, quoteActivityPermissions),
+    service: new SimulationsService(
+      prisma,
+      quoteActivityPermissions,
+      partiesService,
+    ),
     queryRaw,
     quoteActivityPermissions,
+    partiesService,
+    resolveForSimulation,
   };
 }
 
@@ -119,7 +136,7 @@ describe('calcInstallment', () => {
 
 describe('SimulationsService.createSimulation', () => {
   it('persiste a simulação do parceiro e devolve o snapshot em inglês', async () => {
-    const { service, queryRaw } = buildService();
+    const { service, queryRaw, resolveForSimulation } = buildService();
 
     const result = await service.createSimulation(actor, dto());
 
@@ -136,6 +153,16 @@ describe('SimulationsService.createSimulation', () => {
 
     const insertSql = queryRaw.mock.calls[1][0].join(' ');
     expect(insertSql).toContain('INSERT INTO public.simulations');
+    expect(insertSql).toContain('party_id');
+    expect(resolveForSimulation).toHaveBeenCalledWith(
+      {
+        name: 'Maria Souza',
+        document: '52998224725',
+        email: 'maria@email.com',
+        telephone: '11987654321',
+      },
+      expect.anything(),
+    );
   });
 
   it('bloqueia quando a fila de cobrança impede simular', async () => {
@@ -185,7 +212,14 @@ describe('SimulationsService.listSimulations', () => {
     const quoteActivityPermissions = {
       getPermissions: jest.fn(),
     } as unknown as QuoteActivityPermissionsService;
-    const service = new SimulationsService(prisma, quoteActivityPermissions);
+    const partiesService = {
+      resolveForSimulation: jest.fn(),
+    } as unknown as PartiesService;
+    const service = new SimulationsService(
+      prisma,
+      quoteActivityPermissions,
+      partiesService,
+    );
 
     await service.listSimulations(USER_ID);
 
