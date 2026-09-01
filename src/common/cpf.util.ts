@@ -1,8 +1,9 @@
+import { BadRequestException } from '@nestjs/common';
+
 /**
  * Validação de CPF pelos dígitos verificadores (rejeita sequências iguais).
  * Espelha a regra do front (`isValidCpf`) e do trigo-connector.
  */
-
 export function cpfDigits(value: string): string {
   return value.replace(/\D/g, '');
 }
@@ -24,4 +25,13 @@ export function isValidCpf(value: string): boolean {
   const d1 = calcDigit(digits.slice(0, 9), 10);
   const d2 = calcDigit(digits.slice(0, 10), 11);
   return d1 === Number(digits[9]) && d2 === Number(digits[10]);
+}
+
+/** Normaliza e valida CPF para a representação canônica usada em `parties`. */
+export function normalizeCpf(value: string): string {
+  if (!isValidCpf(value)) {
+    throw new BadRequestException('CPF inválido.');
+  }
+
+  return cpfDigits(value);
 }

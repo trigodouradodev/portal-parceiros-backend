@@ -7,8 +7,11 @@ import {
 import { Prisma } from '@prisma/client';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
+import { normalizeCpf } from '../common/cpf.util';
+import { PartiesService } from '../parties/parties.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSimulationDto } from './dto/create-simulation.dto';
+import { ListSimulationsQueryDto } from './dto/list-simulations-query.dto';
 import { SimulationSnapshot } from './interfaces/simulation.interface';
 
 const ALLOWED_DUE_DAYS = [5, 10, 15, 20];
@@ -63,9 +66,14 @@ export class SimulationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly quoteActivityPermissions: QuoteActivityPermissionsService,
+    private readonly partiesService: PartiesService,
   ) {}
 
-  async listSimulations(userId: string): Promise<SimulationSnapshot[]> {
+  async listSimulations(
+    userId: string,
+    query: ListSimulationsQueryDto = {},
+  ): Promise<SimulationSnapshot[]> {
+    const whereClause = this.buildListWhereClause(userId, query);
     const rows = await this.prisma.$queryRaw<SimulationRow[]>`
       SELECT
         s.id,
@@ -85,7 +93,7 @@ export class SimulationsService {
         s.created_at
       FROM public.simulations s
       JOIN public.finance_products fp ON fp.id = s.finance_product_id
-      WHERE s.user_id = ${userId}::uuid
+      WHERE ${whereClause}
       ORDER BY s.created_at DESC, s.id DESC
     `;
 
@@ -97,11 +105,23 @@ export class SimulationsService {
     dto: CreateSimulationDto,
   ): Promise<SimulationSnapshot> {
     const prepared = await this.prepareSimulation(user, dto);
-    const [row] = await this.prisma.$queryRaw<
-      Omit<SimulationRow, 'product_name'>[]
-    >`
+    const row = await this.prisma.$transaction(async (tx) => {
+      const partyId = await this.partiesService.resolveForSimulation(
+        {
+          name: dto.name,
+          document: prepared.document,
+          email: dto.email,
+          telephone: prepared.telephone,
+        },
+        tx,
+      );
+
+      const [createdSimulation] = await tx.$queryRaw<
+        Omit<SimulationRow, 'product_name'>[]
+      >`
       INSERT INTO public.simulations (
         user_id,
+        party_id,
         finance_product_id,
         client_name,
         document,
@@ -116,6 +136,7 @@ export class SimulationsService {
       )
       VALUES (
         ${user.sub}::uuid,
+        ${partyId}::uuid,
         ${prepared.product.id}::uuid,
         ${prepared.name},
         ${prepared.document},
@@ -143,7 +164,10 @@ export class SimulationsService {
         installment_amount,
         simulation_result,
         created_at
-    `;
+      `;
+
+      return createdSimulation;
+    });
 
     if (!row) {
       throw new BadRequestException('Não foi possível persistir a simulação.');
@@ -220,7 +244,7 @@ export class SimulationsService {
       );
     }
 
-    const document = this.normalizeCpf(dto.document);
+    const document = normalizeCpf(dto.document);
     const telephone = this.normalizePhone(dto.telephone);
     const birthDate = this.parseDateOnly(dto.birthDate, 'Data de nascimento');
     this.assertAdultAge(birthDate);
@@ -274,6 +298,25 @@ export class SimulationsService {
     };
   }
 
+  private buildListWhereClause(
+    userId: string,
+    query: ListSimulationsQueryDto,
+  ): Prisma.Sql {
+    const conditions: Prisma.Sql[] = [Prisma.sql`s.user_id = ${userId}::uuid`];
+
+    const name = query.name?.trim();
+    if (name) {
+      conditions.push(Prisma.sql`s.client_name ILIKE ${`%${name}%`}`);
+    }
+
+    const document = query.document?.replace(/\D/g, '') ?? '';
+    if (document) {
+      conditions.push(Prisma.sql`s.document LIKE ${`%${document}%`}`);
+    }
+
+    return Prisma.join(conditions, ' AND ');
+  }
+
   private async findLinkedProduct(
     userId: string,
     productId: string,
@@ -317,14 +360,6 @@ export class SimulationsService {
       installmentAmount: toNum(row.installment_amount),
       simulationResult: row.simulation_result ?? undefined,
     };
-  }
-
-  private normalizeCpf(value: string): string {
-    const digits = value.replace(/\D/g, '');
-    if (digits.length !== 11 || /^(\d)\1{10}$/.test(digits)) {
-      throw new BadRequestException('CPF inválido.');
-    }
-    return digits;
   }
 
   private normalizePhone(value: string): string {

@@ -107,7 +107,7 @@ model addresses {
   is_primary   Boolean? @default(false)
   created_at   DateTime @default(now()) @db.Timestamptz(6)
   updated_at   DateTime @default(now()) @db.Timestamptz(6)
-  clients      clients? @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "addresses_client_id_foreign")
+  clients      parties? @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "addresses_client_id_foreign")
 
   @@index([client_id], map: "addresses_client_id_index")
   @@schema("public")
@@ -126,7 +126,7 @@ model bank_accounts {
   is_primary     Boolean? @default(false)
   created_at     DateTime @default(now()) @db.Timestamptz(6)
   updated_at     DateTime @default(now()) @db.Timestamptz(6)
-  clients        clients? @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "bank_accounts_client_id_foreign")
+  clients        parties? @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "bank_accounts_client_id_foreign")
 
   @@index([client_id], map: "bank_accounts_client_id_index")
   @@schema("public")
@@ -243,31 +243,6 @@ model celcoin_temp_webhooks {
   @@schema("public")
 }
 
-model client_auth_blacklist {
-  cpf        String   @id
-  reason     String?
-  created_at DateTime @default(now()) @db.Timestamptz(6)
-
-  @@schema("public")
-}
-
-model client_auth_credentials {
-  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  client_id               String    @unique @db.Uuid
-  password_hash           String?
-  enabled                 Boolean   @default(true)
-  login_attempts_count    Int       @default(0)
-  login_attempts_first_at DateTime? @db.Timestamptz(6)
-  blocked_until           DateTime? @db.Timestamptz(6)
-  created_at              DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at              DateTime  @default(now()) @db.Timestamptz(6)
-  clients                 clients   @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@index([blocked_until], map: "idx_client_auth_credentials_blocked_until")
-  @@index([client_id], map: "idx_client_auth_credentials_client_id")
-  @@schema("public")
-}
-
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model client_files {
   id           String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
@@ -285,60 +260,27 @@ model client_files {
   file_storage String?  @default("gdrive") @db.VarChar
   s3_key       String?  @db.VarChar
   s3_bucket    String?  @db.VarChar
-  clients      clients  @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "client_files_client_id_foreign")
+  clients      parties  @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "client_files_client_id_foreign")
 
   @@index([client_id, file_type], map: "client_files_client_id_file_type_index")
   @@index([file_id], map: "client_files_file_id_index")
   @@schema("public")
 }
 
-model client_login_attempts {
-  cpf              String   @id
-  count            Int
-  first_attempt_at DateTime @db.Timestamptz(6)
-  updated_at       DateTime @default(now()) @db.Timestamptz(6)
-
-  @@schema("public")
-}
-
-model client_otp_tokens {
-  token      String   @id @db.Uuid
-  client_id  String   @db.Uuid
-  cpf        String
-  created_at DateTime @default(now()) @db.Timestamptz(6)
-  expires_at DateTime @db.Timestamptz(6)
-  clients    clients  @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@index([client_id], map: "idx_client_otp_tokens_client_id")
-  @@index([expires_at], map: "idx_client_otp_tokens_expires_at")
-  @@schema("public")
-}
-
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model clients {
-  id                         String                       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  name                       String                       @db.VarChar(255)
-  tax_id                     String                       @unique(map: "clients_tax_id_unique") @db.VarChar(255)
-  email                      String?                      @db.VarChar(255)
-  phone                      String?                      @db.VarChar(255)
-  created_at                 DateTime                     @default(now()) @db.Timestamptz(6)
-  updated_at                 DateTime                     @default(now()) @db.Timestamptz(6)
-  contact_preference         String?                      @db.VarChar(255)
-  otp_secret                 String?                      @db.VarChar
-  email_checked              Boolean                      @default(false)
-  addresses                  addresses[]
-  bank_accounts              bank_accounts[]
-  client_auth_credentials    client_auth_credentials?
-  client_files               client_files[]
-  client_otp_tokens          client_otp_tokens[]
-  contracts                  contracts[]
-  contracts_ccbs             contracts_ccbs[]
-  credit_requests            credit_requests[]
-  customer_notifications     customer_notifications[]
-  documents                  documents[]
-  financial_info             financial_info[]
-  loan_quotes                loan_quotes[]
-  whatsapp_messages_received whatsapp_messages_received[]
-  whatsapp_messages_sent     whatsapp_messages_sent[]
+  id                 String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name               String            @db.VarChar(255)
+  tax_id             String            @unique(map: "clients_tax_id_unique") @db.VarChar(255)
+  email              String?           @db.VarChar(255)
+  phone              String?           @db.VarChar(255)
+  created_at         DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime          @default(now()) @db.Timestamptz(6)
+  contact_preference String?           @db.VarChar(255)
+  otp_secret         String?           @db.VarChar
+  email_checked      Boolean           @default(false)
+  tax_id_type        String?           @db.VarChar(255)
+  credit_requests    credit_requests[]
 
   @@index([tax_id], map: "clients_tax_id_index")
   @@schema("public")
@@ -589,21 +531,24 @@ model contracts {
   financial_status                                               String?                            @default("settled") @db.VarChar(20)
   disable_messaging                                              Boolean?                           @default(false)
   cobransaas_contract_number                                     String?                            @db.VarChar(50)
+  guarantor_party_id                                             String?                            @db.Uuid
   activity_interactions                                          activity_interactions[]
   activity_tasks                                                 activity_tasks[]
   celcoin_cobransaas_contract                                    celcoin_cobransaas_contract[]      @ignore
   collaterals                                                    collaterals[]
   contract_amortization                                          contract_amortization[]
   contract_cobransaas_agreements                                 contract_cobransaas_agreements[]
+  contract_credits                                               contract_credits[]
   contract_events                                                contract_events[]
   contract_letter_history                                        contract_letter_history[]
   contract_status_history                                        contract_status_history[]
   contract_surveys                                               contract_surveys[]
-  clients                                                        clients                            @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "contracts_client_id_foreign")
+  clients                                                        parties                            @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "contracts_client_id_foreign")
   companies                                                      companies?                         @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "contracts_company_id_foreign")
   trigo_users_contracts_consultant_idTotrigo_users               trigo_users?                       @relation("contracts_consultant_idTotrigo_users", fields: [consultant_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "contracts_consultant_id_foreign")
   trigo_users_contracts_current_collection_agent_idTotrigo_users trigo_users?                       @relation("contracts_current_collection_agent_idTotrigo_users", fields: [current_collection_agent_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "contracts_current_collection_agent_id_foreign")
   form_responses                                                 form_responses?                    @relation(fields: [form_response_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "contracts_form_response_id_foreign")
+  parties_contracts_guarantor_party_idToparties                  parties?                           @relation("contracts_guarantor_party_idToparties", fields: [guarantor_party_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "contracts_guarantor_party_id_foreign")
   loans                                                          loans                              @relation(fields: [loan_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "contracts_loan_id_foreign")
   loan_terms                                                     loan_terms                         @relation(fields: [loan_terms_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "contracts_loan_terms_id_foreign")
   quotes                                                         quotes?                            @relation(fields: [quote_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "contracts_quote_id_fk")
@@ -625,6 +570,7 @@ model contracts {
   @@index([consultant_id], map: "contracts_consultant_id_index")
   @@index([current_collection_agent_id], map: "contracts_current_collection_agent_id_index")
   @@index([status], map: "contracts_status_index")
+  @@index([guarantor_party_id], map: "contracts_guarantor_party_id_index")
   @@schema("public")
 }
 
@@ -659,7 +605,7 @@ model contracts_ccbs {
   collection_agent_changed_at                                         DateTime?    @db.Timestamptz(6)
   created_at                                                          DateTime     @default(now()) @db.Timestamptz(6)
   updated_at                                                          DateTime     @default(now()) @db.Timestamptz(6)
-  clients                                                             clients      @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "contracts_ccbs_client_id_foreign")
+  clients                                                             parties      @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "contracts_ccbs_client_id_foreign")
   companies                                                           companies?   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "contracts_ccbs_company_id_foreign")
   trigo_users_contracts_ccbs_consultant_idTotrigo_users               trigo_users? @relation("contracts_ccbs_consultant_idTotrigo_users", fields: [consultant_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "contracts_ccbs_consultant_id_foreign")
   trigo_users_contracts_ccbs_current_collection_agent_idTotrigo_users trigo_users? @relation("contracts_ccbs_current_collection_agent_idTotrigo_users", fields: [current_collection_agent_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "contracts_ccbs_current_collection_agent_id_foreign")
@@ -723,7 +669,7 @@ model customer_notifications {
   error_message  String?
   created_at     DateTime?           @default(now()) @db.Timestamptz(6)
   updated_at     DateTime?           @default(now()) @db.Timestamptz(6)
-  clients        clients?            @relation(fields: [client_id], references: [id], onUpdate: NoAction, map: "customer_notifications_client_id_foreign")
+  clients        parties?            @relation(fields: [client_id], references: [id], onUpdate: NoAction, map: "customer_notifications_client_id_foreign")
   trigo_users    trigo_users?        @relation(fields: [consultant_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "customer_notifications_consultant_id_foreign")
 
   @@index([client_id], map: "customer_notifications_client_id_index")
@@ -740,7 +686,7 @@ model documents {
   document_number String   @db.VarChar(255)
   created_at      DateTime @default(now()) @db.Timestamptz(6)
   updated_at      DateTime @default(now()) @db.Timestamptz(6)
-  clients         clients? @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "documents_client_id_foreign")
+  clients         parties? @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "documents_client_id_foreign")
 
   @@index([client_id], map: "documents_client_id_index")
   @@index([document_type], map: "documents_document_type_index")
@@ -785,6 +731,7 @@ model finance_products {
   updated_by                  String?                       @db.Uuid
   consultant_finance_products consultant_finance_products[]
   quotes                      quotes[]
+  simulations                 simulations[]
 
   @@index([product_name], map: "idx_finance_products_product_name")
   @@schema("public")
@@ -804,7 +751,7 @@ model financial_info {
   activity_income   Decimal? @db.Decimal(15, 2)
   loans             Json?
   debts             Json?
-  clients           clients? @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "financial_info_client_id_foreign")
+  clients           parties? @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "financial_info_client_id_foreign")
 
   @@index([client_id], map: "financial_info_client_id_index")
   @@schema("public")
@@ -1049,6 +996,7 @@ model installments {
   renegotiations                                                            renegotiations?              @relation(fields: [renegotiation_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "installments_renegotiation_id_foreign")
   manual_payment_allocations                                                manual_payment_allocations[]
   payment_allocations                                                       payment_allocations[]
+  renegotiations_renegotiations_down_payment_installment_idToinstallments   renegotiations[]             @relation("renegotiations_down_payment_installment_idToinstallments")
   whatsapp_messages_sent                                                    whatsapp_messages_sent[]
 
   @@index([cobransaas_agreement_id], map: "idx_installments_cobransaas_agreement_id")
@@ -1144,7 +1092,7 @@ model loan_quotes {
   created_at       DateTime?      @default(now()) @db.Timestamptz(6)
   updated_at       DateTime?      @default(now()) @db.Timestamptz(6)
   consultant_id    String?        @db.Uuid
-  clients          clients        @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "loan_quotes_client_id_foreign")
+  clients          parties        @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "loan_quotes_client_id_foreign")
   trigo_users      trigo_users?   @relation(fields: [consultant_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "loan_quotes_consultant_id_foreign")
   contracts        contracts?     @relation(fields: [contract_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "loan_quotes_contract_id_foreign")
   form_responses   form_responses @relation(fields: [form_response_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "loan_quotes_form_response_id_foreign")
@@ -1476,6 +1424,8 @@ model quotes {
   serasa_kyc_response_message                                 String?                      @db.VarChar(255)
   manager_opinion                                             String?
   credit_analyst_opinion                                      String?
+  party_id                                                    String?                      @db.Uuid
+  guarantor_party_id                                          String?                      @db.Uuid
   celcoin_integration_status                                  celcoin_integration_status[]
   contracts                                                   contracts[]
   contracts_ccbs                                              contracts_ccbs[]
@@ -1492,6 +1442,8 @@ model quotes {
   trigo_users_quotes_current_collection_agent_idTotrigo_users trigo_users?                 @relation("quotes_current_collection_agent_idTotrigo_users", fields: [current_collection_agent_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "quotes_current_collection_agent_id_foreign")
   trigo_users_quotes_current_sales_agent_idTotrigo_users      trigo_users                  @relation("quotes_current_sales_agent_idTotrigo_users", fields: [current_sales_agent_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "quotes_current_sales_agent_id_foreign")
   finance_products                                            finance_products             @relation(fields: [finance_product_id], references: [id], onDelete: SetNull)
+  parties_quotes_guarantor_party_idToparties                  parties?                     @relation("quotes_guarantor_party_idToparties", fields: [guarantor_party_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "quotes_guarantor_party_id_foreign")
+  parties_quotes_party_idToparties                            parties?                     @relation("quotes_party_idToparties", fields: [party_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "quotes_party_id_foreign")
   regions                                                     regions?                     @relation(fields: [region_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "quotes_regions_fk")
   vaas_api_calls                                              vaas_api_calls[]
 
@@ -1503,6 +1455,8 @@ model quotes {
   @@index([guarantor], map: "idx_quotes_guarantor_gin", type: Gin)
   @@index([referral], map: "idx_quotes_referral_gin", type: Gin)
   @@index([quote_status], map: "idx_quotes_status")
+  @@index([guarantor_party_id], map: "quotes_guarantor_party_id_index")
+  @@index([party_id], map: "quotes_party_id_index")
   @@schema("public")
 }
 
@@ -1599,33 +1553,37 @@ model renegotiation_status_history {
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model renegotiations {
-  id                           String                         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  contract_id                  String                         @db.Uuid
-  brx_schedule_request_id      String?                        @db.Uuid
-  original_amount              Decimal                        @db.Decimal(15, 2)
-  renegotiated_amount          Decimal                        @db.Decimal(15, 2)
-  fee_amount                   Decimal?                       @default(0) @db.Decimal(15, 2)
-  original_installments        Int
-  new_installments             Int
-  original_interest_rate       Decimal                        @db.Decimal(5, 2)
-  new_interest_rate            Decimal                        @db.Decimal(5, 2)
-  renegotiation_date           DateTime                       @db.Date
-  status                       String?                        @default("pending")
-  reason                       String                         @db.VarChar(255)
-  approved_by                  String?                        @db.Uuid
-  approved_at                  DateTime?                      @db.Timestamptz(6)
-  original_installments_data   Json
-  new_installments_plan        Json
-  created_at                   DateTime                       @default(now()) @db.Timestamptz(6)
-  updated_at                   DateTime                       @default(now()) @db.Timestamptz(6)
-  cobransaas_agreement_id      String?                        @db.VarChar
-  type                         String?
-  down_payment_amount          Decimal?                       @db.Decimal(15, 2)
-  down_payment_date            DateTime?                      @db.Date
-  installments                 installments[]
-  renegotiation_status_history renegotiation_status_history[]
-  trigo_users                  trigo_users?                   @relation(fields: [approved_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "renegotiations_approved_by_foreign")
-  contracts                    contracts                      @relation(fields: [contract_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "renegotiations_contract_id_foreign")
+  id                                                                            String                         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  contract_id                                                                   String                         @db.Uuid
+  brx_schedule_request_id                                                       String?                        @db.Uuid
+  original_amount                                                               Decimal                        @db.Decimal(15, 2)
+  renegotiated_amount                                                           Decimal                        @db.Decimal(15, 2)
+  fee_amount                                                                    Decimal?                       @default(0) @db.Decimal(15, 2)
+  original_installments                                                         Int
+  new_installments                                                              Int
+  original_interest_rate                                                        Decimal                        @db.Decimal(5, 2)
+  new_interest_rate                                                             Decimal                        @db.Decimal(5, 2)
+  renegotiation_date                                                            DateTime                       @db.Date
+  status                                                                        String?                        @default("pending")
+  reason                                                                        String                         @db.VarChar(255)
+  approved_by                                                                   String?                        @db.Uuid
+  approved_at                                                                   DateTime?                      @db.Timestamptz(6)
+  original_installments_data                                                    Json
+  new_installments_plan                                                         Json
+  created_at                                                                    DateTime                       @default(now()) @db.Timestamptz(6)
+  updated_at                                                                    DateTime                       @default(now()) @db.Timestamptz(6)
+  cobransaas_agreement_id                                                       String?                        @db.VarChar
+  type                                                                          String?
+  down_payment_amount                                                           Decimal?                       @db.Decimal(15, 2)
+  down_payment_date                                                             DateTime?                      @db.Date
+  down_payment_installment_id                                                   String?                        @db.Uuid
+  contract_credits_contract_credits_applied_to_renegotiation_idTorenegotiations contract_credits[]             @relation("contract_credits_applied_to_renegotiation_idTorenegotiations")
+  contract_credits_contract_credits_source_renegotiation_idTorenegotiations     contract_credits[]             @relation("contract_credits_source_renegotiation_idTorenegotiations")
+  installments                                                                  installments[]
+  renegotiation_status_history                                                  renegotiation_status_history[]
+  trigo_users                                                                   trigo_users?                   @relation(fields: [approved_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "renegotiations_approved_by_foreign")
+  contracts                                                                     contracts                      @relation(fields: [contract_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "renegotiations_contract_id_foreign")
+  installments_renegotiations_down_payment_installment_idToinstallments         installments?                  @relation("renegotiations_down_payment_installment_idToinstallments", fields: [down_payment_installment_id], references: [id], onUpdate: NoAction, map: "renegotiations_down_payment_installment_id_foreign")
 
   @@schema("public")
 }
@@ -1855,6 +1813,7 @@ model trigo_users {
   renegotiation_simulations_renegotiation_simulations_proposed_byTotrigo_users   renegotiation_simulations[]    @relation("renegotiation_simulations_proposed_byTotrigo_users")
   renegotiation_status_history                                                   renegotiation_status_history[]
   renegotiations                                                                 renegotiations[]
+  simulations                                                                    simulations[]
   system_configs                                                                 system_configs[]
   trigo_group_members                                                            trigo_group_members[]
   trigo_users                                                                    trigo_users?                   @relation("trigo_usersTotrigo_users", fields: [manager_id], references: [id], onUpdate: NoAction, map: "fk_trigo_users_manager")
@@ -1978,7 +1937,7 @@ model whatsapp_messages_received {
   attachment_s3_key                      String?                                  @db.VarChar
   attachment_size_mb                     Decimal?                                 @db.Decimal
   attachment_content_type                String?                                  @db.VarChar
-  clients                                clients?                                 @relation(fields: [client_id], references: [id], onUpdate: SetNull, map: "whatsapp_messages_received_clients_fk")
+  clients                                parties?                                 @relation(fields: [client_id], references: [id], onUpdate: SetNull, map: "whatsapp_messages_received_clients_fk")
   contracts                              contracts?                               @relation(fields: [contract_id], references: [id], onUpdate: SetNull, map: "whatsapp_messages_received_contracts_fk")
   whatsapp_messages_received_attachments whatsapp_messages_received_attachments[]
 
@@ -2017,41 +1976,12 @@ model whatsapp_messages_sent {
   created_at     DateTime      @default(now()) @db.Timestamptz(6)
   updated_at     DateTime      @default(now()) @db.Timestamptz(6)
   sent_by        String?       @db.Uuid
+  clients        parties?      @relation(fields: [client_id], references: [id], onUpdate: SetNull, map: "whatsapp_sent_messages_clients_fk")
   trigo_users    trigo_users?  @relation(fields: [sent_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "whatsapp_messages_sent_sent_by_foreign")
-  clients        clients?      @relation(fields: [client_id], references: [id], onUpdate: SetNull, map: "whatsapp_sent_messages_clients_fk")
   contracts      contracts?    @relation(fields: [contract_id], references: [id], onUpdate: SetNull, map: "whatsapp_sent_messages_contracts_fk")
   installments   installments? @relation(fields: [installment_id], references: [id], onUpdate: SetNull, map: "whatsapp_sent_messages_installments_fk")
 
   @@index([sid], map: "whatsapp_sent_messages_sid_idx")
-  @@schema("public")
-}
-
-model client_auth_method_events {
-  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  cpf        String
-  method     String
-  created_at DateTime @default(now()) @db.Timestamptz(6)
-
-  @@index([cpf], map: "idx_client_auth_method_events_cpf")
-  @@index([created_at], map: "idx_client_auth_method_events_created_at")
-  @@schema("public")
-}
-
-model client_identity_hints_ip_attempts {
-  ip                String   @id
-  count             Int
-  window_started_at DateTime @db.Timestamptz(6)
-  updated_at        DateTime @default(now()) @db.Timestamptz(6)
-
-  @@schema("public")
-}
-
-model client_identity_verification_attempts {
-  cpf              String   @id
-  count            Int
-  first_attempt_at DateTime @db.Timestamptz(6)
-  updated_at       DateTime @default(now()) @db.Timestamptz(6)
-
   @@schema("public")
 }
 
@@ -2082,6 +2012,183 @@ model quote_events {
 
   @@index([quote_id, event_type], map: "quote_events_quote_id_event_type_index")
   @@index([quote_id], map: "quote_events_quote_id_index")
+  @@schema("public")
+}
+
+model app_auth_blacklist {
+  cpf        String   @id(map: "client_auth_blacklist_pkey")
+  reason     String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("public")
+}
+
+model app_auth_credentials {
+  id                      String    @id(map: "client_auth_credentials_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  client_id               String    @unique(map: "client_auth_credentials_client_id_key") @db.Uuid
+  password_hash           String?
+  enabled                 Boolean   @default(true)
+  login_attempts_count    Int       @default(0)
+  login_attempts_first_at DateTime? @db.Timestamptz(6)
+  blocked_until           DateTime? @db.Timestamptz(6)
+  created_at              DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime  @default(now()) @db.Timestamptz(6)
+  parties                 parties   @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "client_auth_credentials_client_id_foreign")
+
+  @@index([blocked_until], map: "idx_client_auth_credentials_blocked_until")
+  @@index([client_id], map: "idx_client_auth_credentials_client_id")
+  @@schema("public")
+}
+
+model app_auth_method_events {
+  id         String   @id(map: "client_auth_method_events_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cpf        String
+  method     String
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([cpf], map: "idx_client_auth_method_events_cpf")
+  @@index([created_at], map: "idx_client_auth_method_events_created_at")
+  @@schema("public")
+}
+
+model app_identity_hints_ip_attempts {
+  ip                String   @id(map: "client_identity_hints_ip_attempts_pkey")
+  count             Int
+  window_started_at DateTime @db.Timestamptz(6)
+  updated_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("public")
+}
+
+model app_identity_verification_attempts {
+  cpf              String   @id(map: "client_identity_verification_attempts_pkey")
+  count            Int
+  first_attempt_at DateTime @db.Timestamptz(6)
+  updated_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("public")
+}
+
+model app_login_attempts {
+  cpf              String   @id(map: "client_login_attempts_pkey")
+  count            Int
+  first_attempt_at DateTime @db.Timestamptz(6)
+  updated_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("public")
+}
+
+model app_otp_tokens {
+  token      String   @id(map: "client_otp_tokens_pkey") @db.Uuid
+  client_id  String   @db.Uuid
+  cpf        String
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  expires_at DateTime @db.Timestamptz(6)
+  parties    parties  @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "client_otp_tokens_client_id_foreign")
+
+  @@index([client_id], map: "idx_client_otp_tokens_client_id")
+  @@index([expires_at], map: "idx_client_otp_tokens_expires_at")
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model contract_credits {
+  id                                                                          String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  contract_id                                                                 String          @db.Uuid
+  amount                                                                      Decimal         @db.Decimal(15, 2)
+  source_renegotiation_id                                                     String?         @db.Uuid
+  status                                                                      String          @default("available")
+  applied_to_renegotiation_id                                                 String?         @db.Uuid
+  created_at                                                                  DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at                                                                  DateTime        @default(now()) @db.Timestamptz(6)
+  renegotiations_contract_credits_applied_to_renegotiation_idTorenegotiations renegotiations? @relation("contract_credits_applied_to_renegotiation_idTorenegotiations", fields: [applied_to_renegotiation_id], references: [id], onUpdate: NoAction, map: "contract_credits_applied_to_renegotiation_id_foreign")
+  contracts                                                                   contracts       @relation(fields: [contract_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "contract_credits_contract_id_foreign")
+  renegotiations_contract_credits_source_renegotiation_idTorenegotiations     renegotiations? @relation("contract_credits_source_renegotiation_idTorenegotiations", fields: [source_renegotiation_id], references: [id], onUpdate: NoAction, map: "contract_credits_source_renegotiation_id_foreign")
+
+  @@index([contract_id], map: "contract_credits_contract_id_index")
+  @@index([status], map: "contract_credits_status_index")
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model parties {
+  id                                              String                       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                                            String                       @db.VarChar(255)
+  tax_id                                          String                       @unique @db.VarChar(255)
+  email                                           String?                      @db.VarChar(255)
+  phone                                           String?                      @db.VarChar(255)
+  created_at                                      DateTime                     @default(now()) @db.Timestamptz(6)
+  updated_at                                      DateTime                     @default(now()) @db.Timestamptz(6)
+  contact_preference                              String?                      @db.VarChar(255)
+  otp_secret                                      String?                      @db.VarChar
+  email_checked                                   Boolean                      @default(false)
+  tax_id_type                                     String?                      @db.VarChar(255)
+  addresses                                       addresses[]
+  app_auth_credentials                            app_auth_credentials?
+  app_otp_tokens                                  app_otp_tokens[]
+  bank_accounts                                   bank_accounts[]
+  client_files                                    client_files[]
+  contracts                                       contracts[]
+  contracts_contracts_guarantor_party_idToparties contracts[]                  @relation("contracts_guarantor_party_idToparties")
+  contracts_ccbs                                  contracts_ccbs[]
+  customer_notifications                          customer_notifications[]
+  documents                                       documents[]
+  financial_info                                  financial_info[]
+  loan_quotes                                     loan_quotes[]
+  party_consents                                  party_consents[]
+  quotes_quotes_guarantor_party_idToparties       quotes[]                     @relation("quotes_guarantor_party_idToparties")
+  quotes_quotes_party_idToparties                 quotes[]                     @relation("quotes_party_idToparties")
+  simulations                                     simulations[]
+  whatsapp_messages_received                      whatsapp_messages_received[]
+  whatsapp_messages_sent                          whatsapp_messages_sent[]
+
+  @@index([tax_id])
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model party_consents {
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  party_id   String    @db.Uuid
+  product    String    @db.VarChar(255)
+  purpose    String    @db.VarChar(255)
+  granted_at DateTime  @default(now()) @db.Timestamptz(6)
+  revoked_at DateTime? @db.Timestamptz(6)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at DateTime  @default(now()) @db.Timestamptz(6)
+  parties    parties   @relation(fields: [party_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "party_consents_party_id_foreign")
+
+  @@index([party_id], map: "party_consents_party_id_index")
+  @@index([party_id, product], map: "party_consents_party_id_product_index")
+  @@schema("public")
+}
+
+model simulations {
+  id                     String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id                String           @db.Uuid
+  party_id               String?          @db.Uuid
+  finance_product_id     String           @db.Uuid
+  client_name            String           @db.VarChar(255)
+  document               String           @db.VarChar(14)
+  birth_date             DateTime         @db.Date
+  email                  String           @db.VarChar(255)
+  telephone              String           @db.VarChar(20)
+  finance_amount         Decimal          @db.Decimal(15, 2)
+  interest_rate          Decimal          @db.Decimal(12, 8)
+  installment_numbers    Int
+  first_installment_date DateTime         @db.Date
+  installment_amount     Decimal          @db.Decimal(15, 2)
+  simulation_result      Json?
+  created_at             DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime         @default(now()) @db.Timestamptz(6)
+  finance_products       finance_products @relation(fields: [finance_product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "simulations_finance_product_id_foreign")
+  parties                parties?         @relation(fields: [party_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "simulations_party_id_foreign")
+  trigo_users            trigo_users      @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "simulations_user_id_foreign")
+
+  @@index([document], map: "simulations_document_index")
+  @@index([party_id], map: "simulations_party_id_index")
+  @@index([user_id, created_at], map: "simulations_user_created_index")
   @@schema("public")
 }
 
@@ -2321,6 +2428,74 @@ view clients_contracts_30_days_left {
   valor_emprestimo  Decimal?  @db.Decimal(15, 2)
   contract_end_date DateTime? @db.Date
   consultant_name   String?   @db.VarChar(255)
+
+  @@schema("public")
+}
+
+view client_auth_credentials {
+  id                      String?   @db.Uuid
+  client_id               String?   @db.Uuid
+  password_hash           String?
+  enabled                 Boolean?
+  login_attempts_count    Int?
+  login_attempts_first_at DateTime? @db.Timestamptz(6)
+  blocked_until           DateTime? @db.Timestamptz(6)
+  created_at              DateTime? @db.Timestamptz(6)
+  updated_at              DateTime? @db.Timestamptz(6)
+
+  @@schema("public")
+}
+
+view client_otp_tokens {
+  token      String?   @db.Uuid
+  client_id  String?   @db.Uuid
+  cpf        String?
+  created_at DateTime? @db.Timestamptz(6)
+  expires_at DateTime? @db.Timestamptz(6)
+
+  @@schema("public")
+}
+
+view client_login_attempts {
+  cpf              String?
+  count            Int?
+  first_attempt_at DateTime? @db.Timestamptz(6)
+  updated_at       DateTime? @db.Timestamptz(6)
+
+  @@schema("public")
+}
+
+view client_auth_blacklist {
+  cpf        String?
+  reason     String?
+  created_at DateTime? @db.Timestamptz(6)
+
+  @@schema("public")
+}
+
+view client_identity_verification_attempts {
+  cpf              String?
+  count            Int?
+  first_attempt_at DateTime? @db.Timestamptz(6)
+  updated_at       DateTime? @db.Timestamptz(6)
+
+  @@schema("public")
+}
+
+view client_identity_hints_ip_attempts {
+  ip                String?
+  count             Int?
+  window_started_at DateTime? @db.Timestamptz(6)
+  updated_at        DateTime? @db.Timestamptz(6)
+
+  @@schema("public")
+}
+
+view client_auth_method_events {
+  id         String?   @db.Uuid
+  cpf        String?
+  method     String?
+  created_at DateTime? @db.Timestamptz(6)
 
   @@schema("public")
 }

@@ -6,6 +6,9 @@
 partner portal. Its public HTTP contract is:
 
 - `GET /simulations`: lists simulations owned by the authenticated partner.
+  Optional `name` (case-insensitive contains) and `document` (digits-only
+  contains) query params combine with AND. Empty query lists all of the
+  partner's simulations, newest first.
 - `POST /simulations`: calculates and persists a simulation for the
   authenticated partner.
 - `PATCH /simulations/:id`: updates a simulation owned by the authenticated
@@ -16,6 +19,11 @@ partner portal. Its public HTTP contract is:
 
 A simulation is not a quote. It is an input snapshot and calculation result
 that may later be used to start a quote.
+
+Each new simulation resolves the customer identity through `PartiesModule` and
+stores the resulting `party_id`. Name, CPF, birth date, e-mail and telephone
+remain in `simulations` as the historical snapshot entered at simulation time;
+they are not replaced by later changes to the canonical party.
 
 The module must not own quote lifecycle transitions or interactions such as
 partner submission and client review. Those belong to the quote and quote-event
