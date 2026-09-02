@@ -26,11 +26,14 @@ import { RequirePermissions } from '../auth/decorators/require-permissions.decor
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { CreateDraftQuoteDto } from './dto/create-draft-quote.dto';
+import { SaveQuoteIncomeDto } from './dto/save-quote-income.dto';
 import { SaveQuoteRegistrationDto } from './dto/save-quote-registration.dto';
 import { QuoteDraftSnapshot } from './interfaces/quote-draft-snapshot.interface';
+import { QuoteIncomeSnapshot } from './interfaces/quote-income-snapshot.interface';
 import { QuoteRegistrationSnapshot } from './interfaces/quote-registration-snapshot.interface';
 import { QuoteStatusResponse } from './interfaces/quote-status-response.interface';
 import { QuotesService } from './quotes.service';
+import { QuoteDraftIncomeService } from './services/quote-draft-income.service';
 import { QuoteDraftRegistrationService } from './services/quote-draft-registration.service';
 
 @ApiTags('quotes')
@@ -43,6 +46,7 @@ import { QuoteDraftRegistrationService } from './services/quote-draft-registrati
 export class QuotesController {
   constructor(
     private readonly quotesService: QuotesService,
+    private readonly quoteDraftIncome: QuoteDraftIncomeService,
     private readonly quoteDraftRegistration: QuoteDraftRegistrationService,
   ) {}
 
@@ -82,6 +86,25 @@ export class QuotesController {
     @Body() dto: SaveQuoteRegistrationDto,
   ): Promise<QuoteRegistrationSnapshot> {
     return this.quoteDraftRegistration.save(quoteId, dto, user);
+  }
+
+  @ApiOperation({
+    summary: 'Salva o passo Atividade e renda da proposta draft.',
+  })
+  @ApiOkResponse({ type: QuoteIncomeSnapshot })
+  @ApiBadRequestResponse({
+    description: 'Campos ou combinações condicionais inválidos.',
+  })
+  @ApiNotFoundResponse({ description: 'Proposta não encontrada.' })
+  @ApiConflictResponse({ description: 'A proposta não está mais em draft.' })
+  @RequirePermissions(PermissionKey.QUOTE_CREATE)
+  @Patch('draft/:quoteId/income')
+  saveDraftIncome(
+    @CurrentUser() user: JwtPayload,
+    @Param('quoteId', ParseUUIDPipe) quoteId: string,
+    @Body() dto: SaveQuoteIncomeDto,
+  ): Promise<QuoteIncomeSnapshot> {
+    return this.quoteDraftIncome.save(quoteId, dto, user);
   }
 
   @ApiOperation({

@@ -140,6 +140,33 @@ na mesma transação. A tabela de passos guarda apenas o progresso atual; os
 dados de negócio continuam em `quotes`. Salvar uma etapa não gera evento de
 domínio.
 
+### Passo 2: Atividade e renda
+
+```http
+PATCH /quotes/draft/:quoteId/income
+```
+
+O endpoint salva CNPJ, tempo na atividade, renda mensal principal, fonte da
+renda, existência de múltiplas fontes, renda secundária e comprovante de renda
+disponível. O CNPJ é opcional; quando informado, aceita máscara, valida os
+dígitos verificadores e é persistido somente com os 14 dígitos.
+
+A renda principal e a secundária representam fontes separadas e não são
+somadas na persistência. A principal reutiliza `quotes.personal_income`; a
+secundária usa `quotes.secondary_income`. Quando
+`hasMultipleIncomeSources=true`, a renda secundária é obrigatória e deve ser
+maior que zero. Quando for `false`, ela é limpa no banco.
+
+As opções de tempo, fonte e comprovante são códigos estáveis validados na
+aplicação e persistidos em `varchar`, sem enum ou `CHECK` no banco. Assim como
+no Cadastro, somente o responsável (ou `ROLE_ADMIN`) pode salvar enquanto a
+quote está em `draft`. A atualização da quote e o upsert de
+`quote_draft_steps.income` são atômicos e não geram evento de domínio.
+
+As regras comuns de ownership, status e progresso dos passos ficam em
+`QuoteDraftStepsService`; cada serviço de passo mantém somente suas validações
+e seu mapeamento de campos.
+
 Depois do preenchimento, o parceiro entrega o draft para o cliente:
 
 ```text
@@ -182,7 +209,9 @@ casos de uso forem implementados. Não antecipar eventos sem comportamento real.
 src/
   quotes/
     enums/quote-status.enum.ts
+    services/quote-draft-income.service.ts
     services/quote-draft-registration.service.ts
+    services/quote-draft-steps.service.ts
     quotes.controller.ts
     quotes.module.ts
     quotes.service.ts
