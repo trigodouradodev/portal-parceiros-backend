@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { normalizeCpf } from '../common/cpf.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { PartyFormData } from './interfaces/party-form-lookup-response.interface';
 import { PartyLookupData } from './interfaces/party-lookup-response.interface';
 
 interface PartyRow {
@@ -17,6 +18,16 @@ interface PartyIdentityInput {
   document: string;
   email: string;
   telephone: string;
+}
+
+interface PartyFormRow extends PartyRow {
+  address_street: string | null;
+  address_number: string | null;
+  address_complement: string | null;
+  address_neighborhood: string | null;
+  address_city: string | null;
+  address_state: string | null;
+  address_zip_code: string | null;
 }
 
 type PartyQueryClient = PrismaService | Prisma.TransactionClient;
@@ -36,6 +47,63 @@ export class PartiesService {
       document,
       email: party.email,
       telephone: party.phone,
+    };
+  }
+
+  async findFormDataByCpf(value: string): Promise<PartyFormData | null> {
+    const document = normalizeCpf(value);
+    const [party] = await this.prisma.$queryRaw<PartyFormRow[]>`
+      SELECT
+        p.id,
+        p.name,
+        p.tax_id,
+        p.email,
+        p.phone,
+        a.street AS address_street,
+        a.number AS address_number,
+        a.complement AS address_complement,
+        a.neighborhood AS address_neighborhood,
+        a.city AS address_city,
+        a.state AS address_state,
+        a.zip_code AS address_zip_code
+      FROM public.parties p
+      LEFT JOIN LATERAL (
+        SELECT
+          street,
+          number,
+          complement,
+          neighborhood,
+          city,
+          state,
+          zip_code
+        FROM public.addresses
+        WHERE client_id = p.id
+        ORDER BY is_primary DESC NULLS LAST, created_at DESC, id DESC
+        LIMIT 1
+      ) a ON TRUE
+      WHERE regexp_replace(p.tax_id, '\\D', '', 'g') = ${document}
+      ORDER BY p.created_at ASC, p.id ASC
+      LIMIT 1
+    `;
+
+    if (!party) return null;
+
+    return {
+      name: party.name,
+      document,
+      email: party.email,
+      telephone: party.phone,
+      address: party.address_street
+        ? {
+            zipCode: party.address_zip_code?.replace(/\D/g, '') ?? '',
+            streetName: party.address_street,
+            streetNumber: party.address_number ?? '',
+            streetComplement: party.address_complement ?? '',
+            streetDistrict: party.address_neighborhood ?? '',
+            city: party.address_city ?? '',
+            state: party.address_state?.trim().toUpperCase() ?? null,
+          }
+        : null,
     };
   }
 

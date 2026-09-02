@@ -4,6 +4,7 @@ import { QuoteEventsModule } from '../quote-events/quote-events.module';
 import { QuotesController } from './quotes.controller';
 import { QuotesService } from './quotes.service';
 import { QuoteDraftAddressService } from './services/quote-draft-address.service';
+import { QuoteDraftGuarantorService } from './services/quote-draft-guarantor.service';
 import { QuoteDraftIncomeService } from './services/quote-draft-income.service';
 import { QuoteDraftPartnerOpinionService } from './services/quote-draft-partner-opinion.service';
 import { QuoteDraftRegistrationService } from './services/quote-draft-registration.service';
@@ -14,6 +15,7 @@ import { QuoteDraftStepsService } from './services/quote-draft-steps.service';
   controllers: [QuotesController],
   providers: [
     QuoteDraftAddressService,
+    QuoteDraftGuarantorService,
     QuoteDraftIncomeService,
     QuoteDraftPartnerOpinionService,
     QuoteDraftRegistrationService,
