@@ -1,5 +1,32 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { BrazilState } from '../../common/brazil-state.enum';
 import { QuoteStatus } from '../enums/quote-status.enum';
+
+export class QuoteDraftAddressPrefill {
+  @ApiProperty()
+  zipCode: string;
+
+  @ApiProperty()
+  streetName: string;
+
+  @ApiProperty()
+  streetNumber: string;
+
+  @ApiProperty()
+  streetComplement: string;
+
+  @ApiProperty()
+  streetDistrict: string;
+
+  @ApiProperty()
+  city: string;
+
+  @ApiProperty({ enum: BrazilState })
+  state: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  referencePoint?: string | null;
+}
 
 /** Draft recém-criado com os campos reaproveitados da simulação. */
 export class QuoteDraftSnapshot {
@@ -53,4 +80,7 @@ export class QuoteDraftSnapshot {
 
   @ApiPropertyOptional({ example: 6123.4 })
   totalAmountOwed?: number;
+
+  @ApiPropertyOptional({ type: QuoteDraftAddressPrefill })
+  address?: QuoteDraftAddressPrefill;
 }

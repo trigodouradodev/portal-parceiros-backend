@@ -26,13 +26,16 @@ import { RequirePermissions } from '../auth/decorators/require-permissions.decor
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { CreateDraftQuoteDto } from './dto/create-draft-quote.dto';
+import { SaveQuoteAddressDto } from './dto/save-quote-address.dto';
 import { SaveQuoteIncomeDto } from './dto/save-quote-income.dto';
 import { SaveQuoteRegistrationDto } from './dto/save-quote-registration.dto';
 import { QuoteDraftSnapshot } from './interfaces/quote-draft-snapshot.interface';
+import { QuoteAddressSnapshot } from './interfaces/quote-address-snapshot.interface';
 import { QuoteIncomeSnapshot } from './interfaces/quote-income-snapshot.interface';
 import { QuoteRegistrationSnapshot } from './interfaces/quote-registration-snapshot.interface';
 import { QuoteStatusResponse } from './interfaces/quote-status-response.interface';
 import { QuotesService } from './quotes.service';
+import { QuoteDraftAddressService } from './services/quote-draft-address.service';
 import { QuoteDraftIncomeService } from './services/quote-draft-income.service';
 import { QuoteDraftRegistrationService } from './services/quote-draft-registration.service';
 
@@ -46,6 +49,7 @@ import { QuoteDraftRegistrationService } from './services/quote-draft-registrati
 export class QuotesController {
   constructor(
     private readonly quotesService: QuotesService,
+    private readonly quoteDraftAddress: QuoteDraftAddressService,
     private readonly quoteDraftIncome: QuoteDraftIncomeService,
     private readonly quoteDraftRegistration: QuoteDraftRegistrationService,
   ) {}
@@ -105,6 +109,21 @@ export class QuotesController {
     @Body() dto: SaveQuoteIncomeDto,
   ): Promise<QuoteIncomeSnapshot> {
     return this.quoteDraftIncome.save(quoteId, dto, user);
+  }
+
+  @ApiOperation({ summary: 'Salva o passo Endereço da proposta draft.' })
+  @ApiOkResponse({ type: QuoteAddressSnapshot })
+  @ApiBadRequestResponse({ description: 'Campos de endereço inválidos.' })
+  @ApiNotFoundResponse({ description: 'Proposta não encontrada.' })
+  @ApiConflictResponse({ description: 'A proposta não está mais em draft.' })
+  @RequirePermissions(PermissionKey.QUOTE_CREATE)
+  @Patch('draft/:quoteId/address')
+  saveDraftAddress(
+    @CurrentUser() user: JwtPayload,
+    @Param('quoteId', ParseUUIDPipe) quoteId: string,
+    @Body() dto: SaveQuoteAddressDto,
+  ): Promise<QuoteAddressSnapshot> {
+    return this.quoteDraftAddress.save(quoteId, dto, user);
   }
 
   @ApiOperation({

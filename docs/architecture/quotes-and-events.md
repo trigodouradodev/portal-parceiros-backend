@@ -96,17 +96,19 @@ Regras:
   constraint única de `quotes.simulation_id` para fechar concorrência;
 - copia para a quote o `party_id`, identidade, contato, produto, taxa,
   condições de parcelamento e o resultado Celcoin já persistido;
+- quando a party possui endereço, copia o registro primário (ou o mais recente)
+  para `client_address` e o devolve no snapshot de criação para pré-preencher o
+  formulário;
 - não chama a Celcoin novamente durante a conversão;
 - criação da quote e evento `draft_created` pertencem à mesma transação;
 - simulação inexistente/de outro parceiro retorna 404; já convertida retorna 409.
 
 A tabela legada de quotes possui colunas `NOT NULL` que ainda não foram
 preenchidas nesse ponto do wizard. A criação usa os mesmos defaults técnicos do
-connector (`activity_type=CLT`, endereço vazio, rendas zeradas, Pix CPF e
-assinatura por e-mail) somente para satisfazer o schema. Esses defaults não são
-retornados no snapshot de criação e não representam respostas do cliente. O
-modelo definitivo desses campos será tratado junto ao PATCH dos passos do novo
-wizard.
+connector (`activity_type=CLT`, endereço vazio quando a party não possui um,
+rendas zeradas, Pix CPF e assinatura por e-mail) somente para satisfazer o
+schema. Esses defaults não representam respostas do cliente. O modelo
+definitivo desses campos é tratado pelos PATCHes dos passos do novo wizard.
 
 ### Passo 1: Cadastro
 
@@ -167,6 +169,43 @@ As regras comuns de ownership, status e progresso dos passos ficam em
 `QuoteDraftStepsService`; cada serviço de passo mantém somente suas validações
 e seu mapeamento de campos.
 
+### Passo 3: Endereço
+
+```http
+PATCH /quotes/draft/:quoteId/address
+```
+
+O endpoint mantém o formato de endereço já consumido pelo connector:
+`zipCode`, `streetName`, `streetNumber`, `streetComplement`,
+`streetDistrict`, `city`, `state` e `referencePoint`. Esses dados substituem o
+objeto completo de `quotes.client_address`; não são necessárias novas colunas.
+O CEP aceita máscara e é persistido somente com oito dígitos. Complemento é
+opcional e, quando ausente, é gravado como string vazia para compatibilidade
+com o fluxo legado.
+
+A geolocalização é opcional e, quando presente, contém `latitude`, `longitude`
+e `precision`, reutilizando `quotes.geolocation`. Uma nova gravação sem
+geolocalização limpa o valor anterior. A atualização da quote e o upsert de
+`quote_draft_steps.address` são atômicos e não geram evento de domínio. O passo
+não altera `parties.addresses`: assim como no fluxo atual, a sincronização do
+endereço canônico da pessoa continua sendo responsabilidade do connector após
+a aprovação da proposta. As mesmas regras de ownership e status dos passos
+anteriores se aplicam.
+
+As consultas auxiliares não pertencem ao domínio de propostas e ficam no
+`LocationsModule`:
+
+```http
+GET /locations/postal-code/:zipCode
+GET /locations/states-cities
+```
+
+O primeiro normaliza a resposta do ViaCEP para os mesmos nomes usados no
+endereço da quote. O segundo agrupa a malha de localidades do IBGE por UF e
+mantém o resultado em memória por 24 horas, evitando baixar a lista completa a
+cada requisição. Ambos requerem `QUOTE_CREATE` e traduzem indisponibilidade do
+provedor para HTTP 503.
+
 Depois do preenchimento, o parceiro entrega o draft para o cliente:
 
 ```text
@@ -207,8 +246,14 @@ casos de uso forem implementados. Não antecipar eventos sem comportamento real.
 
 ```text
 src/
+  locations/
+    locations.controller.ts
+    locations.module.ts
+    postal-code.service.ts
+    brazil-locations.service.ts
   quotes/
     enums/quote-status.enum.ts
+    services/quote-draft-address.service.ts
     services/quote-draft-income.service.ts
     services/quote-draft-registration.service.ts
     services/quote-draft-steps.service.ts

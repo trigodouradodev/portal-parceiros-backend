@@ -72,6 +72,27 @@ export class QuotesService {
             installment_amount: true,
             simulation_result: true,
             finance_products: { select: { product_name: true } },
+            parties: {
+              select: {
+                addresses: {
+                  orderBy: [
+                    { is_primary: { sort: 'desc', nulls: 'last' } },
+                    { created_at: 'desc' },
+                  ],
+                  take: 1,
+                  select: {
+                    street: true,
+                    number: true,
+                    complement: true,
+                    neighborhood: true,
+                    city: true,
+                    state: true,
+                    zip_code: true,
+                    landmark: true,
+                  },
+                },
+              },
+            },
           },
         });
         if (!simulation) {
@@ -88,6 +109,8 @@ export class QuotesService {
           throw new ConflictException('A simulação já originou uma proposta.');
         }
 
+        const partyAddress = simulation.parties?.addresses[0];
+        const initialAddress = toQuoteAddress(partyAddress);
         const quote = await tx.quotes.create({
           data: {
             is_renegotiation: false,
@@ -98,7 +121,7 @@ export class QuotesService {
             profession: '',
             email: simulation.email,
             telephone: simulation.telephone,
-            client_address: EMPTY_ADDRESS,
+            client_address: initialAddress,
             finance_amount: simulation.finance_amount,
             personal_income: 0,
             familiar_income: 0,
@@ -160,6 +183,7 @@ export class QuotesService {
           firstInstallmentDate: toDateOnly(simulation.first_installment_date),
           installmentAmount: Number(simulation.installment_amount),
           ...(totalAmountOwed === undefined ? {} : { totalAmountOwed }),
+          ...(partyAddress ? { address: initialAddress } : {}),
         };
       });
     } catch (error) {
@@ -244,6 +268,30 @@ export class QuotesService {
       `A proposta não pode ser enviada para revisão a partir do status ${quote.quote_status}.`,
     );
   }
+}
+
+function toQuoteAddress(address?: {
+  street: string;
+  number: string;
+  complement: string | null;
+  neighborhood: string;
+  city: string;
+  state: string | null;
+  zip_code: string;
+  landmark: string | null;
+}) {
+  if (!address) return EMPTY_ADDRESS;
+
+  return {
+    zipCode: address.zip_code.replace(/\D/g, ''),
+    streetName: address.street,
+    streetNumber: address.number,
+    streetComplement: address.complement ?? '',
+    streetDistrict: address.neighborhood,
+    city: address.city,
+    state: address.state?.trim().toUpperCase() ?? '',
+    referencePoint: address.landmark,
+  };
 }
 
 function extractSimulationNumber(

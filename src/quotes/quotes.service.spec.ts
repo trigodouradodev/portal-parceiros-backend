@@ -5,14 +5,17 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
+import { BrazilState } from '../common/brazil-state.enum';
 import { PrismaService } from '../prisma/prisma.service';
 import { QuoteEventType } from '../quote-events/enums/quote-event-type.enum';
 import { QuoteEventsService } from '../quote-events/quote-events.service';
-import { SaveQuoteRegistrationDto } from './dto/save-quote-registration.dto';
+import { SaveQuoteAddressDto } from './dto/save-quote-address.dto';
 import { SaveQuoteIncomeDto } from './dto/save-quote-income.dto';
+import { SaveQuoteRegistrationDto } from './dto/save-quote-registration.dto';
 import { QuoteDraftStep } from './enums/quote-draft-step.enum';
 import {
   ActivityDuration,
@@ -30,6 +33,7 @@ import {
 } from './enums/quote-registration.enum';
 import { QuoteStatus } from './enums/quote-status.enum';
 import { QuotesService } from './quotes.service';
+import { QuoteDraftAddressService } from './services/quote-draft-address.service';
 import { QuoteDraftIncomeService } from './services/quote-draft-income.service';
 import { QuoteDraftRegistrationService } from './services/quote-draft-registration.service';
 import { QuoteDraftStepsService } from './services/quote-draft-steps.service';
@@ -75,6 +79,22 @@ const income: SaveQuoteIncomeDto = {
   availableIncomeProof: AvailableIncomeProof.BANK_STATEMENT,
 };
 
+const address: SaveQuoteAddressDto = {
+  zipCode: '01001-000',
+  streetName: ' Praça da Sé ',
+  streetNumber: ' 100 ',
+  streetComplement: ' Apto 12 ',
+  streetDistrict: ' Sé ',
+  city: ' São Paulo ',
+  state: BrazilState.SP,
+  referencePoint: ' Próximo à estação Sé ',
+  geolocation: {
+    latitude: -23.55052,
+    longitude: -46.633308,
+    precision: ' 15m ',
+  },
+};
+
 const simulation = {
   id: SIMULATION_ID,
   party_id: PARTY_ID,
@@ -95,7 +115,19 @@ const simulation = {
     schedule: [],
   } as Record<string, unknown> | null,
   finance_products: { product_name: 'GIRO' },
+  parties: { addresses: [] as PartyAddressFixture[] },
 };
+
+interface PartyAddressFixture {
+  street: string;
+  number: string;
+  complement: string | null;
+  neighborhood: string;
+  city: string;
+  state: string | null;
+  zip_code: string;
+  landmark: string | null;
+}
 
 function actor(
   sub = OWNER_ID,
@@ -180,6 +212,7 @@ async function build(options: BuildOptions = {}) {
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       QuotesService,
+      QuoteDraftAddressService,
       QuoteDraftIncomeService,
       QuoteDraftRegistrationService,
       QuoteDraftStepsService,
@@ -194,6 +227,7 @@ async function build(options: BuildOptions = {}) {
 
   return {
     service: module.get(QuotesService),
+    addressService: module.get(QuoteDraftAddressService),
     incomeService: module.get(QuoteDraftIncomeService),
     registrationService: module.get(QuoteDraftRegistrationService),
     prisma,
@@ -269,6 +303,45 @@ describe('QuotesService.createDraftFromSimulation', () => {
       type: QuoteEventType.DRAFT_CREATED,
       metadata: { simulationId: SIMULATION_ID },
     });
+  });
+
+  it('reaproveita o endereço primário da party no draft e na resposta', async () => {
+    const partyAddress: PartyAddressFixture = {
+      street: 'Praça da Sé',
+      number: '100',
+      complement: null,
+      neighborhood: 'Sé',
+      city: 'São Paulo',
+      state: 'sp',
+      zip_code: '01001-000',
+      landmark: 'Próximo à estação Sé',
+    };
+    const { service, createQuote } = await build({
+      simulation: {
+        ...simulation,
+        parties: { addresses: [partyAddress] },
+      },
+    });
+
+    const result = await service.createDraftFromSimulation(
+      SIMULATION_ID,
+      actor(),
+    );
+    const expectedAddress = {
+      zipCode: '01001000',
+      streetName: 'Praça da Sé',
+      streetNumber: '100',
+      streetComplement: '',
+      streetDistrict: 'Sé',
+      city: 'São Paulo',
+      state: BrazilState.SP,
+      referencePoint: 'Próximo à estação Sé',
+    };
+
+    expect(result.address).toEqual(expectedAddress);
+    expect(createQuote.mock.calls[0][0].data.client_address).toEqual(
+      expectedAddress,
+    );
   });
 
   it('bloqueia a criação quando ações de cobrança impedem propostas', async () => {
@@ -654,6 +727,145 @@ describe('QuoteDraftIncomeService.save', () => {
 
     await expect(
       service.save(QUOTE_ID, income, actor()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('QuoteDraftAddressService.save', () => {
+  it('salva endereço e geolocalização no formato legado e conclui a etapa', async () => {
+    const { addressService: service, tx, quoteEvents } = await build();
+
+    await expect(service.save(QUOTE_ID, address, actor())).resolves.toEqual({
+      id: QUOTE_ID,
+      status: QuoteStatus.DRAFT,
+      step: QuoteDraftStep.ADDRESS,
+      completedAt: STEP_COMPLETED_AT,
+      updatedAt: STEP_UPDATED_AT,
+      zipCode: '01001000',
+      streetName: 'Praça da Sé',
+      streetNumber: '100',
+      streetComplement: 'Apto 12',
+      streetDistrict: 'Sé',
+      city: 'São Paulo',
+      state: BrazilState.SP,
+      referencePoint: 'Próximo à estação Sé',
+      geolocation: {
+        latitude: -23.55052,
+        longitude: -46.633308,
+        precision: '15m',
+      },
+    });
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: QUOTE_ID,
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OWNER_ID,
+      },
+      data: {
+        client_address: {
+          zipCode: '01001000',
+          streetName: 'Praça da Sé',
+          streetNumber: '100',
+          streetComplement: 'Apto 12',
+          streetDistrict: 'Sé',
+          city: 'São Paulo',
+          state: BrazilState.SP,
+          referencePoint: 'Próximo à estação Sé',
+        },
+        geolocation: {
+          latitude: -23.55052,
+          longitude: -46.633308,
+          precision: '15m',
+        },
+        updated_at: expect.any(Date) as unknown,
+      },
+    });
+    expect(tx.quote_draft_steps.upsert).toHaveBeenCalledWith({
+      where: {
+        quote_id_step: {
+          quote_id: QUOTE_ID,
+          step: QuoteDraftStep.ADDRESS,
+        },
+      },
+      create: {
+        quote_id: QUOTE_ID,
+        step: QuoteDraftStep.ADDRESS,
+        completed_at: expect.any(Date) as unknown,
+        updated_at: expect.any(Date) as unknown,
+      },
+      update: { updated_at: expect.any(Date) as unknown },
+      select: { completed_at: true, updated_at: true },
+    });
+    expect(quoteEvents.createWithinTransaction).not.toHaveBeenCalled();
+  });
+
+  it('aceita complemento e geolocalização ausentes e limpa valores anteriores', async () => {
+    const { addressService: service, tx } = await build();
+
+    const result = await service.save(
+      QUOTE_ID,
+      {
+        ...address,
+        streetComplement: undefined,
+        geolocation: undefined,
+      },
+      actor(),
+    );
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          client_address: expect.objectContaining({
+            streetComplement: '',
+          }) as unknown,
+          geolocation: Prisma.DbNull,
+        }) as unknown,
+      }),
+    );
+    expect(result.streetComplement).toBe('');
+    expect(result).not.toHaveProperty('geolocation');
+  });
+
+  it('recusa edição por outro parceiro', async () => {
+    const { addressService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OTHER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, address, actor()),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('recusa edição depois que a proposta sai de draft', async () => {
+    const { addressService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.CLIENT_REVIEW,
+        current_sales_agent_id: OWNER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, address, actor()),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('retorna not found quando a proposta não existe', async () => {
+    const { addressService: service, tx } = await build({
+      updateCount: 0,
+      quote: null,
+    });
+
+    await expect(
+      service.save(QUOTE_ID, address, actor()),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
   });
