@@ -75,7 +75,40 @@ Para eventos que não acompanham outra mutação, pode ser usado
 
 ## Fluxo atual
 
-O primeiro caso de uso implementado é a entrega do preenchimento pelo parceiro:
+Uma proposta começa a partir de uma simulação disponível do parceiro:
+
+```text
+simulation available --(draft_created)--> quote draft
+```
+
+Endpoint:
+
+```http
+POST /quotes/draft
+{ "simulationId": "..." }
+```
+
+Regras:
+
+- requer `QUOTE_CREATE` e o gate de atividade `canCreateQuote`;
+- a simulação deve pertencer ao parceiro autenticado;
+- cada simulação pode originar no máximo uma quote, garantido também pela
+  constraint única de `quotes.simulation_id` para fechar concorrência;
+- copia para a quote o `party_id`, identidade, contato, produto, taxa,
+  condições de parcelamento e o resultado Celcoin já persistido;
+- não chama a Celcoin novamente durante a conversão;
+- criação da quote e evento `draft_created` pertencem à mesma transação;
+- simulação inexistente/de outro parceiro retorna 404; já convertida retorna 409.
+
+A tabela legada de quotes possui colunas `NOT NULL` que ainda não foram
+preenchidas nesse ponto do wizard. A criação usa os mesmos defaults técnicos do
+connector (`activity_type=CLT`, endereço vazio, rendas zeradas, Pix CPF e
+assinatura por e-mail) somente para satisfazer o schema. Esses defaults não são
+retornados no snapshot de criação e não representam respostas do cliente. O
+modelo definitivo desses campos será tratado junto ao PATCH dos passos do novo
+wizard.
+
+Depois do preenchimento, o parceiro entrega o draft para o cliente:
 
 ```text
 draft --(draft_submitted)--> client_review
@@ -93,6 +126,11 @@ Regras:
 - somente o responsável pela proposta pode executá-lo;
 - `ROLE_ADMIN` mantém o acesso administrativo global;
 - atualiza a proposta e registra o evento atomicamente.
+
+Enquanto os campos dos sete passos e sua validação de completude ainda não
+forem implementados, a existência do draft não significa que ele está pronto
+para submissão. A validação final pertence ao caso de uso de submit e deve ser
+adicionada junto ao contrato completo do wizard.
 
 ## Evolução prevista
 
