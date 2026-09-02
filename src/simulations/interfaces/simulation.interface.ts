@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { SimulationStatus } from '../enums/simulation-status.enum';
 
 /** Snapshot persistido da simulação. Campos em camelCase EN. */
 export class SimulationSnapshot {
@@ -7,6 +8,9 @@ export class SimulationSnapshot {
 
   @ApiProperty({ example: '2026-08-26T12:00:00.000Z' })
   createdAt: string;
+
+  @ApiProperty({ enum: SimulationStatus, example: SimulationStatus.AVAILABLE })
+  status: SimulationStatus;
 
   @ApiProperty({ example: 'Maria Souza' })
   name: string;

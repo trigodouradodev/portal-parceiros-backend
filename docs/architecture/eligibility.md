@@ -6,23 +6,30 @@
 proceed from Originação → Simulação. Its public HTTP contract is:
 
 - `POST /eligibility`: receives name, CPF and birth date; returns whether
-  the client is eligible.
+  the client is eligible and, only when eligible, the basic identity data
+  already known in `parties` (name, CPF, e-mail and telephone).
 
 ## Boundary
 
 Eligibility is not a simulation and not a quote. It must not persist a
-consultation, consult credit bureau (Serasa/LEMIT), or gate
-`POST /simulations`.
+consultation or consult credit bureau (Serasa/LEMIT). Its party lookup is
+global for an authenticated user with `QUOTE_CREATE`; birth date and address
+are never sourced from `parties` in this response.
 
 The name `origination` is intentionally not used for this module because it
 is broader than the responsibility implemented here.
 
 ## Current rule
 
-A valid payload (CPF check digits + age 18–120) returns `eligible: true`.
-Invalid CPF or age is `400`, not `eligible: false`.
+A CPF with valid check digits and age from 18 through 120 returns
+`eligible: true`. Only then does the service query `parties`: an existing
+identity is returned in `party`, while a new customer returns `party: null`.
+
+Invalid CPF or ineligible age returns HTTP 200 with `eligible: false` and
+`party: null`, without querying the identity base. Malformed payload, blank
+name and an impossible date remain HTTP 400 responses.
 
 When the Receita Federal provider lands, only the decision inside
 `EligibilityService.check` changes. The HTTP contract stays the same:
-cadastral irregularity becomes `200 { eligible: false }`; provider outage
-becomes `503`.
+cadastral irregularity keeps returning `eligible: false`; provider outage
+becomes `503`. Ineligible results must continue skipping the party lookup.

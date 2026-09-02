@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -12,6 +13,7 @@ import { PartiesService } from '../parties/parties.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSimulationDto } from './dto/create-simulation.dto';
 import { ListSimulationsQueryDto } from './dto/list-simulations-query.dto';
+import { SimulationStatus } from './enums/simulation-status.enum';
 import { SimulationSnapshot } from './interfaces/simulation.interface';
 
 const ALLOWED_DUE_DAYS = [5, 10, 15, 20];
@@ -45,6 +47,12 @@ interface SimulationRow {
   installment_amount: Prisma.Decimal | number | string;
   simulation_result: unknown;
   created_at: Date;
+  status?: string;
+}
+
+interface EditableSimulationRow {
+  id: string;
+  converted: boolean;
 }
 
 interface PreparedSimulation {
@@ -90,7 +98,15 @@ export class SimulationsService {
         s.first_installment_date,
         s.installment_amount,
         s.simulation_result,
-        s.created_at
+        s.created_at,
+        CASE
+          WHEN EXISTS (
+            SELECT 1
+            FROM public.quotes q
+            WHERE q.simulation_id = s.id
+          ) THEN ${SimulationStatus.CONVERTED}
+          ELSE ${SimulationStatus.AVAILABLE}
+        END AS status
       FROM public.simulations s
       JOIN public.finance_products fp ON fp.id = s.finance_product_id
       WHERE ${whereClause}
@@ -104,6 +120,7 @@ export class SimulationsService {
     user: JwtPayload,
     dto: CreateSimulationDto,
   ): Promise<SimulationSnapshot> {
+    await this.assertCanSimulate(user);
     const prepared = await this.prepareSimulation(user, dto);
     const row = await this.prisma.$transaction(async (tx) => {
       const partyId = await this.partiesService.resolveForSimulation(
@@ -163,7 +180,8 @@ export class SimulationsService {
         first_installment_date,
         installment_amount,
         simulation_result,
-        created_at
+        created_at,
+        ${SimulationStatus.AVAILABLE} AS status
       `;
 
       return createdSimulation;
@@ -184,44 +202,71 @@ export class SimulationsService {
     id: string,
     dto: CreateSimulationDto,
   ): Promise<SimulationSnapshot> {
+    await this.assertCanSimulate(user);
+    await this.assertSimulationIsEditable(user.sub, id);
     const prepared = await this.prepareSimulation(user, dto);
-    const [row] = await this.prisma.$queryRaw<
-      Omit<SimulationRow, 'product_name'>[]
-    >`
-      UPDATE public.simulations
-      SET
-        finance_product_id = ${prepared.product.id}::uuid,
-        client_name = ${prepared.name},
-        document = ${prepared.document},
-        birth_date = ${toSqlDate(prepared.birthDate)}::date,
-        email = ${prepared.email},
-        telephone = ${prepared.telephone},
-        finance_amount = ${prepared.amount},
-        interest_rate = ${prepared.interestRate},
-        installment_numbers = ${prepared.installments},
-        first_installment_date = ${toSqlDate(prepared.firstInstallmentDate)}::date,
-        installment_amount = ${prepared.installmentAmount}
-      WHERE id = ${id}::uuid
-        AND user_id = ${user.sub}::uuid
-      RETURNING
-        id,
-        finance_product_id,
-        client_name,
-        document,
-        birth_date,
-        email,
-        telephone,
-        finance_amount,
-        interest_rate,
-        installment_numbers,
-        first_installment_date,
-        installment_amount,
-        simulation_result,
-        created_at
-    `;
+    const row = await this.prisma.$transaction(async (tx) => {
+      const partyId = await this.partiesService.resolveForSimulation(
+        {
+          name: prepared.name,
+          document: prepared.document,
+          email: prepared.email,
+          telephone: prepared.telephone,
+        },
+        tx,
+      );
+
+      const [updatedSimulation] = await tx.$queryRaw<
+        Omit<SimulationRow, 'product_name'>[]
+      >`
+        UPDATE public.simulations s
+        SET
+          party_id = ${partyId}::uuid,
+          finance_product_id = ${prepared.product.id}::uuid,
+          client_name = ${prepared.name},
+          document = ${prepared.document},
+          birth_date = ${toSqlDate(prepared.birthDate)}::date,
+          email = ${prepared.email},
+          telephone = ${prepared.telephone},
+          finance_amount = ${prepared.amount},
+          interest_rate = ${prepared.interestRate},
+          installment_numbers = ${prepared.installments},
+          first_installment_date = ${toSqlDate(prepared.firstInstallmentDate)}::date,
+          installment_amount = ${prepared.installmentAmount},
+          simulation_result = NULL,
+          updated_at = NOW()
+        WHERE s.id = ${id}::uuid
+          AND s.user_id = ${user.sub}::uuid
+          AND NOT EXISTS (
+            SELECT 1
+            FROM public.quotes q
+            WHERE q.simulation_id = s.id
+          )
+        RETURNING
+          id,
+          finance_product_id,
+          client_name,
+          document,
+          birth_date,
+          email,
+          telephone,
+          finance_amount,
+          interest_rate,
+          installment_numbers,
+          first_installment_date,
+          installment_amount,
+          simulation_result,
+          created_at,
+          ${SimulationStatus.AVAILABLE} AS status
+      `;
+
+      return updatedSimulation;
+    });
 
     if (!row) {
-      throw new NotFoundException('Simulação não encontrada.');
+      throw new ConflictException(
+        'A simulação já foi convertida em proposta e não pode ser editada.',
+      );
     }
 
     return this.toSnapshot({
@@ -234,14 +279,9 @@ export class SimulationsService {
     user: JwtPayload,
     dto: CreateSimulationDto,
   ): Promise<PreparedSimulation> {
-    const gates = await this.quoteActivityPermissions.getPermissions({
-      userId: user.sub,
-      permissions: user.permissions,
-    });
-    if (!gates.canSimulateQuote) {
-      throw new ForbiddenException(
-        'Você possui ações de cobrança pendentes que impedem a simulação de proposta.',
-      );
+    const name = dto.name.trim();
+    if (name.length < 3) {
+      throw new BadRequestException('Informe o nome do tomador.');
     }
 
     const document = normalizeCpf(dto.document);
@@ -280,7 +320,7 @@ export class SimulationsService {
     }
 
     return {
-      name: dto.name.trim(),
+      name,
       document,
       telephone,
       email: dto.email.trim().toLowerCase(),
@@ -296,6 +336,18 @@ export class SimulationsService {
         interestRate,
       ),
     };
+  }
+
+  private async assertCanSimulate(user: JwtPayload): Promise<void> {
+    const gates = await this.quoteActivityPermissions.getPermissions({
+      userId: user.sub,
+      permissions: user.permissions,
+    });
+    if (!gates.canSimulateQuote) {
+      throw new ForbiddenException(
+        'Você possui ações de cobrança pendentes que impedem a simulação de proposta.',
+      );
+    }
   }
 
   private buildListWhereClause(
@@ -315,6 +367,35 @@ export class SimulationsService {
     }
 
     return Prisma.join(conditions, ' AND ');
+  }
+
+  private async assertSimulationIsEditable(
+    userId: string,
+    simulationId: string,
+  ): Promise<void> {
+    const [simulation] = await this.prisma.$queryRaw<EditableSimulationRow[]>`
+      SELECT
+        s.id,
+        EXISTS (
+          SELECT 1
+          FROM public.quotes q
+          WHERE q.simulation_id = s.id
+        ) AS converted
+      FROM public.simulations s
+      WHERE s.id = ${simulationId}::uuid
+        AND s.user_id = ${userId}::uuid
+      LIMIT 1
+    `;
+
+    if (!simulation) {
+      throw new NotFoundException('Simulação não encontrada.');
+    }
+
+    if (simulation.converted) {
+      throw new ConflictException(
+        'A simulação já foi convertida em proposta e não pode ser editada.',
+      );
+    }
   }
 
   private async findLinkedProduct(
@@ -346,6 +427,10 @@ export class SimulationsService {
     return {
       id: row.id,
       createdAt: createdAt.toISOString(),
+      status:
+        row.status === SimulationStatus.CONVERTED
+          ? SimulationStatus.CONVERTED
+          : SimulationStatus.AVAILABLE,
       name: row.client_name,
       birthDate: toSqlDate(new Date(row.birth_date)),
       email: row.email,
@@ -371,7 +456,7 @@ export class SimulationsService {
   }
 
   private parseDateOnly(value: string, label: string): Date {
-    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
     if (!match) {
       throw new BadRequestException(`${label} inválida.`);
     }
@@ -392,7 +477,7 @@ export class SimulationsService {
   private assertAdultAge(birthDate: Date): void {
     const today = utcToday();
     const age = differenceInUtcYears(birthDate, today);
-    if (age < MIN_AGE || age >= MAX_AGE) {
+    if (age < MIN_AGE || age > MAX_AGE) {
       throw new BadRequestException('O tomador deve ter entre 18 e 120 anos.');
     }
   }

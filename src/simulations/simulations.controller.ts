@@ -12,6 +12,7 @@ import {
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiConflictResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
@@ -82,6 +83,9 @@ export class SimulationsController {
   })
   @ApiNotFoundResponse({
     description: 'Simulação não encontrada para o parceiro autenticado.',
+  })
+  @ApiConflictResponse({
+    description: 'A simulação já originou uma proposta e não pode ser editada.',
   })
   @RequirePermissions(PermissionKey.QUOTE_CREATE)
   @Patch(':id')

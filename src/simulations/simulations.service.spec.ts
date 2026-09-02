@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
@@ -9,6 +10,7 @@ import { QuoteActivityPermissionsService } from '../activities/quote-activity-pe
 import { PartiesService } from '../parties/parties.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSimulationDto } from './dto/create-simulation.dto';
+import { SimulationStatus } from './enums/simulation-status.enum';
 import { calcInstallment, SimulationsService } from './simulations.service';
 
 const USER_ID = '269b0843-0aa8-40ab-af66-8304909930a6';
@@ -86,6 +88,7 @@ function simulationRow(overrides: Record<string, unknown> = {}) {
     installment_amount: 598.42,
     simulation_result: null,
     created_at: new Date('2026-08-26T12:00:00.000Z'),
+    status: SimulationStatus.AVAILABLE,
     ...overrides,
   };
 }
@@ -95,6 +98,7 @@ function buildService(options?: {
   product?: typeof product | null;
   inserted?: Record<string, unknown>;
   updated?: Record<string, unknown> | null;
+  editableState?: 'available' | 'converted' | 'missing';
 }) {
   const queryRaw = jest.fn((strings: TemplateStringsArray) => {
     const sql = strings.join(' ');
@@ -103,6 +107,15 @@ function buildService(options?: {
         return options.product ? [options.product] : [];
       }
       return [product];
+    }
+    if (sql.includes('AS converted')) {
+      if (options?.editableState === 'missing') return [];
+      return [
+        {
+          id: SIMULATION_ID,
+          converted: options?.editableState === 'converted',
+        },
+      ];
     }
     if (sql.includes('INSERT INTO public.simulations')) {
       return [options?.inserted ?? simulationRow({ id: 'sim-1' })];
@@ -172,6 +185,7 @@ describe('SimulationsService.createSimulation', () => {
     expect(result.firstInstallmentDate).toBe(futureDueDate());
     expect(result.installmentAmount).toBe(598.42);
     expect(result.createdAt).toBe('2026-08-26T12:00:00.000Z');
+    expect(result.status).toBe(SimulationStatus.AVAILABLE);
 
     const insertSql = queryRaw.mock.calls[1][0].join(' ');
     expect(insertSql).toContain('INSERT INTO public.simulations');
@@ -235,7 +249,7 @@ describe('SimulationsService.updateSimulation', () => {
       installments: 12,
     });
     const expectedInstallment = calcInstallment(8000, 12, 0.0339);
-    const { service, queryRaw } = buildService({
+    const { service, queryRaw, resolveForSimulation } = buildService({
       updated: simulationRow({
         client_name: 'Maria Souza Silva',
         finance_amount: 8000,
@@ -257,22 +271,52 @@ describe('SimulationsService.updateSimulation', () => {
     expect(result.installmentAmount).toBe(expectedInstallment);
     expect(result.createdAt).toBe('2026-08-26T12:00:00.000Z');
 
-    const updateCall = queryRaw.mock.calls[1];
+    const updateCall = queryRaw.mock.calls[2];
     const updateSql = updateCall[0].join(' ');
     expect(updateSql).toContain('UPDATE public.simulations');
-    expect(updateSql).toContain('WHERE id =');
-    expect(updateSql).toContain('AND user_id =');
+    expect(updateSql).toContain('WHERE s.id =');
+    expect(updateSql).toContain('AND s.user_id =');
+    expect(updateSql).toContain('party_id =');
+    expect(updateSql).toContain('simulation_result = NULL');
+    expect(updateSql).toContain('updated_at = NOW()');
+    expect(updateSql).toContain('NOT EXISTS');
     expect(updateCall).toContain(expectedInstallment);
     expect(updateCall).toContain(SIMULATION_ID);
     expect(updateCall).toContain(USER_ID);
+    expect(updateCall).toContain(PARTY_ID);
+    expect(resolveForSimulation).toHaveBeenCalledWith(
+      expect.objectContaining({ document: '52998224725' }),
+      expect.anything(),
+    );
   });
 
   it('devolve 404 quando a simulação não é do parceiro autenticado', async () => {
-    const { service } = buildService({ updated: null });
+    const { service } = buildService({ editableState: 'missing' });
 
     await expect(
       service.updateSimulation(otherActor, SIMULATION_ID, dto()),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  it('bloqueia edição quando a simulação já originou uma quote', async () => {
+    const { service, queryRaw, resolveForSimulation } = buildService({
+      editableState: 'converted',
+    });
+
+    await expect(
+      service.updateSimulation(actor, SIMULATION_ID, dto()),
+    ).rejects.toThrow(ConflictException);
+
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(resolveForSimulation).not.toHaveBeenCalled();
+  });
+
+  it('fecha a corrida se a quote for criada durante a atualização', async () => {
+    const { service } = buildService({ updated: null });
+
+    await expect(
+      service.updateSimulation(actor, SIMULATION_ID, dto()),
+    ).rejects.toThrow(ConflictException);
   });
 
   it('bloqueia o PATCH quando a fila de cobrança impede simular', async () => {
@@ -306,7 +350,12 @@ describe('SimulationsService.listSimulations', () => {
   }
 
   function whereSql(queryRaw: jest.Mock): Prisma.Sql {
-    const [, where] = queryRaw.mock.calls[0] as [unknown, Prisma.Sql];
+    const [, , , where] = queryRaw.mock.calls[0] as [
+      unknown,
+      string,
+      string,
+      Prisma.Sql,
+    ];
     return where;
   }
 

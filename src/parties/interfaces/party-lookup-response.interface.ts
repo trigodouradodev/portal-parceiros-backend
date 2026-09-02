@@ -13,11 +13,3 @@ export class PartyLookupData {
   @ApiProperty({ example: '+5511987654321', nullable: true })
   telephone: string | null;
 }
-
-export class PartyLookupResponse {
-  @ApiProperty({ example: true })
-  found: boolean;
-
-  @ApiProperty({ type: PartyLookupData, nullable: true })
-  party: PartyLookupData | null;
-}

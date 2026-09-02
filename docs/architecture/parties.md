@@ -3,16 +3,12 @@
 ## Responsibility
 
 `PartiesModule` owns customer identity lookup and resolution for the partner
-portal. Its public HTTP contract is:
+portal. It is an internal boundary and does not expose its own controller.
 
-- `POST /parties/lookup`: looks up a person globally by CPF for an authenticated
-  user with `QUOTE_CREATE`.
-
-The request uses a body instead of a URL parameter so the CPF is not part of
-the route or query string. A successful lookup returns only name, normalized
-CPF, e-mail and telephone. Birth date and address are intentionally excluded.
-When no identity is found, the endpoint returns `found: false` and `party: null`
-instead of an HTTP 404, because a new customer is a normal simulation flow.
+The public lookup is orchestrated by `POST /eligibility`, after the applicant
+passes the current eligibility rules. A successful lookup returns only name,
+normalized CPF, e-mail and telephone. Birth date and address are intentionally
+excluded. A missing identity is a normal new-customer result (`party: null`).
 
 ## Identity resolution
 

@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
+import { PartiesService } from '../parties/parties.service';
 import { CheckEligibilityDto } from './dto/check-eligibility.dto';
 import { EligibilityService } from './eligibility.service';
 
@@ -26,71 +26,100 @@ function dto(
   };
 }
 
+function buildService(party: unknown = null) {
+  const findDataByCpf = jest.fn().mockResolvedValue(party);
+  const partiesService = { findDataByCpf } as unknown as PartiesService;
+
+  return {
+    service: new EligibilityService(partiesService),
+    findDataByCpf,
+  };
+}
+
 describe('EligibilityService', () => {
-  let service: EligibilityService;
+  it('retorna elegibilidade e os dados existentes da party', async () => {
+    const party = {
+      name: 'Maria canônica',
+      document: '52998224725',
+      email: 'maria@email.com',
+      telephone: '+5511987654321',
+    };
+    const { service, findDataByCpf } = buildService(party);
 
-  beforeEach(async () => {
-    const module = await Test.createTestingModule({
-      providers: [EligibilityService],
-    }).compile();
-    service = module.get(EligibilityService);
-  });
-
-  it('devolve eligible true para CPF com DV válido, sem máscara no document', () => {
-    expect(service.check(dto())).toEqual({
+    await expect(service.check(dto())).resolves.toEqual({
       eligible: true,
       name: 'Maria Souza',
       document: '52998224725',
       birthDate: '1990-05-20',
+      party,
+    });
+    expect(findDataByCpf).toHaveBeenCalledWith('52998224725');
+  });
+
+  it('retorna party null quando o cliente elegível ainda não existe', async () => {
+    const { service } = buildService();
+
+    await expect(service.check(dto())).resolves.toMatchObject({
+      eligible: true,
+      party: null,
     });
   });
 
-  it('aceita CPF já só com dígitos', () => {
-    expect(service.check(dto({ document: '52998224725' })).document).toBe(
-      '52998224725',
-    );
+  it('retorna inelegível para CPF com DV inválido sem consultar parties', async () => {
+    const { service, findDataByCpf } = buildService();
+
+    await expect(
+      service.check(dto({ document: '123.456.789-00' })),
+    ).resolves.toMatchObject({
+      eligible: false,
+      document: '12345678900',
+      party: null,
+    });
+    expect(findDataByCpf).not.toHaveBeenCalled();
   });
 
-  it('trima o nome', () => {
-    expect(service.check(dto({ name: '  Maria Souza  ' })).name).toBe(
-      'Maria Souza',
-    );
+  it('retorna inelegível para sequência de dígitos iguais', async () => {
+    const { service, findDataByCpf } = buildService();
+
+    await expect(
+      service.check(dto({ document: '111.111.111-11' })),
+    ).resolves.toMatchObject({ eligible: false, party: null });
+    expect(findDataByCpf).not.toHaveBeenCalled();
   });
 
-  it('rejeita CPF com DV inválido', () => {
-    expect(() => service.check(dto({ document: '123.456.789-00' }))).toThrow(
+  it('retorna inelegível para menor de 18 sem consultar parties', async () => {
+    const { service, findDataByCpf } = buildService();
+
+    await expect(
+      service.check(dto({ birthDate: yearsAgo(17) })),
+    ).resolves.toMatchObject({ eligible: false, party: null });
+    expect(findDataByCpf).not.toHaveBeenCalled();
+  });
+
+  it('aceita idade entre 18 e 120 anos, inclusive', async () => {
+    const { service } = buildService();
+
+    await expect(
+      service.check(dto({ birthDate: yearsAgo(18) })),
+    ).resolves.toMatchObject({ eligible: true });
+    await expect(
+      service.check(dto({ birthDate: yearsAgo(120) })),
+    ).resolves.toMatchObject({ eligible: true });
+  });
+
+  it('rejeita data de nascimento inválida', async () => {
+    const { service } = buildService();
+
+    await expect(
+      service.check(dto({ birthDate: '2026-02-30' })),
+    ).rejects.toThrow('Data de nascimento inválida.');
+  });
+
+  it('rejeita nome só com espaços depois do trim', async () => {
+    const { service } = buildService();
+
+    await expect(service.check(dto({ name: '   ' }))).rejects.toThrow(
       BadRequestException,
-    );
-    expect(() => service.check(dto({ document: '123.456.789-00' }))).toThrow(
-      'CPF inválido.',
-    );
-  });
-
-  it('rejeita sequência de dígitos iguais', () => {
-    expect(() => service.check(dto({ document: '111.111.111-11' }))).toThrow(
-      'CPF inválido.',
-    );
-  });
-
-  it('rejeita menor de 18', () => {
-    expect(() => service.check(dto({ birthDate: yearsAgo(17) }))).toThrow(
-      'O cliente deve ter entre 18 e 120 anos.',
-    );
-  });
-
-  it('aceita 18 anos completos', () => {
-    expect(service.check(dto({ birthDate: yearsAgo(18) })).eligible).toBe(true);
-  });
-
-  it('rejeita data de nascimento inválida', () => {
-    expect(() => service.check(dto({ birthDate: '2026-02-30' }))).toThrow(
-      'Data de nascimento inválida.',
-    );
-  });
-
-  it('rejeita nome só com espaços depois do trim', () => {
-    expect(() => service.check(dto({ name: '   ' }))).toThrow(
-      'Informe o nome.',
     );
   });
 });

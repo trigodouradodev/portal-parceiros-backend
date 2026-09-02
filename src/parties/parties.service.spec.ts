@@ -19,7 +19,7 @@ function buildService(responses: unknown[][] = []) {
   };
 }
 
-describe('PartiesService.lookupByCpf', () => {
+describe('PartiesService.findDataByCpf', () => {
   it('retorna somente os dados básicos da pessoa encontrada', async () => {
     const { service, queryRaw } = buildService([
       [
@@ -33,14 +33,11 @@ describe('PartiesService.lookupByCpf', () => {
       ],
     ]);
 
-    await expect(service.lookupByCpf('529.982.247-25')).resolves.toEqual({
-      found: true,
-      party: {
-        name: 'Maria Souza',
-        document: '52998224725',
-        email: 'maria@email.com',
-        telephone: '+5511987654321',
-      },
+    await expect(service.findDataByCpf('529.982.247-25')).resolves.toEqual({
+      name: 'Maria Souza',
+      document: '52998224725',
+      email: 'maria@email.com',
+      telephone: '+5511987654321',
     });
 
     const [strings, document] = queryRaw.mock.calls[0] as [
@@ -54,16 +51,13 @@ describe('PartiesService.lookupByCpf', () => {
   it('trata pessoa não encontrada como resultado normal', async () => {
     const { service } = buildService([[]]);
 
-    await expect(service.lookupByCpf('52998224725')).resolves.toEqual({
-      found: false,
-      party: null,
-    });
+    await expect(service.findDataByCpf('52998224725')).resolves.toBeNull();
   });
 
   it('rejeita CPF estruturalmente inválido antes de consultar o banco', async () => {
     const { service, queryRaw } = buildService();
 
-    await expect(service.lookupByCpf('111.111.111-11')).rejects.toThrow(
+    await expect(service.findDataByCpf('111.111.111-11')).rejects.toThrow(
       BadRequestException,
     );
     expect(queryRaw).not.toHaveBeenCalled();
