@@ -28,15 +28,18 @@ import { PermissionKey } from '../auth/permissions/permission-keys';
 import { CreateDraftQuoteDto } from './dto/create-draft-quote.dto';
 import { SaveQuoteAddressDto } from './dto/save-quote-address.dto';
 import { SaveQuoteIncomeDto } from './dto/save-quote-income.dto';
+import { SaveQuotePartnerOpinionDto } from './dto/save-quote-partner-opinion.dto';
 import { SaveQuoteRegistrationDto } from './dto/save-quote-registration.dto';
 import { QuoteDraftSnapshot } from './interfaces/quote-draft-snapshot.interface';
 import { QuoteAddressSnapshot } from './interfaces/quote-address-snapshot.interface';
 import { QuoteIncomeSnapshot } from './interfaces/quote-income-snapshot.interface';
+import { QuotePartnerOpinionSnapshot } from './interfaces/quote-partner-opinion-snapshot.interface';
 import { QuoteRegistrationSnapshot } from './interfaces/quote-registration-snapshot.interface';
 import { QuoteStatusResponse } from './interfaces/quote-status-response.interface';
 import { QuotesService } from './quotes.service';
 import { QuoteDraftAddressService } from './services/quote-draft-address.service';
 import { QuoteDraftIncomeService } from './services/quote-draft-income.service';
+import { QuoteDraftPartnerOpinionService } from './services/quote-draft-partner-opinion.service';
 import { QuoteDraftRegistrationService } from './services/quote-draft-registration.service';
 
 @ApiTags('quotes')
@@ -51,6 +54,7 @@ export class QuotesController {
     private readonly quotesService: QuotesService,
     private readonly quoteDraftAddress: QuoteDraftAddressService,
     private readonly quoteDraftIncome: QuoteDraftIncomeService,
+    private readonly quoteDraftPartnerOpinion: QuoteDraftPartnerOpinionService,
     private readonly quoteDraftRegistration: QuoteDraftRegistrationService,
   ) {}
 
@@ -124,6 +128,23 @@ export class QuotesController {
     @Body() dto: SaveQuoteAddressDto,
   ): Promise<QuoteAddressSnapshot> {
     return this.quoteDraftAddress.save(quoteId, dto, user);
+  }
+
+  @ApiOperation({ summary: 'Salva o passo Parecer do parceiro da proposta.' })
+  @ApiOkResponse({ type: QuotePartnerOpinionSnapshot })
+  @ApiBadRequestResponse({
+    description: 'Campos ou combinações condicionais inválidos.',
+  })
+  @ApiNotFoundResponse({ description: 'Proposta não encontrada.' })
+  @ApiConflictResponse({ description: 'A proposta não está mais em draft.' })
+  @RequirePermissions(PermissionKey.QUOTE_CREATE)
+  @Patch('draft/:quoteId/partner-opinion')
+  saveDraftPartnerOpinion(
+    @CurrentUser() user: JwtPayload,
+    @Param('quoteId', ParseUUIDPipe) quoteId: string,
+    @Body() dto: SaveQuotePartnerOpinionDto,
+  ): Promise<QuotePartnerOpinionSnapshot> {
+    return this.quoteDraftPartnerOpinion.save(quoteId, dto, user);
   }
 
   @ApiOperation({

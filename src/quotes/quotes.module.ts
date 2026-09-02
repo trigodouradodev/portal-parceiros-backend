@@ -5,6 +5,7 @@ import { QuotesController } from './quotes.controller';
 import { QuotesService } from './quotes.service';
 import { QuoteDraftAddressService } from './services/quote-draft-address.service';
 import { QuoteDraftIncomeService } from './services/quote-draft-income.service';
+import { QuoteDraftPartnerOpinionService } from './services/quote-draft-partner-opinion.service';
 import { QuoteDraftRegistrationService } from './services/quote-draft-registration.service';
 import { QuoteDraftStepsService } from './services/quote-draft-steps.service';
 
@@ -14,6 +15,7 @@ import { QuoteDraftStepsService } from './services/quote-draft-steps.service';
   providers: [
     QuoteDraftAddressService,
     QuoteDraftIncomeService,
+    QuoteDraftPartnerOpinionService,
     QuoteDraftRegistrationService,
     QuoteDraftStepsService,
     QuotesService,
