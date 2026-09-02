@@ -53,7 +53,9 @@ export class SimulationSnapshot {
   installmentAmount: number;
 
   @ApiPropertyOptional({
-    description: 'Payload cru da simulação (Celcoin), quando houver.',
+    example: 15603.2,
+    description:
+      'Valor total devido calculado pela Celcoin. Ausente em simulações legadas sem resultado do provedor.',
   })
-  simulationResult?: unknown;
+  totalAmountOwed?: number;
 }

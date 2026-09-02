@@ -17,8 +17,10 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiServiceUnavailableResponse,
   ApiTags,
   ApiUnauthorizedResponse,
+  ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
@@ -62,6 +64,12 @@ export class SimulationsController {
   @ApiForbiddenResponse({
     description: 'Fila de cobrança impede simular proposta.',
   })
+  @ApiUnprocessableEntityResponse({
+    description: 'A Celcoin recusou as condições financeiras informadas.',
+  })
+  @ApiServiceUnavailableResponse({
+    description: 'Integração Celcoin não configurada ou indisponível.',
+  })
   @RequirePermissions(PermissionKey.QUOTE_CREATE)
   @Post()
   createSimulation(
@@ -86,6 +94,12 @@ export class SimulationsController {
   })
   @ApiConflictResponse({
     description: 'A simulação já originou uma proposta e não pode ser editada.',
+  })
+  @ApiUnprocessableEntityResponse({
+    description: 'A Celcoin recusou as condições financeiras informadas.',
+  })
+  @ApiServiceUnavailableResponse({
+    description: 'Integração Celcoin não configurada ou indisponível.',
   })
   @RequirePermissions(PermissionKey.QUOTE_CREATE)
   @Patch(':id')
