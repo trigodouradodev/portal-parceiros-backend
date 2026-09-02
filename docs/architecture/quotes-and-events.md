@@ -206,6 +206,35 @@ mantém o resultado em memória por 24 horas, evitando baixar a lista completa a
 cada requisição. Ambos requerem `QUOTE_CREATE` e traduzem indisponibilidade do
 provedor para HTTP 503.
 
+### Passo 4: Parecer do parceiro
+
+```http
+PATCH /quotes/draft/:quoteId/partner-opinion
+```
+
+O endpoint salva tempo de relacionamento, origem do relacionamento, avaliação
+geral, sinais de endividamento informal e de urgência financeira e o parecer
+em texto livre. O texto reutiliza `quotes.observations`, que já representa o
+parecer do parceiro no fluxo legado.
+
+Os demais dados usam colunas próprias. `sales_agent_relation` não é
+reutilizado porque representa grau de parentesco/relação com o consultor e
+alimenta informações do contrato. `referral` também não é reutilizado porque
+seu contrato é um objeto completo de outra pessoa, enquanto este passo coleta
+somente o CPF de quem indicou.
+
+Regras condicionais:
+
+- `relationshipOriginOther` é obrigatório somente quando a origem é `other`;
+- `referrerDocument` é um CPF válido obrigatório somente quando a origem é
+  `aurea_customer_referral`;
+- campos condicionais que deixam de se aplicar são limpos no banco.
+
+O CPF do indicador é validado estruturalmente, sem exigir que já exista em
+`parties`. A atualização da quote e o upsert de
+`quote_draft_steps.partner_opinion` são atômicos e não geram evento de domínio.
+As regras comuns de ownership e status continuam válidas.
+
 Depois do preenchimento, o parceiro entrega o draft para o cliente:
 
 ```text
@@ -255,6 +284,7 @@ src/
     enums/quote-status.enum.ts
     services/quote-draft-address.service.ts
     services/quote-draft-income.service.ts
+    services/quote-draft-partner-opinion.service.ts
     services/quote-draft-registration.service.ts
     services/quote-draft-steps.service.ts
     quotes.controller.ts

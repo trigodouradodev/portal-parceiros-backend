@@ -15,6 +15,7 @@ import { QuoteEventType } from '../quote-events/enums/quote-event-type.enum';
 import { QuoteEventsService } from '../quote-events/quote-events.service';
 import { SaveQuoteAddressDto } from './dto/save-quote-address.dto';
 import { SaveQuoteIncomeDto } from './dto/save-quote-income.dto';
+import { SaveQuotePartnerOpinionDto } from './dto/save-quote-partner-opinion.dto';
 import { SaveQuoteRegistrationDto } from './dto/save-quote-registration.dto';
 import { QuoteDraftStep } from './enums/quote-draft-step.enum';
 import {
@@ -22,6 +23,11 @@ import {
   AvailableIncomeProof,
   IncomeSource,
 } from './enums/quote-income.enum';
+import {
+  CustomerRelationshipDuration,
+  CustomerRelationshipOrigin,
+  PartnerAssessment,
+} from './enums/quote-partner-opinion.enum';
 import {
   CreditPurpose,
   EconomicActivityCategory,
@@ -35,6 +41,7 @@ import { QuoteStatus } from './enums/quote-status.enum';
 import { QuotesService } from './quotes.service';
 import { QuoteDraftAddressService } from './services/quote-draft-address.service';
 import { QuoteDraftIncomeService } from './services/quote-draft-income.service';
+import { QuoteDraftPartnerOpinionService } from './services/quote-draft-partner-opinion.service';
 import { QuoteDraftRegistrationService } from './services/quote-draft-registration.service';
 import { QuoteDraftStepsService } from './services/quote-draft-steps.service';
 
@@ -93,6 +100,16 @@ const address: SaveQuoteAddressDto = {
     longitude: -46.633308,
     precision: ' 15m ',
   },
+};
+
+const partnerOpinion: SaveQuotePartnerOpinionDto = {
+  relationshipDuration: CustomerRelationshipDuration.ONE_TO_3_YEARS,
+  relationshipOrigin: CustomerRelationshipOrigin.AUREA_CUSTOMER_REFERRAL,
+  referrerDocument: '390.533.447-05',
+  assessment: PartnerAssessment.STRONGLY_RECOMMEND,
+  hasInformalDebtSigns: false,
+  hasFinancialUrgencySigns: false,
+  opinion: ' Cliente conhecido e com atividade estável. ',
 };
 
 const simulation = {
@@ -214,6 +231,7 @@ async function build(options: BuildOptions = {}) {
       QuotesService,
       QuoteDraftAddressService,
       QuoteDraftIncomeService,
+      QuoteDraftPartnerOpinionService,
       QuoteDraftRegistrationService,
       QuoteDraftStepsService,
       { provide: PrismaService, useValue: prisma },
@@ -229,6 +247,7 @@ async function build(options: BuildOptions = {}) {
     service: module.get(QuotesService),
     addressService: module.get(QuoteDraftAddressService),
     incomeService: module.get(QuoteDraftIncomeService),
+    partnerOpinionService: module.get(QuoteDraftPartnerOpinionService),
     registrationService: module.get(QuoteDraftRegistrationService),
     prisma,
     quoteEvents,
@@ -866,6 +885,161 @@ describe('QuoteDraftAddressService.save', () => {
 
     await expect(
       service.save(QUOTE_ID, address, actor()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('QuoteDraftPartnerOpinionService.save', () => {
+  it('salva o parecer e conclui a etapa na mesma transação', async () => {
+    const { partnerOpinionService: service, tx, quoteEvents } = await build();
+
+    await expect(
+      service.save(QUOTE_ID, partnerOpinion, actor()),
+    ).resolves.toEqual({
+      id: QUOTE_ID,
+      status: QuoteStatus.DRAFT,
+      step: QuoteDraftStep.PARTNER_OPINION,
+      completedAt: STEP_COMPLETED_AT,
+      updatedAt: STEP_UPDATED_AT,
+      relationshipDuration: CustomerRelationshipDuration.ONE_TO_3_YEARS,
+      relationshipOrigin: CustomerRelationshipOrigin.AUREA_CUSTOMER_REFERRAL,
+      referrerDocument: '39053344705',
+      assessment: PartnerAssessment.STRONGLY_RECOMMEND,
+      hasInformalDebtSigns: false,
+      hasFinancialUrgencySigns: false,
+      opinion: 'Cliente conhecido e com atividade estável.',
+    });
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: QUOTE_ID,
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OWNER_ID,
+      },
+      data: {
+        customer_relationship_duration:
+          CustomerRelationshipDuration.ONE_TO_3_YEARS,
+        customer_relationship_origin:
+          CustomerRelationshipOrigin.AUREA_CUSTOMER_REFERRAL,
+        customer_relationship_other: null,
+        referrer_document: '39053344705',
+        partner_assessment: PartnerAssessment.STRONGLY_RECOMMEND,
+        informal_debt_signs: false,
+        financial_urgency_signs: false,
+        observations: 'Cliente conhecido e com atividade estável.',
+        updated_at: expect.any(Date) as unknown,
+      },
+    });
+    expect(tx.quote_draft_steps.upsert).toHaveBeenCalledWith({
+      where: {
+        quote_id_step: {
+          quote_id: QUOTE_ID,
+          step: QuoteDraftStep.PARTNER_OPINION,
+        },
+      },
+      create: {
+        quote_id: QUOTE_ID,
+        step: QuoteDraftStep.PARTNER_OPINION,
+        completed_at: expect.any(Date) as unknown,
+        updated_at: expect.any(Date) as unknown,
+      },
+      update: { updated_at: expect.any(Date) as unknown },
+      select: { completed_at: true, updated_at: true },
+    });
+    expect(quoteEvents.createWithinTransaction).not.toHaveBeenCalled();
+  });
+
+  it('limpa campos condicionais que não se aplicam à origem escolhida', async () => {
+    const { partnerOpinionService: service, tx } = await build();
+
+    const result = await service.save(
+      QUOTE_ID,
+      {
+        ...partnerOpinion,
+        relationshipOrigin: CustomerRelationshipOrigin.IN_PERSON_PROSPECTING,
+        relationshipOriginOther: 'Ignorar',
+        referrerDocument: '39053344705',
+      },
+      actor(),
+    );
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          customer_relationship_other: null,
+          referrer_document: null,
+        }) as unknown,
+      }),
+    );
+    expect(result).not.toHaveProperty('relationshipOriginOther');
+    expect(result).not.toHaveProperty('referrerDocument');
+  });
+
+  it.each([
+    {
+      name: 'origem Outros sem descrição',
+      dto: {
+        ...partnerOpinion,
+        relationshipOrigin: CustomerRelationshipOrigin.OTHER,
+        relationshipOriginOther: undefined,
+      },
+    },
+    {
+      name: 'indicação Áurea sem CPF',
+      dto: { ...partnerOpinion, referrerDocument: undefined },
+    },
+    {
+      name: 'indicação Áurea com CPF inválido',
+      dto: { ...partnerOpinion, referrerDocument: '11111111111' },
+    },
+  ])('recusa $name', async ({ dto }) => {
+    const { partnerOpinionService: service, prisma } = await build();
+
+    await expect(service.save(QUOTE_ID, dto, actor())).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('recusa edição por outro parceiro', async () => {
+    const { partnerOpinionService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OTHER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, partnerOpinion, actor()),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('recusa edição depois que a proposta sai de draft', async () => {
+    const { partnerOpinionService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.CLIENT_REVIEW,
+        current_sales_agent_id: OWNER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, partnerOpinion, actor()),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('retorna not found quando a proposta não existe', async () => {
+    const { partnerOpinionService: service, tx } = await build({
+      updateCount: 0,
+      quote: null,
+    });
+
+    await expect(
+      service.save(QUOTE_ID, partnerOpinion, actor()),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
   });

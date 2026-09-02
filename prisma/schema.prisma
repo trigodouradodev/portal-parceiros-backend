@@ -1392,6 +1392,13 @@ model quotes {
   has_multiple_income_sources                                 Boolean?
   secondary_income                                            Decimal?                     @db.Decimal(15, 2)
   available_income_proof                                      String?                      @db.VarChar(30)
+  customer_relationship_duration                              String?                      @db.VarChar(30)
+  customer_relationship_origin                                String?                      @db.VarChar(50)
+  customer_relationship_other                                 String?                      @db.VarChar(255)
+  referrer_document                                           String?                      @db.VarChar(11)
+  partner_assessment                                          String?                      @db.VarChar(30)
+  informal_debt_signs                                         Boolean?
+  financial_urgency_signs                                     Boolean?
   activity_type                                               String                       @db.VarChar(20)
   profession                                                  String                       @db.VarChar(255)
   email                                                       String                       @db.VarChar(255)
