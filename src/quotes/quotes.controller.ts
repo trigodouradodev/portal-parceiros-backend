@@ -5,10 +5,12 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Put,
 } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
@@ -24,9 +26,12 @@ import { RequirePermissions } from '../auth/decorators/require-permissions.decor
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { CreateDraftQuoteDto } from './dto/create-draft-quote.dto';
+import { SaveQuoteRegistrationDto } from './dto/save-quote-registration.dto';
 import { QuoteDraftSnapshot } from './interfaces/quote-draft-snapshot.interface';
+import { QuoteRegistrationSnapshot } from './interfaces/quote-registration-snapshot.interface';
 import { QuoteStatusResponse } from './interfaces/quote-status-response.interface';
 import { QuotesService } from './quotes.service';
+import { QuoteDraftRegistrationService } from './services/quote-draft-registration.service';
 
 @ApiTags('quotes')
 @ApiBearerAuth('access-token')
@@ -36,7 +41,10 @@ import { QuotesService } from './quotes.service';
 })
 @Controller('quotes')
 export class QuotesController {
-  constructor(private readonly quotesService: QuotesService) {}
+  constructor(
+    private readonly quotesService: QuotesService,
+    private readonly quoteDraftRegistration: QuoteDraftRegistrationService,
+  ) {}
 
   @ApiOperation({
     summary: 'Inicia uma proposta draft a partir de uma simulação.',
@@ -57,6 +65,23 @@ export class QuotesController {
     @Body() dto: CreateDraftQuoteDto,
   ): Promise<QuoteDraftSnapshot> {
     return this.quotesService.createDraftFromSimulation(dto.simulationId, user);
+  }
+
+  @ApiOperation({ summary: 'Salva o passo Cadastro da proposta draft.' })
+  @ApiOkResponse({ type: QuoteRegistrationSnapshot })
+  @ApiBadRequestResponse({
+    description: 'Campos ou combinações condicionais inválidos.',
+  })
+  @ApiNotFoundResponse({ description: 'Proposta não encontrada.' })
+  @ApiConflictResponse({ description: 'A proposta não está mais em draft.' })
+  @RequirePermissions(PermissionKey.QUOTE_CREATE)
+  @Patch('draft/:quoteId/registration')
+  saveDraftRegistration(
+    @CurrentUser() user: JwtPayload,
+    @Param('quoteId', ParseUUIDPipe) quoteId: string,
+    @Body() dto: SaveQuoteRegistrationDto,
+  ): Promise<QuoteRegistrationSnapshot> {
+    return this.quoteDraftRegistration.save(quoteId, dto, user);
   }
 
   @ApiOperation({
