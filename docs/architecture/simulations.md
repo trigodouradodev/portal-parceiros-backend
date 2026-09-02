@@ -16,6 +16,8 @@ partner portal. Its public HTTP contract is:
   partner only while it has not originated a quote, using the same payload and
   business rules and Celcoin calculation as `POST`. A missing/foreign
   simulation returns 404 and a converted simulation returns 409.
+- `POST /quotes/draft`: converts one available simulation into its unique quote
+  draft and reuses the persisted customer and financial snapshot.
 
 ## Boundary
 
