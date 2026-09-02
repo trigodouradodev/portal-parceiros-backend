@@ -108,6 +108,38 @@ retornados no snapshot de criação e não representam respostas do cliente. O
 modelo definitivo desses campos será tratado junto ao PATCH dos passos do novo
 wizard.
 
+### Passo 1: Cadastro
+
+```http
+PATCH /quotes/draft/:quoteId/registration
+```
+
+O endpoint salva somente os campos do Cadastro: renovação, gênero, RG,
+profissão, categorias de atividade econômica, estado civil, composição da
+casa, situação e tempo de residência, programas de governo, veículo e
+finalidade do crédito. Detalhe e credor de dívida não pertencem a esse passo.
+
+As opções são códigos estáveis validados no backend/frontend e persistidos em
+`varchar` ou arrays JSONB, sem enum ou `CHECK` no banco. A atividade econômica
+é múltipla e usa `economic_activity_categories`; a coluna escalar legada
+`activity_type` não é alterada por esse endpoint.
+
+Regras condicionais:
+
+- `economicActivityOther` é obrigatório apenas quando a atividade inclui
+  `other`;
+- `spouseDocument` é um CPF válido obrigatório para `married` e
+  `stable_union`;
+- `none` não pode ser combinado com outro programa de governo;
+- `vehicleFinanced` é obrigatório apenas quando `ownsVehicle=true`;
+- campos condicionais que deixam de se aplicar são limpos no banco.
+
+Somente o responsável (ou `ROLE_ADMIN`) pode salvar uma quote ainda em
+`draft`. O update e o upsert de `quote_draft_steps.registration` são executados
+na mesma transação. A tabela de passos guarda apenas o progresso atual; os
+dados de negócio continuam em `quotes`. Salvar uma etapa não gera evento de
+domínio.
+
 Depois do preenchimento, o parceiro entrega o draft para o cliente:
 
 ```text
@@ -150,6 +182,7 @@ casos de uso forem implementados. Não antecipar eventos sem comportamento real.
 src/
   quotes/
     enums/quote-status.enum.ts
+    services/quote-draft-registration.service.ts
     quotes.controller.ts
     quotes.module.ts
     quotes.service.ts

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   NotFoundException,
@@ -10,8 +11,20 @@ import { PermissionKey } from '../auth/permissions/permission-keys';
 import { PrismaService } from '../prisma/prisma.service';
 import { QuoteEventType } from '../quote-events/enums/quote-event-type.enum';
 import { QuoteEventsService } from '../quote-events/quote-events.service';
+import { SaveQuoteRegistrationDto } from './dto/save-quote-registration.dto';
+import { QuoteDraftStep } from './enums/quote-draft-step.enum';
+import {
+  CreditPurpose,
+  EconomicActivityCategory,
+  Gender,
+  GovernmentProgram,
+  HousingStatus,
+  MaritalStatus,
+  ResidenceDuration,
+} from './enums/quote-registration.enum';
 import { QuoteStatus } from './enums/quote-status.enum';
 import { QuotesService } from './quotes.service';
+import { QuoteDraftRegistrationService } from './services/quote-draft-registration.service';
 
 const QUOTE_ID = '11111111-1111-4111-8111-111111111111';
 const OWNER_ID = '22222222-2222-4222-8222-222222222222';
@@ -19,6 +32,30 @@ const OTHER_ID = '33333333-3333-4333-8333-333333333333';
 const SIMULATION_ID = '44444444-4444-4444-8444-444444444444';
 const PRODUCT_ID = '55555555-5555-4555-8555-555555555555';
 const PARTY_ID = '66666666-6666-4666-8666-666666666666';
+const STEP_COMPLETED_AT = new Date('2026-09-02T13:00:00.000Z');
+const STEP_UPDATED_AT = new Date('2026-09-02T14:00:00.000Z');
+
+const registration: SaveQuoteRegistrationDto = {
+  isRenegotiation: false,
+  gender: Gender.FEMALE,
+  secondaryDocument: ' 123456789 ',
+  profession: ' Comerciante ',
+  economicActivityCategories: [
+    EconomicActivityCategory.BUSINESS_OWNER,
+    EconomicActivityCategory.OTHER,
+  ],
+  economicActivityOther: ' Artesanato ',
+  maritalStatus: MaritalStatus.MARRIED,
+  spouseDocument: '390.533.447-05',
+  childrenCount: 2,
+  householdMembers: 4,
+  housingStatus: HousingStatus.OWNED_PAID_OFF,
+  residenceDuration: ResidenceDuration.MORE_THAN_5_YEARS,
+  governmentPrograms: [GovernmentProgram.NONE],
+  ownsVehicle: true,
+  vehicleFinanced: false,
+  creditPurpose: CreditPurpose.BUSINESS_WORKING_CAPITAL,
+};
 
 const simulation = {
   id: SIMULATION_ID,
@@ -101,6 +138,12 @@ async function build(options: BuildOptions = {}) {
       ),
       create: createQuote,
     },
+    quote_draft_steps: {
+      upsert: jest.fn().mockResolvedValue({
+        completed_at: STEP_COMPLETED_AT,
+        updated_at: STEP_UPDATED_AT,
+      }),
+    },
   };
   const quoteEvents = {
     createWithinTransaction: jest.fn().mockResolvedValue({ id: 'event-1' }),
@@ -119,6 +162,7 @@ async function build(options: BuildOptions = {}) {
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       QuotesService,
+      QuoteDraftRegistrationService,
       { provide: PrismaService, useValue: prisma },
       { provide: QuoteEventsService, useValue: quoteEvents },
       {
@@ -130,6 +174,7 @@ async function build(options: BuildOptions = {}) {
 
   return {
     service: module.get(QuotesService),
+    registrationService: module.get(QuoteDraftRegistrationService),
     prisma,
     quoteEvents,
     quoteActivityPermissions,
@@ -262,6 +307,188 @@ describe('QuotesService.createDraftFromSimulation', () => {
     expect(result).not.toHaveProperty('totalAmountOwed');
     const createInput = createQuote.mock.calls[0][0];
     expect(createInput.data).not.toHaveProperty('simulation_result');
+  });
+});
+
+describe('QuoteDraftRegistrationService.save', () => {
+  it('salva o Cadastro e conclui a etapa na mesma transação', async () => {
+    const { registrationService: service, tx } = await build();
+
+    await expect(
+      service.save(QUOTE_ID, registration, actor()),
+    ).resolves.toEqual({
+      id: QUOTE_ID,
+      status: QuoteStatus.DRAFT,
+      step: QuoteDraftStep.REGISTRATION,
+      completedAt: STEP_COMPLETED_AT,
+      updatedAt: STEP_UPDATED_AT,
+      isRenegotiation: false,
+      gender: Gender.FEMALE,
+      secondaryDocument: '123456789',
+      profession: 'Comerciante',
+      economicActivityCategories: [
+        EconomicActivityCategory.BUSINESS_OWNER,
+        EconomicActivityCategory.OTHER,
+      ],
+      economicActivityOther: 'Artesanato',
+      maritalStatus: MaritalStatus.MARRIED,
+      spouseDocument: '39053344705',
+      childrenCount: 2,
+      householdMembers: 4,
+      housingStatus: HousingStatus.OWNED_PAID_OFF,
+      residenceDuration: ResidenceDuration.MORE_THAN_5_YEARS,
+      governmentPrograms: [GovernmentProgram.NONE],
+      ownsVehicle: true,
+      vehicleFinanced: false,
+      creditPurpose: CreditPurpose.BUSINESS_WORKING_CAPITAL,
+    });
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: QUOTE_ID,
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OWNER_ID,
+      },
+      data: {
+        is_renegotiation: false,
+        gender: Gender.FEMALE,
+        secondary_document: '123456789',
+        profession: 'Comerciante',
+        economic_activity_categories: registration.economicActivityCategories,
+        economic_activity_other: 'Artesanato',
+        marital_status: MaritalStatus.MARRIED,
+        spouse_document: '39053344705',
+        children_count: 2,
+        household_members: 4,
+        housing_status: HousingStatus.OWNED_PAID_OFF,
+        residence_duration: ResidenceDuration.MORE_THAN_5_YEARS,
+        government_programs: [GovernmentProgram.NONE],
+        owns_vehicle: true,
+        vehicle_financed: false,
+        credit_purpose: CreditPurpose.BUSINESS_WORKING_CAPITAL,
+        updated_at: expect.any(Date) as unknown,
+      },
+    });
+    expect(tx.quote_draft_steps.upsert).toHaveBeenCalledWith({
+      where: {
+        quote_id_step: {
+          quote_id: QUOTE_ID,
+          step: QuoteDraftStep.REGISTRATION,
+        },
+      },
+      create: {
+        quote_id: QUOTE_ID,
+        step: QuoteDraftStep.REGISTRATION,
+        completed_at: expect.any(Date) as unknown,
+        updated_at: expect.any(Date) as unknown,
+      },
+      update: { updated_at: expect.any(Date) as unknown },
+      select: { completed_at: true, updated_at: true },
+    });
+  });
+
+  it('limpa os campos condicionais quando eles não se aplicam', async () => {
+    const { registrationService: service, tx } = await build();
+    const result = await service.save(
+      QUOTE_ID,
+      {
+        ...registration,
+        economicActivityCategories: [EconomicActivityCategory.CLT_EMPLOYEE],
+        economicActivityOther: 'Ignorar',
+        maritalStatus: MaritalStatus.SINGLE,
+        spouseDocument: '39053344705',
+        ownsVehicle: false,
+        vehicleFinanced: true,
+      },
+      actor(),
+    );
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          economic_activity_other: null,
+          spouse_document: null,
+          vehicle_financed: null,
+        }) as unknown,
+      }),
+    );
+    expect(result).not.toHaveProperty('economicActivityOther');
+    expect(result).not.toHaveProperty('spouseDocument');
+    expect(result).not.toHaveProperty('vehicleFinanced');
+  });
+
+  it.each([
+    {
+      name: 'atividade Outros sem descrição',
+      dto: {
+        ...registration,
+        economicActivityOther: undefined,
+      },
+    },
+    {
+      name: 'CPF inválido do cônjuge',
+      dto: { ...registration, spouseDocument: '11111111111' },
+    },
+    {
+      name: 'Nenhum combinado com outro programa',
+      dto: {
+        ...registration,
+        governmentPrograms: [GovernmentProgram.NONE, GovernmentProgram.BPC],
+      },
+    },
+    {
+      name: 'veículo sem informação de financiamento',
+      dto: { ...registration, vehicleFinanced: undefined },
+    },
+  ])('recusa $name', async ({ dto }) => {
+    const { registrationService: service, prisma } = await build();
+
+    await expect(service.save(QUOTE_ID, dto, actor())).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('recusa edição por outro parceiro', async () => {
+    const { registrationService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OTHER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, registration, actor()),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('recusa edição depois que a proposta sai de draft', async () => {
+    const { registrationService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.CLIENT_REVIEW,
+        current_sales_agent_id: OWNER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, registration, actor()),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('retorna not found quando a proposta não existe', async () => {
+    const { registrationService, tx } = await build({
+      updateCount: 0,
+      quote: null,
+    });
+
+    await expect(
+      registrationService.save(QUOTE_ID, registration, actor()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
   });
 });
 

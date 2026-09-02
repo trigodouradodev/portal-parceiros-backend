@@ -1373,6 +1373,19 @@ model quotes {
   document                                                    String                       @db.VarChar(255)
   client_name                                                 String                       @db.VarChar(255)
   secondary_document                                          String?                      @db.VarChar(255)
+  gender                                                      String?                      @db.VarChar(30)
+  economic_activity_categories                                Json?
+  economic_activity_other                                     String?
+  marital_status                                              String?                      @db.VarChar(30)
+  spouse_document                                             String?                      @db.VarChar(14)
+  children_count                                              Int?
+  household_members                                           Int?
+  housing_status                                              String?                      @db.VarChar(40)
+  residence_duration                                          String?                      @db.VarChar(40)
+  government_programs                                         Json?
+  owns_vehicle                                                Boolean?
+  vehicle_financed                                            Boolean?
+  credit_purpose                                              String?                      @db.VarChar(60)
   activity_type                                               String                       @db.VarChar(20)
   profession                                                  String                       @db.VarChar(255)
   email                                                       String                       @db.VarChar(255)
@@ -1437,6 +1450,7 @@ model quotes {
   quote_approvals                                             quote_approvals[]
   quote_edit_history                                          quote_edit_history[]
   quote_events                                                quote_events[]
+  quote_draft_steps                                           quote_draft_steps[]
   quote_lemit_analysis                                        quote_lemit_analysis[]
   quote_lemit_validation                                      quote_lemit_validation[]
   quote_serasa_analysis                                       quote_serasa_analysis[]
@@ -2014,6 +2028,17 @@ model quote_events {
 
   @@index([quote_id, event_type], map: "quote_events_quote_id_event_type_index")
   @@index([quote_id], map: "quote_events_quote_id_index")
+  @@schema("public")
+}
+
+model quote_draft_steps {
+  quote_id     String   @db.Uuid
+  step         String   @db.VarChar(50)
+  completed_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime @default(now()) @db.Timestamptz(6)
+  quotes       quotes   @relation(fields: [quote_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "quote_draft_steps_quote_id_foreign")
+
+  @@id([quote_id, step])
   @@schema("public")
 }
 
