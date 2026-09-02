@@ -64,6 +64,100 @@ describe('PartiesService.findDataByCpf', () => {
   });
 });
 
+describe('PartiesService.findFormDataByCpf', () => {
+  it('retorna dados cadastrais e o endereço prioritário sem expor o ID', async () => {
+    const { service, queryRaw } = buildService([
+      [
+        {
+          id: PARTY_ID,
+          name: 'Maria Souza',
+          tax_id: '529.982.247-25',
+          email: 'maria@email.com',
+          phone: '+5511987654321',
+          address_street: 'Praça da Sé',
+          address_number: '100',
+          address_complement: null,
+          address_neighborhood: 'Sé',
+          address_city: 'São Paulo',
+          address_state: 'sp',
+          address_zip_code: '01001-000',
+        },
+      ],
+    ]);
+
+    await expect(service.findFormDataByCpf('529.982.247-25')).resolves.toEqual({
+      name: 'Maria Souza',
+      document: '52998224725',
+      email: 'maria@email.com',
+      telephone: '+5511987654321',
+      address: {
+        zipCode: '01001000',
+        streetName: 'Praça da Sé',
+        streetNumber: '100',
+        streetComplement: '',
+        streetDistrict: 'Sé',
+        city: 'São Paulo',
+        state: 'SP',
+      },
+    });
+
+    const [strings, document] = queryRaw.mock.calls[0] as [
+      TemplateStringsArray,
+      string,
+    ];
+    const sql = strings.join(' ');
+    expect(sql).toContain('LEFT JOIN LATERAL');
+    expect(sql).toContain(
+      'ORDER BY is_primary DESC NULLS LAST, created_at DESC, id DESC',
+    );
+    expect(document).toBe('52998224725');
+  });
+
+  it('retorna a pessoa com endereço nulo quando não há endereço cadastrado', async () => {
+    const { service } = buildService([
+      [
+        {
+          id: PARTY_ID,
+          name: 'Maria Souza',
+          tax_id: '52998224725',
+          email: null,
+          phone: null,
+          address_street: null,
+          address_number: null,
+          address_complement: null,
+          address_neighborhood: null,
+          address_city: null,
+          address_state: null,
+          address_zip_code: null,
+        },
+      ],
+    ]);
+
+    await expect(service.findFormDataByCpf('52998224725')).resolves.toEqual({
+      name: 'Maria Souza',
+      document: '52998224725',
+      email: null,
+      telephone: null,
+      address: null,
+    });
+  });
+
+  it('trata pessoa não encontrada como resultado normal', async () => {
+    const { service } = buildService([[]]);
+
+    await expect(service.findFormDataByCpf('52998224725')).resolves.toBeNull();
+  });
+
+  it('rejeita CPF inválido antes de consultar o banco', async () => {
+    const { service, queryRaw } = buildService();
+
+    await expect(service.findFormDataByCpf('11111111111')).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(queryRaw).not.toHaveBeenCalled();
+  });
+});
+
 describe('PartiesService.resolveForSimulation', () => {
   it('reutiliza a party existente sem alterar os dados canônicos', async () => {
     const { service, prisma, queryRaw } = buildService([

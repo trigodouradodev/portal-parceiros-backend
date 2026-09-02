@@ -14,10 +14,12 @@ import { PrismaService } from '../prisma/prisma.service';
 import { QuoteEventType } from '../quote-events/enums/quote-event-type.enum';
 import { QuoteEventsService } from '../quote-events/quote-events.service';
 import { SaveQuoteAddressDto } from './dto/save-quote-address.dto';
+import { SaveQuoteGuarantorDto } from './dto/save-quote-guarantor.dto';
 import { SaveQuoteIncomeDto } from './dto/save-quote-income.dto';
 import { SaveQuotePartnerOpinionDto } from './dto/save-quote-partner-opinion.dto';
 import { SaveQuoteRegistrationDto } from './dto/save-quote-registration.dto';
 import { QuoteDraftStep } from './enums/quote-draft-step.enum';
+import { GuarantorRelationship } from './enums/quote-guarantor.enum';
 import {
   ActivityDuration,
   AvailableIncomeProof,
@@ -40,6 +42,7 @@ import {
 import { QuoteStatus } from './enums/quote-status.enum';
 import { QuotesService } from './quotes.service';
 import { QuoteDraftAddressService } from './services/quote-draft-address.service';
+import { QuoteDraftGuarantorService } from './services/quote-draft-guarantor.service';
 import { QuoteDraftIncomeService } from './services/quote-draft-income.service';
 import { QuoteDraftPartnerOpinionService } from './services/quote-draft-partner-opinion.service';
 import { QuoteDraftRegistrationService } from './services/quote-draft-registration.service';
@@ -112,6 +115,24 @@ const partnerOpinion: SaveQuotePartnerOpinionDto = {
   opinion: ' Cliente conhecido e com atividade estável. ',
 };
 
+const guarantor: SaveQuoteGuarantorDto = {
+  name: ' João Souza ',
+  document: '390.533.447-05',
+  birthDate: '1988-03-15',
+  email: ' JOAO@EMAIL.COM ',
+  telephone: '(11) 98765-4321',
+  address: {
+    zipCode: '01001-000',
+    streetName: ' Praça da Sé ',
+    streetNumber: ' 100 ',
+    streetComplement: ' Apto 12 ',
+    streetDistrict: ' Sé ',
+    city: ' São Paulo ',
+    state: BrazilState.SP,
+  },
+  relationship: GuarantorRelationship.SIBLING,
+};
+
 const simulation = {
   id: SIMULATION_ID,
   party_id: PARTY_ID,
@@ -168,6 +189,7 @@ interface BuildOptions {
   existingDraft?: { id: string } | null;
   canCreateQuote?: boolean;
   createError?: Error & { code?: string };
+  quoteDocument?: string;
 }
 
 async function build(options: BuildOptions = {}) {
@@ -196,12 +218,18 @@ async function build(options: BuildOptions = {}) {
       updateMany: jest
         .fn()
         .mockResolvedValue({ count: options.updateCount ?? 1 }),
-      findUnique: jest.fn((args: { where: Record<string, unknown> }) =>
-        Promise.resolve(
-          'simulation_id' in args.where
-            ? (options.existingDraft ?? null)
-            : (options.quote ?? null),
-        ),
+      findUnique: jest.fn(
+        (args: {
+          where: Record<string, unknown>;
+          select?: Record<string, boolean>;
+        }) =>
+          Promise.resolve(
+            'simulation_id' in args.where
+              ? (options.existingDraft ?? null)
+              : args.select?.document
+                ? { document: options.quoteDocument ?? simulation.document }
+                : (options.quote ?? null),
+          ),
       ),
       create: createQuote,
     },
@@ -230,6 +258,7 @@ async function build(options: BuildOptions = {}) {
     providers: [
       QuotesService,
       QuoteDraftAddressService,
+      QuoteDraftGuarantorService,
       QuoteDraftIncomeService,
       QuoteDraftPartnerOpinionService,
       QuoteDraftRegistrationService,
@@ -246,6 +275,7 @@ async function build(options: BuildOptions = {}) {
   return {
     service: module.get(QuotesService),
     addressService: module.get(QuoteDraftAddressService),
+    guarantorService: module.get(QuoteDraftGuarantorService),
     incomeService: module.get(QuoteDraftIncomeService),
     partnerOpinionService: module.get(QuoteDraftPartnerOpinionService),
     registrationService: module.get(QuoteDraftRegistrationService),
@@ -1040,6 +1070,192 @@ describe('QuoteDraftPartnerOpinionService.save', () => {
 
     await expect(
       service.save(QUOTE_ID, partnerOpinion, actor()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('QuoteDraftGuarantorService.save', () => {
+  it('salva o avalista no formato consumido pelo connector e conclui a etapa', async () => {
+    const { guarantorService: service, tx, quoteEvents } = await build();
+
+    await expect(service.save(QUOTE_ID, guarantor, actor())).resolves.toEqual({
+      id: QUOTE_ID,
+      status: QuoteStatus.DRAFT,
+      step: QuoteDraftStep.GUARANTOR,
+      completedAt: STEP_COMPLETED_AT,
+      updatedAt: STEP_UPDATED_AT,
+      name: 'João Souza',
+      document: '39053344705',
+      birthDate: '1988-03-15',
+      email: 'joao@email.com',
+      telephone: '+5511987654321',
+      address: {
+        zipCode: '01001000',
+        streetName: 'Praça da Sé',
+        streetNumber: '100',
+        streetComplement: 'Apto 12',
+        streetDistrict: 'Sé',
+        city: 'São Paulo',
+        state: BrazilState.SP,
+      },
+      relationship: GuarantorRelationship.SIBLING,
+    });
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: QUOTE_ID,
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OWNER_ID,
+      },
+      data: {
+        guarantor: {
+          name: 'João Souza',
+          document: '39053344705',
+          birthDate: '1988-03-15',
+          email: 'joao@email.com',
+          telephone: '+5511987654321',
+          address: {
+            zipCode: '01001000',
+            streetName: 'Praça da Sé',
+            streetNumber: '100',
+            streetComplement: 'Apto 12',
+            streetDistrict: 'Sé',
+            city: 'São Paulo',
+            state: BrazilState.SP,
+          },
+          relationship: GuarantorRelationship.SIBLING,
+        },
+        updated_at: expect.any(Date) as unknown,
+      },
+    });
+    expect(tx.quotes.findUnique).toHaveBeenCalledWith({
+      where: { id: QUOTE_ID },
+      select: { document: true },
+    });
+    expect(tx.quote_draft_steps.upsert).toHaveBeenCalledWith({
+      where: {
+        quote_id_step: {
+          quote_id: QUOTE_ID,
+          step: QuoteDraftStep.GUARANTOR,
+        },
+      },
+      create: {
+        quote_id: QUOTE_ID,
+        step: QuoteDraftStep.GUARANTOR,
+        completed_at: expect.any(Date) as unknown,
+        updated_at: expect.any(Date) as unknown,
+      },
+      update: { updated_at: expect.any(Date) as unknown },
+      select: { completed_at: true, updated_at: true },
+    });
+    expect(quoteEvents.createWithinTransaction).not.toHaveBeenCalled();
+  });
+
+  it('aceita telefone com +55 e limpa complemento ausente', async () => {
+    const { guarantorService: service, tx } = await build();
+
+    const result = await service.save(
+      QUOTE_ID,
+      {
+        ...guarantor,
+        telephone: '+55 11 98765-4321',
+        address: { ...guarantor.address, streetComplement: undefined },
+      },
+      actor(),
+    );
+
+    expect(result.telephone).toBe('+5511987654321');
+    expect(result.address.streetComplement).toBe('');
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          guarantor: expect.objectContaining({
+            telephone: '+5511987654321',
+            address: expect.objectContaining({
+              streetComplement: '',
+            }) as unknown,
+          }) as unknown,
+        }) as unknown,
+      }),
+    );
+  });
+
+  it.each([
+    {
+      name: 'CPF inválido',
+      dto: { ...guarantor, document: '11111111111' },
+    },
+    {
+      name: 'data inexistente',
+      dto: { ...guarantor, birthDate: '1988-02-30' },
+    },
+    {
+      name: 'avalista menor de idade',
+      dto: { ...guarantor, birthDate: new Date().toISOString().slice(0, 10) },
+    },
+    {
+      name: 'telefone inválido',
+      dto: { ...guarantor, telephone: '12345' },
+    },
+  ])('recusa $name antes de abrir a transação', async ({ dto }) => {
+    const { guarantorService: service, prisma } = await build();
+
+    await expect(service.save(QUOTE_ID, dto, actor())).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('recusa o próprio tomador como avalista e não conclui a etapa', async () => {
+    const { guarantorService: service, tx } = await build({
+      quoteDocument: '390.533.447-05',
+    });
+
+    await expect(
+      service.save(QUOTE_ID, guarantor, actor()),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('recusa edição por outro parceiro', async () => {
+    const { guarantorService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OTHER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, guarantor, actor()),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('recusa edição depois que a proposta sai de draft', async () => {
+    const { guarantorService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.CLIENT_REVIEW,
+        current_sales_agent_id: OWNER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, guarantor, actor()),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('retorna not found quando a proposta não existe', async () => {
+    const { guarantorService: service, tx } = await build({
+      updateCount: 0,
+      quote: null,
+    });
+
+    await expect(
+      service.save(QUOTE_ID, guarantor, actor()),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
   });

@@ -235,6 +235,33 @@ O CPF do indicador é validado estruturalmente, sem exigir que já exista em
 `quote_draft_steps.partner_opinion` são atômicos e não geram evento de domínio.
 As regras comuns de ownership e status continuam válidas.
 
+### Passo 5: Avalista
+
+```http
+PATCH /quotes/draft/:quoteId/guarantor
+```
+
+O endpoint salva nome, CPF, nascimento, e-mail, telefone, endereço e grau de
+parentesco no JSONB `quotes.guarantor`. A estrutura de identidade e endereço é
+a mesma já consumida pelo connector e pela integração Celcoin. O CEP e o CPF
+são persistidos somente com dígitos, o telefone no formato canônico
+`+55<DDD><número>` e o complemento ausente como string vazia.
+
+O avalista deve ter entre 18 e 119 anos e não pode possuir o mesmo CPF do
+tomador. O grau de parentesco é um código estável validado pela aplicação e
+armazenado dentro do snapshot JSON, sem enum ou `CHECK` no banco. As opções são
+`parent`, `spouse`, `sibling`, `child`, `other_relative` e `unrelated`.
+
+Este passo não cria nem atualiza registros de `parties` ou `addresses`, nem
+preenche `guarantor_party_id`. A resolução da identidade e do endereço do
+avalista continua ocorrendo no connector quando o draft for efetivamente
+submetido. A gravação do JSON e o upsert de `quote_draft_steps.guarantor` são
+atômicos e não geram evento de domínio.
+
+Para pré-preencher o passo, o frontend pode consultar
+`GET /parties/by-cpf/:cpf`. A resposta não expõe `partyId`; o identificador não
+faz parte do PATCH do avalista e não é confiado ao cliente HTTP.
+
 Depois do preenchimento, o parceiro entrega o draft para o cliente:
 
 ```text
@@ -283,6 +310,7 @@ src/
   quotes/
     enums/quote-status.enum.ts
     services/quote-draft-address.service.ts
+    services/quote-draft-guarantor.service.ts
     services/quote-draft-income.service.ts
     services/quote-draft-partner-opinion.service.ts
     services/quote-draft-registration.service.ts
