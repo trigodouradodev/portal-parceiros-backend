@@ -1386,6 +1386,12 @@ model quotes {
   owns_vehicle                                                Boolean?
   vehicle_financed                                            Boolean?
   credit_purpose                                              String?                      @db.VarChar(60)
+  business_document                                           String?                      @db.VarChar(14)
+  activity_duration                                           String?                      @db.VarChar(30)
+  income_source                                               String?                      @db.VarChar(30)
+  has_multiple_income_sources                                 Boolean?
+  secondary_income                                            Decimal?                     @db.Decimal(15, 2)
+  available_income_proof                                      String?                      @db.VarChar(30)
   activity_type                                               String                       @db.VarChar(20)
   profession                                                  String                       @db.VarChar(255)
   email                                                       String                       @db.VarChar(255)

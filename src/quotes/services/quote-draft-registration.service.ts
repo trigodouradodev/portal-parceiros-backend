@@ -1,11 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../../auth/permissions/permission-keys';
 import { cpfDigits, isValidCpf } from '../../common/cpf.util';
@@ -19,10 +12,14 @@ import {
 } from '../enums/quote-registration.enum';
 import { QuoteStatus } from '../enums/quote-status.enum';
 import { QuoteRegistrationSnapshot } from '../interfaces/quote-registration-snapshot.interface';
+import { QuoteDraftStepsService } from './quote-draft-steps.service';
 
 @Injectable()
 export class QuoteDraftRegistrationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly quoteDraftSteps: QuoteDraftStepsService,
+  ) {}
 
   /** Salva atomicamente o primeiro passo editável do wizard. */
   async save(
@@ -63,25 +60,21 @@ export class QuoteDraftRegistrationService {
       });
 
       if (result.count === 0) {
-        await this.throwSaveError(tx, quoteId, actor, isAdmin);
+        await this.quoteDraftSteps.throwSaveError(
+          tx,
+          quoteId,
+          actor,
+          isAdmin,
+          'O cadastro',
+        );
       }
 
-      const progress = await tx.quote_draft_steps.upsert({
-        where: {
-          quote_id_step: {
-            quote_id: quoteId,
-            step: QuoteDraftStep.REGISTRATION,
-          },
-        },
-        create: {
-          quote_id: quoteId,
-          step: QuoteDraftStep.REGISTRATION,
-          completed_at: updatedAt,
-          updated_at: updatedAt,
-        },
-        update: { updated_at: updatedAt },
-        select: { completed_at: true, updated_at: true },
-      });
+      const progress = await this.quoteDraftSteps.completeWithinTransaction(
+        tx,
+        quoteId,
+        QuoteDraftStep.REGISTRATION,
+        updatedAt,
+      );
 
       return {
         id: quoteId,
@@ -113,35 +106,6 @@ export class QuoteDraftRegistrationService {
         creditPurpose: registration.creditPurpose,
       };
     });
-  }
-
-  private async throwSaveError(
-    tx: Prisma.TransactionClient,
-    quoteId: string,
-    actor: JwtPayload,
-    isAdmin: boolean,
-  ): Promise<never> {
-    const quote = await tx.quotes.findUnique({
-      where: { id: quoteId },
-      select: {
-        quote_status: true,
-        current_sales_agent_id: true,
-      },
-    });
-
-    if (!quote) {
-      throw new NotFoundException('Proposta não encontrada.');
-    }
-
-    if (!isAdmin && quote.current_sales_agent_id !== actor.sub) {
-      throw new ForbiddenException(
-        'Somente o parceiro responsável pode editar esta proposta.',
-      );
-    }
-
-    throw new ConflictException(
-      `O cadastro não pode ser alterado no status ${quote.quote_status}.`,
-    );
   }
 }
 

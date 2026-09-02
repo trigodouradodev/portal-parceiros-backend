@@ -12,7 +12,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { QuoteEventType } from '../quote-events/enums/quote-event-type.enum';
 import { QuoteEventsService } from '../quote-events/quote-events.service';
 import { SaveQuoteRegistrationDto } from './dto/save-quote-registration.dto';
+import { SaveQuoteIncomeDto } from './dto/save-quote-income.dto';
 import { QuoteDraftStep } from './enums/quote-draft-step.enum';
+import {
+  ActivityDuration,
+  AvailableIncomeProof,
+  IncomeSource,
+} from './enums/quote-income.enum';
 import {
   CreditPurpose,
   EconomicActivityCategory,
@@ -24,7 +30,9 @@ import {
 } from './enums/quote-registration.enum';
 import { QuoteStatus } from './enums/quote-status.enum';
 import { QuotesService } from './quotes.service';
+import { QuoteDraftIncomeService } from './services/quote-draft-income.service';
 import { QuoteDraftRegistrationService } from './services/quote-draft-registration.service';
+import { QuoteDraftStepsService } from './services/quote-draft-steps.service';
 
 const QUOTE_ID = '11111111-1111-4111-8111-111111111111';
 const OWNER_ID = '22222222-2222-4222-8222-222222222222';
@@ -55,6 +63,16 @@ const registration: SaveQuoteRegistrationDto = {
   ownsVehicle: true,
   vehicleFinanced: false,
   creditPurpose: CreditPurpose.BUSINESS_WORKING_CAPITAL,
+};
+
+const income: SaveQuoteIncomeDto = {
+  businessDocument: '11.222.333/0001-81',
+  activityDuration: ActivityDuration.THREE_TO_5_YEARS,
+  declaredMonthlyIncome: 3500,
+  incomeSource: IncomeSource.MIXED_INCOME,
+  hasMultipleIncomeSources: true,
+  secondaryIncome: 800,
+  availableIncomeProof: AvailableIncomeProof.BANK_STATEMENT,
 };
 
 const simulation = {
@@ -162,7 +180,9 @@ async function build(options: BuildOptions = {}) {
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       QuotesService,
+      QuoteDraftIncomeService,
       QuoteDraftRegistrationService,
+      QuoteDraftStepsService,
       { provide: PrismaService, useValue: prisma },
       { provide: QuoteEventsService, useValue: quoteEvents },
       {
@@ -174,6 +194,7 @@ async function build(options: BuildOptions = {}) {
 
   return {
     service: module.get(QuotesService),
+    incomeService: module.get(QuoteDraftIncomeService),
     registrationService: module.get(QuoteDraftRegistrationService),
     prisma,
     quoteEvents,
@@ -487,6 +508,152 @@ describe('QuoteDraftRegistrationService.save', () => {
 
     await expect(
       registrationService.save(QUOTE_ID, registration, actor()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('QuoteDraftIncomeService.save', () => {
+  it('salva as rendas principal e secundária separadamente e conclui a etapa', async () => {
+    const { incomeService: service, tx } = await build();
+
+    await expect(service.save(QUOTE_ID, income, actor())).resolves.toEqual({
+      id: QUOTE_ID,
+      status: QuoteStatus.DRAFT,
+      step: QuoteDraftStep.INCOME,
+      completedAt: STEP_COMPLETED_AT,
+      updatedAt: STEP_UPDATED_AT,
+      businessDocument: '11222333000181',
+      activityDuration: ActivityDuration.THREE_TO_5_YEARS,
+      declaredMonthlyIncome: 3500,
+      incomeSource: IncomeSource.MIXED_INCOME,
+      hasMultipleIncomeSources: true,
+      secondaryIncome: 800,
+      availableIncomeProof: AvailableIncomeProof.BANK_STATEMENT,
+    });
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: QUOTE_ID,
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OWNER_ID,
+      },
+      data: {
+        business_document: '11222333000181',
+        activity_duration: ActivityDuration.THREE_TO_5_YEARS,
+        personal_income: 3500,
+        income_source: IncomeSource.MIXED_INCOME,
+        has_multiple_income_sources: true,
+        secondary_income: 800,
+        available_income_proof: AvailableIncomeProof.BANK_STATEMENT,
+        updated_at: expect.any(Date) as unknown,
+      },
+    });
+    expect(tx.quote_draft_steps.upsert).toHaveBeenCalledWith({
+      where: {
+        quote_id_step: {
+          quote_id: QUOTE_ID,
+          step: QuoteDraftStep.INCOME,
+        },
+      },
+      create: {
+        quote_id: QUOTE_ID,
+        step: QuoteDraftStep.INCOME,
+        completed_at: expect.any(Date) as unknown,
+        updated_at: expect.any(Date) as unknown,
+      },
+      update: { updated_at: expect.any(Date) as unknown },
+      select: { completed_at: true, updated_at: true },
+    });
+  });
+
+  it('aceita CNPJ ausente e limpa a renda secundária quando não há múltiplas fontes', async () => {
+    const { incomeService: service, tx } = await build();
+
+    const result = await service.save(
+      QUOTE_ID,
+      {
+        ...income,
+        businessDocument: undefined,
+        hasMultipleIncomeSources: false,
+        secondaryIncome: 999,
+      },
+      actor(),
+    );
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          business_document: null,
+          personal_income: 3500,
+          secondary_income: null,
+        }) as unknown,
+      }),
+    );
+    expect(result).not.toHaveProperty('businessDocument');
+    expect(result).not.toHaveProperty('secondaryIncome');
+  });
+
+  it.each([
+    {
+      name: 'CNPJ inválido',
+      dto: { ...income, businessDocument: '11111111111111' },
+    },
+    {
+      name: 'múltiplas fontes sem renda secundária',
+      dto: { ...income, secondaryIncome: undefined },
+    },
+    {
+      name: 'múltiplas fontes com renda secundária zerada',
+      dto: { ...income, secondaryIncome: 0 },
+    },
+  ])('recusa $name', async ({ dto }) => {
+    const { incomeService: service, prisma } = await build();
+
+    await expect(service.save(QUOTE_ID, dto, actor())).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('recusa edição por outro parceiro', async () => {
+    const { incomeService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OTHER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, income, actor()),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('recusa edição depois que a proposta sai de draft', async () => {
+    const { incomeService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.CLIENT_REVIEW,
+        current_sales_agent_id: OWNER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, income, actor()),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('retorna not found quando a proposta não existe', async () => {
+    const { incomeService: service, tx } = await build({
+      updateCount: 0,
+      quote: null,
+    });
+
+    await expect(
+      service.save(QUOTE_ID, income, actor()),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
   });
