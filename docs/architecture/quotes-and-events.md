@@ -262,6 +262,35 @@ Para pré-preencher o passo, o frontend pode consultar
 `GET /parties/by-cpf/:cpf`. A resposta não expõe `partyId`; o identificador não
 faz parte do PATCH do avalista e não é confiado ao cliente HTTP.
 
+### Passo 6: Financeiro
+
+```http
+PATCH /quotes/draft/:quoteId/financial
+```
+
+O contrato HTTP separa `expenses` e `loans`. Uma despesa possui categoria,
+valor e descrição opcional. Um empréstimo possui valor da parcela, frequência,
+instituição, categoria e descrição opcional. As duas listas podem ser vazias e
+cada nova gravação substitui integralmente os valores anteriores do passo.
+
+Para preservar a compatibilidade com os consumidores do connector, despesas
+são persistidas em `quotes.debts` no formato `category`, `amount` e
+`observations`. Empréstimos continuam em `quotes.loans`: o valor da parcela é
+gravado em `amount`, a descrição em `observations`, e os novos campos
+`frequency` e `institution` são acrescentados ao objeto. O endpoint traduz
+esses nomes legados e devolve ao portal o contrato explícito com
+`installmentAmount` e `description`.
+
+Categorias e demais opções são códigos estáveis validados na aplicação e
+armazenados nos JSONB existentes, sem enum ou `CHECK` no banco. Uma descrição
+é obrigatória quando a categoria da despesa for `other`, ou quando a categoria
+ou instituição do empréstimo for `other`. Valores devem ser maiores que zero e
+ter no máximo duas casas decimais.
+
+A gravação dos dois JSONs e o upsert de `quote_draft_steps.financial` são
+atômicos e não geram evento de domínio. As regras comuns de ownership e status
+continuam válidas. Não é necessária migration.
+
 Depois do preenchimento, o parceiro entrega o draft para o cliente:
 
 ```text
@@ -310,6 +339,7 @@ src/
   quotes/
     enums/quote-status.enum.ts
     services/quote-draft-address.service.ts
+    services/quote-draft-financial.service.ts
     services/quote-draft-guarantor.service.ts
     services/quote-draft-income.service.ts
     services/quote-draft-partner-opinion.service.ts
