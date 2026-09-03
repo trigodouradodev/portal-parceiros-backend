@@ -8,7 +8,7 @@ import { mapGuarantor } from '../activities/activities.mapper';
 import { FollowUpParty } from '../follow-up/enums/follow-up.enums';
 import { PrismaService } from '../prisma/prisma.service';
 import { VerifyLocationDto } from './dto/verify-location.dto';
-import { GeocodingService } from './geocoding.service';
+import { GeocodingService } from '../locations/geocoding.service';
 import { LocationCheckResult } from './interfaces/location-check-result.interface';
 
 /** Raio médio da Terra em metros (para a fórmula de Haversine). */

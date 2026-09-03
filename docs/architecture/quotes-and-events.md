@@ -198,13 +198,17 @@ As consultas auxiliares não pertencem ao domínio de propostas e ficam no
 ```http
 GET /locations/postal-code/:zipCode
 GET /locations/states-cities
+GET /locations/reverse-geocode?latitude=-23.55052&longitude=-46.633308
 ```
 
 O primeiro normaliza a resposta do ViaCEP para os mesmos nomes usados no
 endereço da quote. O segundo agrupa a malha de localidades do IBGE por UF e
 mantém o resultado em memória por 24 horas, evitando baixar a lista completa a
-cada requisição. Ambos requerem `QUOTE_CREATE` e traduzem indisponibilidade do
-provedor para HTTP 503.
+cada requisição. O terceiro consulta a Google Geocoding API e devolve o endereço
+mais específico encontrado, com os componentes ausentes representados por
+`null`. A geocodificação reversa é somente leitura: não altera endereço de
+`parties`, simulações ou quotes. As três consultas requerem `QUOTE_CREATE` e
+traduzem indisponibilidade do respectivo provedor para HTTP 503.
 
 ### Passo 4: Parecer do parceiro
 
@@ -370,6 +374,8 @@ casos de uso forem implementados. Não antecipar eventos sem comportamento real.
 ```text
 src/
   locations/
+    geocoding.module.ts
+    geocoding.service.ts
     locations.controller.ts
     locations.module.ts
     postal-code.service.ts
