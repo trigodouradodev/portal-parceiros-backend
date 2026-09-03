@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
@@ -8,6 +9,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -26,6 +28,7 @@ import { RequirePermissions } from '../auth/decorators/require-permissions.decor
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { CreateDraftQuoteDto } from './dto/create-draft-quote.dto';
+import { ListQuotesQueryDto } from './dto/list-quotes-query.dto';
 import { SaveQuoteAddressDto } from './dto/save-quote-address.dto';
 import { SaveQuoteFinancialDto } from './dto/save-quote-financial.dto';
 import { SaveQuoteGuarantorDto } from './dto/save-quote-guarantor.dto';
@@ -33,6 +36,7 @@ import { SaveQuoteIncomeDto } from './dto/save-quote-income.dto';
 import { SaveQuotePartnerOpinionDto } from './dto/save-quote-partner-opinion.dto';
 import { SaveQuoteRegistrationDto } from './dto/save-quote-registration.dto';
 import { QuoteDraftSnapshot } from './interfaces/quote-draft-snapshot.interface';
+import { QuoteDetail } from './interfaces/quote-detail.interface';
 import { QuoteAddressSnapshot } from './interfaces/quote-address-snapshot.interface';
 import { QuoteFinancialSnapshot } from './interfaces/quote-financial-snapshot.interface';
 import { QuoteGuarantorSnapshot } from './interfaces/quote-guarantor-snapshot.interface';
@@ -40,6 +44,7 @@ import { QuoteIncomeSnapshot } from './interfaces/quote-income-snapshot.interfac
 import { QuotePartnerOpinionSnapshot } from './interfaces/quote-partner-opinion-snapshot.interface';
 import { QuoteRegistrationSnapshot } from './interfaces/quote-registration-snapshot.interface';
 import { QuoteStatusResponse } from './interfaces/quote-status-response.interface';
+import { QuotesPage } from './interfaces/quote-list.interface';
 import { QuotesService } from './quotes.service';
 import { QuoteDraftAddressService } from './services/quote-draft-address.service';
 import { QuoteDraftFinancialService } from './services/quote-draft-financial.service';
@@ -47,6 +52,7 @@ import { QuoteDraftGuarantorService } from './services/quote-draft-guarantor.ser
 import { QuoteDraftIncomeService } from './services/quote-draft-income.service';
 import { QuoteDraftPartnerOpinionService } from './services/quote-draft-partner-opinion.service';
 import { QuoteDraftRegistrationService } from './services/quote-draft-registration.service';
+import { QuoteReadService } from './services/quote-read.service';
 
 @ApiTags('quotes')
 @ApiBearerAuth('access-token')
@@ -64,7 +70,47 @@ export class QuotesController {
     private readonly quoteDraftIncome: QuoteDraftIncomeService,
     private readonly quoteDraftPartnerOpinion: QuoteDraftPartnerOpinionService,
     private readonly quoteDraftRegistration: QuoteDraftRegistrationService,
+    private readonly quoteRead: QuoteReadService,
   ) {}
+
+  @ApiOperation({
+    summary: 'Lista as propostas visíveis para o usuário autenticado.',
+    description:
+      'Aplica o escopo hierárquico do usuário. ROLE_ADMIN e QUOTE_VIEW_ALL possuem visão global.',
+  })
+  @ApiOkResponse({ type: QuotesPage })
+  @RequirePermissions(
+    PermissionKey.QUOTE_CREATE,
+    PermissionKey.QUOTE_APPROVER,
+    PermissionKey.QUOTE_VIEW_ALL,
+  )
+  @Get()
+  list(
+    @CurrentUser() user: JwtPayload,
+    @Query() query: ListQuotesQueryDto,
+  ): Promise<QuotesPage> {
+    return this.quoteRead.list(user, query);
+  }
+
+  @ApiOperation({
+    summary: 'Consulta uma proposta e os dados dos sete passos do wizard.',
+  })
+  @ApiOkResponse({ type: QuoteDetail })
+  @ApiNotFoundResponse({
+    description: 'Proposta inexistente ou fora do escopo do usuário.',
+  })
+  @RequirePermissions(
+    PermissionKey.QUOTE_CREATE,
+    PermissionKey.QUOTE_APPROVER,
+    PermissionKey.QUOTE_VIEW_ALL,
+  )
+  @Get(':quoteId')
+  findById(
+    @CurrentUser() user: JwtPayload,
+    @Param('quoteId', ParseUUIDPipe) quoteId: string,
+  ): Promise<QuoteDetail> {
+    return this.quoteRead.findById(quoteId, user);
+  }
 
   @ApiOperation({
     summary: 'Inicia uma proposta draft a partir de uma simulação.',

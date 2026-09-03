@@ -110,6 +110,35 @@ rendas zeradas, Pix CPF e assinatura por e-mail) somente para satisfazer o
 schema. Esses defaults não representam respostas do cliente. O modelo
 definitivo desses campos é tratado pelos PATCHes dos passos do novo wizard.
 
+### Consulta de propostas
+
+```http
+GET /quotes?page=1&limit=30&search=Maria&status=draft
+GET /quotes/:quoteId
+```
+
+A listagem é paginada, ordenada da proposta mais recente para a mais antiga e
+aceita um filtro opcional `search`, que procura por nome ou CPF, além do filtro
+por status. Cada item devolve o produto, valor, responsável, simulação de
+origem, passos concluídos e `canEdit`, para a tela decidir se deve oferecer a
+continuação do wizard.
+
+O detalhe reúne os dados reaproveitados da simulação e os sete grupos do
+wizard em uma única resposta: cadastro, renda, endereço, parecer, avalista,
+financeiro e documentação. `completedSteps` é a fonte de verdade para o
+progresso; campos técnicos usados para satisfazer o schema durante a criação
+da draft não devem ser interpretados como etapas concluídas.
+
+Os anexos do detalhe contêm metadados, sem URL temporária. Quando precisar
+exibir ou baixar um arquivo durante a edição, o frontend continua usando
+`GET /quotes/draft/:quoteId/attachments`, que gera as URLs assinadas.
+
+As duas consultas aceitam `QUOTE_CREATE`, `QUOTE_APPROVER` ou
+`QUOTE_VIEW_ALL`. `ROLE_ADMIN` e `QUOTE_VIEW_ALL` possuem visão global; os
+demais usuários enxergam as propostas próprias e da sua hierarquia. Uma
+proposta inexistente ou fora desse escopo retorna 404, evitando revelar sua
+existência. A leitura não gera evento nem altera a proposta.
+
 ### Passo 1: Cadastro
 
 ```http
@@ -390,6 +419,7 @@ src/
     services/quote-draft-partner-opinion.service.ts
     services/quote-draft-registration.service.ts
     services/quote-draft-steps.service.ts
+    services/quote-read.service.ts
     quotes.controller.ts
     quotes.module.ts
     quotes.service.ts
