@@ -1426,6 +1426,7 @@ model quotes {
   document_attachment                                         Json?
   proof_of_residence_attachment                               Json?
   proof_of_income_attachment                                  Json?
+  activity_photos_attachment                                  Json                         @default("[]")
   geolocation                                                 Json?
   interest_rate                                               Decimal?                     @db.Decimal(12, 8)
   loans                                                       Json?

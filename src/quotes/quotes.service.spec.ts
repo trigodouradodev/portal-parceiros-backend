@@ -217,6 +217,7 @@ interface BuildOptions {
   canCreateQuote?: boolean;
   createError?: Error & { code?: string };
   quoteDocument?: string;
+  completedSteps?: QuoteDraftStep[];
 }
 
 async function build(options: BuildOptions = {}) {
@@ -265,6 +266,13 @@ async function build(options: BuildOptions = {}) {
         completed_at: STEP_COMPLETED_AT,
         updated_at: STEP_UPDATED_AT,
       }),
+      findMany: jest
+        .fn()
+        .mockResolvedValue(
+          (options.completedSteps ?? Object.values(QuoteDraftStep)).map(
+            (step) => ({ step }),
+          ),
+        ),
     },
   };
   const quoteEvents = {
@@ -1512,6 +1520,23 @@ describe('QuotesService.submitDraftForClientReview', () => {
         },
       }),
     );
+  });
+
+  it('recusa submissão enquanto houver etapa pendente', async () => {
+    const completedSteps = Object.values(QuoteDraftStep).filter(
+      (step) => step !== QuoteDraftStep.DOCUMENTATION,
+    );
+    const { service, quoteEvents } = await build({ completedSteps });
+
+    await expect(
+      service.submitDraftForClientReview(QUOTE_ID, actor()),
+    ).rejects.toMatchObject({
+      response: {
+        message: 'Complete todas as etapas antes de enviar a proposta.',
+        missingSteps: [QuoteDraftStep.DOCUMENTATION],
+      },
+    });
+    expect(quoteEvents.createWithinTransaction).not.toHaveBeenCalled();
   });
 
   it('recusa proposta pertencente a outro parceiro', async () => {

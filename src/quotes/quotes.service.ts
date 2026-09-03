@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -12,6 +13,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { QuoteEventType } from '../quote-events/enums/quote-event-type.enum';
 import { QuoteEventsService } from '../quote-events/quote-events.service';
 import { QuoteStatus } from './enums/quote-status.enum';
+import { QuoteDraftStep } from './enums/quote-draft-step.enum';
 import { QuoteStatusResponse } from './interfaces/quote-status-response.interface';
 import { QuoteDraftSnapshot } from './interfaces/quote-draft-snapshot.interface';
 
@@ -25,6 +27,8 @@ const EMPTY_ADDRESS = {
   state: '',
   referencePoint: null,
 };
+
+const REQUIRED_DRAFT_STEPS = Object.values(QuoteDraftStep);
 
 @Injectable()
 export class QuotesService {
@@ -136,6 +140,7 @@ export class QuotesService {
             document_attachment: [],
             proof_of_residence_attachment: [],
             proof_of_income_attachment: [],
+            activity_photos_attachment: [],
             interest_rate: simulation.interest_rate,
             loans: [],
             debts: [],
@@ -220,6 +225,21 @@ export class QuotesService {
 
       if (result.count === 0) {
         await this.throwSubmitError(tx, quoteId, actor, isAdmin);
+      }
+
+      const completedSteps = await tx.quote_draft_steps.findMany({
+        where: { quote_id: quoteId },
+        select: { step: true },
+      });
+      const completed = new Set(completedSteps.map(({ step }) => step));
+      const missingSteps = REQUIRED_DRAFT_STEPS.filter(
+        (step) => !completed.has(step),
+      );
+      if (missingSteps.length > 0) {
+        throw new BadRequestException({
+          message: 'Complete todas as etapas antes de enviar a proposta.',
+          missingSteps,
+        });
       }
 
       await this.quoteEvents.createWithinTransaction(tx, {

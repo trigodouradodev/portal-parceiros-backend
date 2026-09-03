@@ -5,4 +5,5 @@ export enum QuoteDraftStep {
   PARTNER_OPINION = 'partner_opinion',
   GUARANTOR = 'guarantor',
   FINANCIAL = 'financial',
+  DOCUMENTATION = 'documentation',
 }
