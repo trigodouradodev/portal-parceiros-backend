@@ -291,6 +291,47 @@ A gravação dos dois JSONs e o upsert de `quote_draft_steps.financial` são
 atômicos e não geram evento de domínio. As regras comuns de ownership e status
 continuam válidas. Não é necessária migration.
 
+### Passo 7: Documentação
+
+```http
+POST   /quotes/draft/:quoteId/attachments
+GET    /quotes/draft/:quoteId/attachments
+DELETE /quotes/draft/:quoteId/attachments/:attachmentId
+PATCH  /quotes/draft/:quoteId/documentation
+```
+
+O upload recebe um arquivo por requisição em `multipart/form-data`, no campo
+`file`, junto de `attachmentType`. Os tipos públicos são
+`identification_document`, `proof_of_residence`, `activity_photo` e
+`proof_of_income`. Para comprovante de renda, `incomeProofType` é obrigatório
+e aceita `bank_statement`, `payslip`, `inss_benefit` ou `mei_das`.
+
+PDF, JPEG e PNG são aceitos nos documentos de identificação e residência;
+fotos da atividade aceitam apenas JPEG e PNG; comprovantes de renda aceitam
+somente PDF. O conteúdo real é validado pela assinatura do arquivo e o limite
+é 10 MB por upload. Cada metadata recebe um UUID gerado pelo backend, usado
+para exclusão sem expor `s3Key`. A listagem devolve os quatro grupos com URLs
+assinadas de leitura válidas por 15 minutos.
+
+Os arquivos ficam no bucket indicado por
+`system_configs.S3_QUOTES_ATTACHMENTS_BUCKET`. Região e credenciais são
+configuração de infraestrutura: `AWS_REGION` e a provider chain padrão do SDK
+da AWS. O acesso ao S3 fica isolado no `StorageModule`, reutilizável por outros
+domínios; o módulo de quotes mantém a escolha do bucket e as regras do wizard.
+
+Os três grupos legados continuam em `document_attachment`,
+`proof_of_residence_attachment` e `proof_of_income_attachment`. Fotos da
+atividade usam o novo JSONB `activity_photos_attachment`. Upload e exclusão
+invalidam uma conclusão anterior do passo e registram respectivamente
+`attachment_added` e `attachment_removed`, na mesma transação do metadata.
+
+O PATCH de conclusão exige pelo menos um arquivo de identificação, residência
+e atividade. Também exige renda, exceto quando o passo 2 declarou
+`available_income_proof=none`. Só então grava
+`quote_draft_steps.documentation`. Fotos da atividade são preservadas no
+cadastro do cliente após aprovação, como `client_files.activity_photo`, mas
+não são enviadas à Celcoin até existir decisão explícita de Produto.
+
 Depois do preenchimento, o parceiro entrega o draft para o cliente:
 
 ```text
@@ -308,12 +349,9 @@ Regras:
 - requer `QUOTE_CREATE`;
 - somente o responsável pela proposta pode executá-lo;
 - `ROLE_ADMIN` mantém o acesso administrativo global;
+- exige os sete registros de conclusão em `quote_draft_steps` e devolve as
+  etapas pendentes quando o wizard ainda está incompleto;
 - atualiza a proposta e registra o evento atomicamente.
-
-Enquanto os campos dos sete passos e sua validação de completude ainda não
-forem implementados, a existência do draft não significa que ele está pronto
-para submissão. A validação final pertence ao caso de uso de submit e deve ser
-adicionada junto ao contrato completo do wizard.
 
 ## Evolução prevista
 
@@ -339,6 +377,7 @@ src/
   quotes/
     enums/quote-status.enum.ts
     services/quote-draft-address.service.ts
+    services/quote-draft-documentation.service.ts
     services/quote-draft-financial.service.ts
     services/quote-draft-guarantor.service.ts
     services/quote-draft-income.service.ts

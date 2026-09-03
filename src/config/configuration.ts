@@ -29,11 +29,16 @@ export interface GeocodingConfig {
   radiusMeters: number;
 }
 
+export interface StorageConfig {
+  awsRegion: string;
+}
+
 export interface Configuration {
   app: AppConfig;
   database: DatabaseConfig;
   jwt: JwtConfig;
   geocoding: GeocodingConfig;
+  storage: StorageConfig;
 }
 
 export default (): Configuration => ({
@@ -67,5 +72,8 @@ export default (): Configuration => ({
       process.env.LOCATION_CHECK_RADIUS_METERS ?? '100',
       10,
     ),
+  },
+  storage: {
+    awsRegion: process.env.AWS_REGION ?? 'sa-east-1',
   },
 });
