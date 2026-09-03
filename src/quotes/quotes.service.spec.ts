@@ -14,11 +14,18 @@ import { PrismaService } from '../prisma/prisma.service';
 import { QuoteEventType } from '../quote-events/enums/quote-event-type.enum';
 import { QuoteEventsService } from '../quote-events/quote-events.service';
 import { SaveQuoteAddressDto } from './dto/save-quote-address.dto';
+import { SaveQuoteFinancialDto } from './dto/save-quote-financial.dto';
 import { SaveQuoteGuarantorDto } from './dto/save-quote-guarantor.dto';
 import { SaveQuoteIncomeDto } from './dto/save-quote-income.dto';
 import { SaveQuotePartnerOpinionDto } from './dto/save-quote-partner-opinion.dto';
 import { SaveQuoteRegistrationDto } from './dto/save-quote-registration.dto';
 import { QuoteDraftStep } from './enums/quote-draft-step.enum';
+import {
+  ExpenseCategory,
+  LoanCategory,
+  LoanFrequency,
+  LoanInstitution,
+} from './enums/quote-financial.enum';
 import { GuarantorRelationship } from './enums/quote-guarantor.enum';
 import {
   ActivityDuration,
@@ -42,6 +49,7 @@ import {
 import { QuoteStatus } from './enums/quote-status.enum';
 import { QuotesService } from './quotes.service';
 import { QuoteDraftAddressService } from './services/quote-draft-address.service';
+import { QuoteDraftFinancialService } from './services/quote-draft-financial.service';
 import { QuoteDraftGuarantorService } from './services/quote-draft-guarantor.service';
 import { QuoteDraftIncomeService } from './services/quote-draft-income.service';
 import { QuoteDraftPartnerOpinionService } from './services/quote-draft-partner-opinion.service';
@@ -131,6 +139,25 @@ const guarantor: SaveQuoteGuarantorDto = {
     state: BrazilState.SP,
   },
   relationship: GuarantorRelationship.SIBLING,
+};
+
+const financial: SaveQuoteFinancialDto = {
+  expenses: [
+    {
+      category: ExpenseCategory.HOUSING_OR_RENT,
+      amount: 850,
+      description: ' Aluguel da residência ',
+    },
+  ],
+  loans: [
+    {
+      installmentAmount: 420.5,
+      frequency: LoanFrequency.MONTHLY,
+      institution: LoanInstitution.NUBANK,
+      category: LoanCategory.CREDIT_CARD,
+      description: ' Parcelamento do cartão ',
+    },
+  ],
 };
 
 const simulation = {
@@ -258,6 +285,7 @@ async function build(options: BuildOptions = {}) {
     providers: [
       QuotesService,
       QuoteDraftAddressService,
+      QuoteDraftFinancialService,
       QuoteDraftGuarantorService,
       QuoteDraftIncomeService,
       QuoteDraftPartnerOpinionService,
@@ -275,6 +303,7 @@ async function build(options: BuildOptions = {}) {
   return {
     service: module.get(QuotesService),
     addressService: module.get(QuoteDraftAddressService),
+    financialService: module.get(QuoteDraftFinancialService),
     guarantorService: module.get(QuoteDraftGuarantorService),
     incomeService: module.get(QuoteDraftIncomeService),
     partnerOpinionService: module.get(QuoteDraftPartnerOpinionService),
@@ -1256,6 +1285,178 @@ describe('QuoteDraftGuarantorService.save', () => {
 
     await expect(
       service.save(QUOTE_ID, guarantor, actor()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('QuoteDraftFinancialService.save', () => {
+  it('salva despesas e empréstimos no formato legado e conclui a etapa', async () => {
+    const { financialService: service, tx, quoteEvents } = await build();
+
+    await expect(service.save(QUOTE_ID, financial, actor())).resolves.toEqual({
+      id: QUOTE_ID,
+      status: QuoteStatus.DRAFT,
+      step: QuoteDraftStep.FINANCIAL,
+      completedAt: STEP_COMPLETED_AT,
+      updatedAt: STEP_UPDATED_AT,
+      expenses: [
+        {
+          category: ExpenseCategory.HOUSING_OR_RENT,
+          amount: 850,
+          description: 'Aluguel da residência',
+        },
+      ],
+      loans: [
+        {
+          installmentAmount: 420.5,
+          frequency: LoanFrequency.MONTHLY,
+          institution: LoanInstitution.NUBANK,
+          category: LoanCategory.CREDIT_CARD,
+          description: 'Parcelamento do cartão',
+        },
+      ],
+    });
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: QUOTE_ID,
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OWNER_ID,
+      },
+      data: {
+        debts: [
+          {
+            category: ExpenseCategory.HOUSING_OR_RENT,
+            amount: 850,
+            observations: 'Aluguel da residência',
+          },
+        ],
+        loans: [
+          {
+            category: LoanCategory.CREDIT_CARD,
+            amount: 420.5,
+            observations: 'Parcelamento do cartão',
+            frequency: LoanFrequency.MONTHLY,
+            institution: LoanInstitution.NUBANK,
+          },
+        ],
+        updated_at: expect.any(Date) as unknown,
+      },
+    });
+    expect(tx.quote_draft_steps.upsert).toHaveBeenCalledWith({
+      where: {
+        quote_id_step: {
+          quote_id: QUOTE_ID,
+          step: QuoteDraftStep.FINANCIAL,
+        },
+      },
+      create: {
+        quote_id: QUOTE_ID,
+        step: QuoteDraftStep.FINANCIAL,
+        completed_at: expect.any(Date) as unknown,
+        updated_at: expect.any(Date) as unknown,
+      },
+      update: { updated_at: expect.any(Date) as unknown },
+      select: { completed_at: true, updated_at: true },
+    });
+    expect(quoteEvents.createWithinTransaction).not.toHaveBeenCalled();
+  });
+
+  it('aceita listas vazias e substitui os valores anteriores', async () => {
+    const { financialService: service, tx } = await build();
+
+    await expect(
+      service.save(QUOTE_ID, { expenses: [], loans: [] }, actor()),
+    ).resolves.toMatchObject({ expenses: [], loans: [] });
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ debts: [], loans: [] }) as unknown,
+      }),
+    );
+  });
+
+  it.each([
+    {
+      name: 'despesa Outros sem descrição',
+      dto: {
+        ...financial,
+        expenses: [{ category: ExpenseCategory.OTHER, amount: 100 }],
+      },
+    },
+    {
+      name: 'categoria Outros sem descrição',
+      dto: {
+        ...financial,
+        loans: [
+          {
+            ...financial.loans[0],
+            category: LoanCategory.OTHER,
+            description: undefined,
+          },
+        ],
+      },
+    },
+    {
+      name: 'instituição Outros sem descrição',
+      dto: {
+        ...financial,
+        loans: [
+          {
+            ...financial.loans[0],
+            institution: LoanInstitution.OTHER,
+            description: undefined,
+          },
+        ],
+      },
+    },
+  ])('recusa $name antes de abrir a transação', async ({ dto }) => {
+    const { financialService: service, prisma } = await build();
+
+    await expect(service.save(QUOTE_ID, dto, actor())).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('recusa edição por outro parceiro', async () => {
+    const { financialService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OTHER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, financial, actor()),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('recusa edição depois que a proposta sai de draft', async () => {
+    const { financialService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.CLIENT_REVIEW,
+        current_sales_agent_id: OWNER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, financial, actor()),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('retorna not found quando a proposta não existe', async () => {
+    const { financialService: service, tx } = await build({
+      updateCount: 0,
+      quote: null,
+    });
+
+    await expect(
+      service.save(QUOTE_ID, financial, actor()),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
   });

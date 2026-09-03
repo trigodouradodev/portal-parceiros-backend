@@ -27,12 +27,14 @@ import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { CreateDraftQuoteDto } from './dto/create-draft-quote.dto';
 import { SaveQuoteAddressDto } from './dto/save-quote-address.dto';
+import { SaveQuoteFinancialDto } from './dto/save-quote-financial.dto';
 import { SaveQuoteGuarantorDto } from './dto/save-quote-guarantor.dto';
 import { SaveQuoteIncomeDto } from './dto/save-quote-income.dto';
 import { SaveQuotePartnerOpinionDto } from './dto/save-quote-partner-opinion.dto';
 import { SaveQuoteRegistrationDto } from './dto/save-quote-registration.dto';
 import { QuoteDraftSnapshot } from './interfaces/quote-draft-snapshot.interface';
 import { QuoteAddressSnapshot } from './interfaces/quote-address-snapshot.interface';
+import { QuoteFinancialSnapshot } from './interfaces/quote-financial-snapshot.interface';
 import { QuoteGuarantorSnapshot } from './interfaces/quote-guarantor-snapshot.interface';
 import { QuoteIncomeSnapshot } from './interfaces/quote-income-snapshot.interface';
 import { QuotePartnerOpinionSnapshot } from './interfaces/quote-partner-opinion-snapshot.interface';
@@ -40,6 +42,7 @@ import { QuoteRegistrationSnapshot } from './interfaces/quote-registration-snaps
 import { QuoteStatusResponse } from './interfaces/quote-status-response.interface';
 import { QuotesService } from './quotes.service';
 import { QuoteDraftAddressService } from './services/quote-draft-address.service';
+import { QuoteDraftFinancialService } from './services/quote-draft-financial.service';
 import { QuoteDraftGuarantorService } from './services/quote-draft-guarantor.service';
 import { QuoteDraftIncomeService } from './services/quote-draft-income.service';
 import { QuoteDraftPartnerOpinionService } from './services/quote-draft-partner-opinion.service';
@@ -56,6 +59,7 @@ export class QuotesController {
   constructor(
     private readonly quotesService: QuotesService,
     private readonly quoteDraftAddress: QuoteDraftAddressService,
+    private readonly quoteDraftFinancial: QuoteDraftFinancialService,
     private readonly quoteDraftGuarantor: QuoteDraftGuarantorService,
     private readonly quoteDraftIncome: QuoteDraftIncomeService,
     private readonly quoteDraftPartnerOpinion: QuoteDraftPartnerOpinionService,
@@ -166,6 +170,23 @@ export class QuotesController {
     @Body() dto: SaveQuoteGuarantorDto,
   ): Promise<QuoteGuarantorSnapshot> {
     return this.quoteDraftGuarantor.save(quoteId, dto, user);
+  }
+
+  @ApiOperation({ summary: 'Salva o passo Financeiro da proposta draft.' })
+  @ApiOkResponse({ type: QuoteFinancialSnapshot })
+  @ApiBadRequestResponse({
+    description: 'Despesas ou empréstimos inválidos.',
+  })
+  @ApiNotFoundResponse({ description: 'Proposta não encontrada.' })
+  @ApiConflictResponse({ description: 'A proposta não está mais em draft.' })
+  @RequirePermissions(PermissionKey.QUOTE_CREATE)
+  @Patch('draft/:quoteId/financial')
+  saveDraftFinancial(
+    @CurrentUser() user: JwtPayload,
+    @Param('quoteId', ParseUUIDPipe) quoteId: string,
+    @Body() dto: SaveQuoteFinancialDto,
+  ): Promise<QuoteFinancialSnapshot> {
+    return this.quoteDraftFinancial.save(quoteId, dto, user);
   }
 
   @ApiOperation({
