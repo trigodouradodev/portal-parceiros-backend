@@ -446,16 +446,8 @@ describe.each([
   });
 });
 
-describe('assertIsActiveTask — SQL final não deve aceitar tarefa postergada (AUREA-330)', () => {
-  it('repete o filtro de expire_date do líder também no SELECT que valida a tarefa alvo', async () => {
-    // Bug real (AUREA-330): a CTE `leader` já excluía tarefas postergadas
-    // (expire_date no futuro) ao calcular o segmento ativo, mas o SELECT
-    // final — que decide se a tarefa alvo pode ser executada — só checava
-    // segment_code + status = 'pending', sem repetir `expire_date <=
-    // CURRENT_DATE`. Resultado: uma tarefa que o usuário tinha acabado de
-    // postergar (status continua 'pending') passava o guard se seu segmento
-    // coincidisse com o do líder, permitindo registrar a ação via
-    // ContractDetailPage mesmo aparecendo bloqueada na fila.
+describe('assertIsActiveTask — tarefas agendadas', () => {
+  it('permite antecipar tarefa futura sem exigir que ela pertença ao segmento ativo', async () => {
     const { service, tx } = await build();
     await service.postpone(TASK_ID, USER_ID);
 
@@ -468,8 +460,9 @@ describe('assertIsActiveTask — SQL final não deve aceitar tarefa postergada (
 
     const [strings] = guardCall;
     const sql = strings.join(' ');
-    const [, afterLeaderJoin] = sql.split('JOIN leader');
-    expect(afterLeaderJoin).toContain('expire_date <= CURRENT_DATE');
+    expect(sql).toContain('LEFT JOIN leader');
+    expect(sql).toContain('at.expire_date > CURRENT_DATE');
+    expect(sql).toContain('OR l.segment_code IS NOT NULL');
   });
 });
 
