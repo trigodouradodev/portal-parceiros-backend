@@ -669,7 +669,8 @@ export class ActivitiesService {
   /**
    * Registra a execução de uma tarefa: conclui a tarefa e grava a interação.
    * NÃO cria a próxima tarefa (só o job diário cria). Só é permitido em tarefa
-   * pendente do SEGMENTO ativo do usuário (trava no backend, ver assertIsActiveTask).
+   * pendente e atribuída ao usuário. Tarefas agendadas podem ser concluídas antes
+   * da data; as tarefas de hoje continuam sujeitas à trava de segmento ativo.
    */
   async registerInteraction(
     taskId: string,
@@ -823,10 +824,10 @@ export class ActivitiesService {
   }
 
   /**
-   * A tarefa deve pertencer ao SEGMENTO ativo do usuário (AUREA-319): acha o
-   * segmento da tarefa recomendada (maior prioridade entre as pendentes de hoje)
-   * e aceita qualquer pendente daquele mesmo segmento — não exige mais ser
-   * exatamente a recomendada. Segmentos diferentes continuam bloqueados.
+   * Uma tarefa agendada (expire_date futuro) pode ser executada antecipadamente,
+   * independentemente do segmento ativo. Para tarefas disponíveis hoje, mantém a
+   * trava AUREA-319: aceita qualquer pendente do segmento da recomendada, mas
+   * bloqueia segmentos diferentes.
    */
   private async assertIsActiveTask(
     tx: Prisma.TransactionClient,
@@ -847,11 +848,14 @@ export class ActivitiesService {
       )
       SELECT at.id
       FROM activity_tasks at
-      JOIN leader l ON l.segment_code = at.segment_code
+      LEFT JOIN leader l ON l.segment_code = at.segment_code
       WHERE at.id = ${taskId}::uuid
         AND at.assigned_to = ${userId}::uuid
         AND at.status = 'pending'
-        AND at.expire_date <= CURRENT_DATE
+        AND (
+          at.expire_date > CURRENT_DATE
+          OR l.segment_code IS NOT NULL
+        )
     `;
     if (rows.length === 0) {
       throw new ConflictException('task_not_active');

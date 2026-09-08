@@ -130,7 +130,8 @@ export class ActivitiesController {
   })
   @ApiNotFoundResponse({ description: 'Tarefa não encontrada.' })
   @ApiConflictResponse({
-    description: 'Tarefa não está pendente ou não é a ativa da fila.',
+    description:
+      'Tarefa não está pendente, não pertence ao usuário ou está fora do segmento ativo.',
   })
   @RequirePermissions(PermissionKey.CONTRACT_FOLLOW_UP)
   @Post('tasks/:taskId/interactions')
@@ -148,7 +149,8 @@ export class ActivitiesController {
   @ApiOkResponse({ type: TaskActionResult })
   @ApiNotFoundResponse({ description: 'Tarefa não encontrada.' })
   @ApiConflictResponse({
-    description: 'Tarefa não ativa/pendente ou já postergada.',
+    description:
+      'Tarefa não pendente, fora do segmento ativo ou já postergada.',
   })
   @RequirePermissions(PermissionKey.CONTRACT_FOLLOW_UP)
   @Post('tasks/:taskId/postpone')
@@ -169,7 +171,7 @@ export class ActivitiesController {
   @ApiNotFoundResponse({ description: 'Tarefa não encontrada.' })
   @ApiConflictResponse({
     description:
-      'Tarefa não ativa/pendente ou limite de reagendamentos atingido.',
+      'Tarefa não pendente, fora do segmento ativo ou limite de reagendamentos atingido.',
   })
   @RequirePermissions(PermissionKey.CONTRACT_FOLLOW_UP)
   @Post('tasks/:taskId/reschedule')
