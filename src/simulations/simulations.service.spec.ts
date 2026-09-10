@@ -177,6 +177,36 @@ function buildService(options?: {
   };
 }
 
+describe('SimulationsService.previewSimulation', () => {
+  it('devolve a parcela Celcoin sem persistir', async () => {
+    const { service, queryRaw, resolveForSimulation, simulateRequestedAmount } =
+      buildService();
+
+    const result = await service.previewSimulation(actor, {
+      productId: PRODUCT_ID,
+      amount: 5000,
+      installments: 10,
+      firstInstallmentDate: futureDueDate(),
+    });
+
+    expect(result).toEqual({
+      productId: PRODUCT_ID,
+      amount: 5000,
+      installments: 10,
+      firstInstallmentDate: futureDueDate(),
+      interestRate: 0.0339,
+      installmentAmount: celcoinResult.payment_amount,
+      totalAmountOwed: celcoinResult.total_amount_owed,
+    });
+    expect(simulateRequestedAmount).toHaveBeenCalledTimes(1);
+    expect(resolveForSimulation).not.toHaveBeenCalled();
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    const sql = queryRaw.mock.calls[0][0].join(' ');
+    expect(sql).toContain('FROM public.consultant_finance_products');
+    expect(sql).not.toContain('INSERT INTO public.simulations');
+  });
+});
+
 describe('SimulationsService.createSimulation', () => {
   it('persiste a simulação do parceiro e devolve o snapshot em inglês', async () => {
     const { service, queryRaw, resolveForSimulation, simulateRequestedAmount } =
