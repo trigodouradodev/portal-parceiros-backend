@@ -57,8 +57,7 @@ export class SimulationsController {
   }
 
   @ApiOperation({
-    summary:
-      'Calcula a parcela oficial via Celcoin sem persistir a simulação.',
+    summary: 'Calcula a parcela oficial via Celcoin sem persistir a simulação.',
     description:
       'Usado pela tela de Simulação para exibir o mesmo payment_amount que será gravado no POST/PATCH.',
   })
