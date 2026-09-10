@@ -28,6 +28,8 @@ import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { CreateSimulationDto } from './dto/create-simulation.dto';
 import { ListSimulationsQueryDto } from './dto/list-simulations-query.dto';
+import { PreviewSimulationDto } from './dto/preview-simulation.dto';
+import { SimulationPreview } from './interfaces/simulation-preview.interface';
 import { SimulationSnapshot } from './interfaces/simulation.interface';
 import { SimulationsService } from './simulations.service';
 
@@ -52,6 +54,34 @@ export class SimulationsController {
     @Query() query: ListSimulationsQueryDto,
   ) {
     return this.simulationsService.listSimulations(userId, query);
+  }
+
+  @ApiOperation({
+    summary:
+      'Calcula a parcela oficial via Celcoin sem persistir a simulação.',
+    description:
+      'Usado pela tela de Simulação para exibir o mesmo payment_amount que será gravado no POST/PATCH.',
+  })
+  @ApiOkResponse({ type: SimulationPreview })
+  @ApiBadRequestResponse({
+    description: 'Payload ou regra de negócio inválida.',
+  })
+  @ApiForbiddenResponse({
+    description: 'Fila de cobrança impede simular proposta.',
+  })
+  @ApiUnprocessableEntityResponse({
+    description: 'A Celcoin recusou as condições financeiras informadas.',
+  })
+  @ApiServiceUnavailableResponse({
+    description: 'Integração Celcoin não configurada ou indisponível.',
+  })
+  @RequirePermissions(PermissionKey.QUOTE_CREATE)
+  @Post('preview')
+  previewSimulation(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: PreviewSimulationDto,
+  ) {
+    return this.simulationsService.previewSimulation(user, dto);
   }
 
   @ApiOperation({
