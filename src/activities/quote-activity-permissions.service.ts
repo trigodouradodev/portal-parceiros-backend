@@ -22,6 +22,27 @@ const PARTNER_ROLES = [
   PermissionKey.ROLE_COLLECTION_AGENT,
 ] as const;
 
+const QUOTE_ACTIVITY_GATES_ACTIVATION_CONFIG_KEY =
+  'QUOTE_ACTIVITY_GATES_ACTIVATION_AT';
+// 01/10/2026 00:00 em America/Sao_Paulo, representado como instante UTC.
+const DEFAULT_QUOTE_ACTIVITY_GATES_ACTIVATION_AT = '2026-10-01T03:00:00.000Z';
+const DEFAULT_QUOTE_ACTIVITY_GATES_ACTIVATION_TIMESTAMP = Date.parse(
+  DEFAULT_QUOTE_ACTIVITY_GATES_ACTIVATION_AT,
+);
+const ISO_TIMESTAMP_WITH_TIME_ZONE =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/i;
+
+function parseActivationTimestamp(value?: string): number {
+  if (!value || !ISO_TIMESTAMP_WITH_TIME_ZONE.test(value)) {
+    return DEFAULT_QUOTE_ACTIVITY_GATES_ACTIVATION_TIMESTAMP;
+  }
+
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp)
+    ? DEFAULT_QUOTE_ACTIVITY_GATES_ACTIVATION_TIMESTAMP
+    : timestamp;
+}
+
 export interface QuoteActivityActor {
   userId: string;
   permissions: string[];
@@ -50,6 +71,18 @@ export class QuoteActivityPermissionsService {
     );
 
     if (!isPartner || !isEnabledForRollout) {
+      return { canSimulateQuote: true, canCreateQuote: true };
+    }
+
+    const activationConfig = await this.prisma.system_configs.findUnique({
+      where: { key: QUOTE_ACTIVITY_GATES_ACTIVATION_CONFIG_KEY },
+      select: { value: true },
+    });
+    const activationTimestamp = parseActivationTimestamp(
+      activationConfig?.value,
+    );
+
+    if (Date.now() < activationTimestamp) {
       return { canSimulateQuote: true, canCreateQuote: true };
     }
 
