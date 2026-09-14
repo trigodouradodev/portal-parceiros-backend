@@ -208,7 +208,7 @@ describe('getInstallmentDetail — escopo', () => {
 
     expect(scope.canViewContract).toHaveBeenCalledWith('contract-1', viewer, [
       PermissionKey.INSTALLMENT_VIEW_ALL,
-      PermissionKey.ROLE_BACKOFFICE,
+      PermissionKey.ROLE_SUPPORT,
     ]);
   });
 });
@@ -230,7 +230,7 @@ describe('getTodayQueue', () => {
 
     expect(scope.buildContractScopeSql).toHaveBeenCalledWith(viewer, [
       PermissionKey.INSTALLMENT_VIEW_ALL,
-      PermissionKey.ROLE_BACKOFFICE,
+      PermissionKey.ROLE_SUPPORT,
     ]);
     expect(scope.getViewerScopeIds).toHaveBeenCalledWith(USER_ID);
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(6);
@@ -326,27 +326,30 @@ describe('getSubordinates', () => {
     expect(prisma.trigo_users.findMany).not.toHaveBeenCalled();
   });
 
-  it('devolve parceiros habilitados no rollout para ROLE_ADMIN', async () => {
-    const { service, prisma } = await buildQueue(Prisma.sql`TRUE`);
-    prisma.trigo_users.findMany.mockResolvedValue([
-      { id: SUBORDINATE_USER_ID, full_name: 'Ana do Rollout' },
-    ]);
+  it.each([PermissionKey.ROLE_ADMIN, PermissionKey.ROLE_SUPPORT])(
+    'devolve parceiros habilitados no rollout para %s',
+    async (role) => {
+      const { service, prisma } = await buildQueue(Prisma.sql`TRUE`);
+      prisma.trigo_users.findMany.mockResolvedValue([
+        { id: SUBORDINATE_USER_ID, full_name: 'Ana do Rollout' },
+      ]);
 
-    await expect(
-      service.getSubordinates({
-        userId: USER_ID,
-        permissions: [PermissionKey.ROLE_ADMIN],
-      }),
-    ).resolves.toEqual([{ id: SUBORDINATE_USER_ID, name: 'Ana do Rollout' }]);
+      await expect(
+        service.getSubordinates({
+          userId: USER_ID,
+          permissions: [role],
+        }),
+      ).resolves.toEqual([{ id: SUBORDINATE_USER_ID, name: 'Ana do Rollout' }]);
 
-    expect(prisma.trigo_users.findMany).toHaveBeenCalledTimes(1);
-  });
+      expect(prisma.trigo_users.findMany).toHaveBeenCalledTimes(1);
+    },
+  );
 });
 
 describe('fila de acompanhamento do rollout', () => {
   const observer = {
     userId: USER_ID,
-    permissions: [PermissionKey.ROLE_BACKOFFICE],
+    permissions: [PermissionKey.ROLE_SUPPORT],
   };
 
   it('não devolve atividades próprias para admin ou backoffice sem filtro', async () => {
