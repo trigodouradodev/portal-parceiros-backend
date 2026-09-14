@@ -1,7 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Logger,
+  ServiceUnavailableException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { GeocodingService } from './geocoding.service';
+import { GeocodingService } from '../locations/geocoding.service';
 
 const API_KEY = 'chave-de-teste';
 
@@ -19,6 +23,54 @@ function googlePayload(overrides: Record<string, unknown> = {}) {
         },
       },
     ],
+    ...overrides,
+  };
+}
+
+function reverseGoogleResult(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    formatted_address:
+      'Praça da Sé, 100 - Sé, São Paulo - SP, 01001-000, Brasil',
+    types: ['street_address'],
+    address_components: [
+      { long_name: '100', short_name: '100', types: ['street_number'] },
+      {
+        long_name: 'Praça da Sé',
+        short_name: 'Praça da Sé',
+        types: ['route'],
+      },
+      {
+        long_name: 'Sé',
+        short_name: 'Sé',
+        types: ['sublocality_level_1', 'political'],
+      },
+      {
+        long_name: 'São Paulo',
+        short_name: 'São Paulo',
+        types: ['locality', 'political'],
+      },
+      {
+        long_name: 'São Paulo',
+        short_name: 'SP',
+        types: ['administrative_area_level_1', 'political'],
+      },
+      {
+        long_name: 'Brasil',
+        short_name: 'BR',
+        types: ['country', 'political'],
+      },
+      {
+        long_name: '01001-000',
+        short_name: '01001-000',
+        types: ['postal_code'],
+      },
+    ],
+    geometry: {
+      location: { lat: -23.55052, lng: -46.633308 },
+      location_type: 'ROOFTOP',
+    },
     ...overrides,
   };
 }
@@ -234,6 +286,114 @@ describe('geocode — falhas', () => {
 
     await expect(service.geocode('R. das Flores, 123')).rejects.toThrow(
       /^(?!.*chave-de-teste).*$/,
+    );
+  });
+});
+
+describe('reverseGeocode', () => {
+  it('consulta por lat/lng e mapeia os componentes para o endereço da quote', async () => {
+    const service = await build();
+    mockFetchOnce({ status: 'OK', results: [reverseGoogleResult()] });
+
+    await expect(
+      service.reverseGeocode(-23.55052, -46.633308),
+    ).resolves.toEqual({
+      zipCode: '01001000',
+      streetName: 'Praça da Sé',
+      streetNumber: '100',
+      streetComplement: null,
+      streetDistrict: 'Sé',
+      city: 'São Paulo',
+      state: 'SP',
+      formattedAddress:
+        'Praça da Sé, 100 - Sé, São Paulo - SP, 01001-000, Brasil',
+      latitude: -23.55052,
+      longitude: -46.633308,
+      locationType: 'ROOFTOP',
+    });
+
+    const [url] = (global.fetch as jest.Mock).mock.calls[0] as [URL];
+    expect(url.searchParams.get('latlng')).toBe('-23.55052,-46.633308');
+    expect(url.searchParams.get('language')).toBe('pt-BR');
+    expect(url.searchParams.get('region')).toBe('br');
+    expect(url.searchParams.get('key')).toBe(API_KEY);
+  });
+
+  it('prefere um endereço exato mesmo quando ele não é o primeiro resultado', async () => {
+    const service = await build();
+    const neighborhood = reverseGoogleResult({
+      formatted_address: 'Sé, São Paulo - SP, Brasil',
+      types: ['neighborhood'],
+    });
+    const street = reverseGoogleResult();
+    mockFetchOnce({ status: 'OK', results: [neighborhood, street] });
+
+    const result = await service.reverseGeocode(-23.55052, -46.633308);
+
+    expect(result?.formattedAddress).toBe(
+      'Praça da Sé, 100 - Sé, São Paulo - SP, 01001-000, Brasil',
+    );
+  });
+
+  it('devolve null quando o provedor não encontra um endereço', async () => {
+    const service = await build();
+    mockFetchOnce({ status: 'ZERO_RESULTS', results: [] });
+
+    await expect(
+      service.reverseGeocode(-23.55052, -46.633308),
+    ).resolves.toBeNull();
+  });
+
+  it('mantém como null os componentes que o provedor não informou', async () => {
+    const service = await build();
+    const resultWithoutComponents = reverseGoogleResult({
+      address_components: [
+        {
+          long_name: 'Brasil',
+          short_name: 'BR',
+          types: ['country', 'political'],
+        },
+      ],
+    });
+    mockFetchOnce({ status: 'OK', results: [resultWithoutComponents] });
+
+    const result = await service.reverseGeocode(-23.55052, -46.633308);
+
+    expect(result).toMatchObject({
+      zipCode: null,
+      streetName: null,
+      streetNumber: null,
+      streetComplement: null,
+      streetDistrict: null,
+      city: null,
+      state: null,
+    });
+  });
+
+  it('recusa coordenadas cujo resultado pertence a outro país', async () => {
+    const service = await build();
+    const foreignResult = reverseGoogleResult({
+      address_components: [
+        {
+          long_name: 'Estados Unidos',
+          short_name: 'US',
+          types: ['country', 'political'],
+        },
+      ],
+    });
+    mockFetchOnce({ status: 'OK', results: [foreignResult] });
+
+    await expect(service.reverseGeocode(40.7128, -74.006)).rejects.toThrow(
+      UnprocessableEntityException,
+    );
+  });
+
+  it('lança 503 quando o provedor retorna erro', async () => {
+    const service = await build();
+    mockFetchOnce({ status: 'REQUEST_DENIED', results: [] });
+
+    await expect(service.reverseGeocode(-23.55052, -46.633308)).rejects.toThrow(
+      ServiceUnavailableException,
     );
   });
 });

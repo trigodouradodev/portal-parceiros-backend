@@ -25,6 +25,11 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## Documentação de arquitetura
+
+- [Propostas e eventos](docs/architecture/quotes-and-events.md) — separação de
+  responsabilidades, transações, status e auditoria do fluxo de `quotes`.
+
 ## Project setup
 
 ```bash

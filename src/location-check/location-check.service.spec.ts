@@ -5,7 +5,10 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { LocationCheckService } from './location-check.service';
-import { GeocodingService, GeocodeResult } from './geocoding.service';
+import {
+  GeocodingService,
+  GeocodeResult,
+} from '../locations/geocoding.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { VerifyLocationDto } from './dto/verify-location.dto';
 import { FollowUpParty } from '../follow-up/enums/follow-up.enums';

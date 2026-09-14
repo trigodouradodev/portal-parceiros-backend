@@ -1,0 +1,142 @@
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
+import {
+  ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiConflictResponse,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiServiceUnavailableResponse,
+  ApiTags,
+  ApiUnauthorizedResponse,
+  ApiUnprocessableEntityResponse,
+} from '@nestjs/swagger';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
+import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
+import { PermissionKey } from '../auth/permissions/permission-keys';
+import { CreateSimulationDto } from './dto/create-simulation.dto';
+import { ListSimulationsQueryDto } from './dto/list-simulations-query.dto';
+import { PreviewSimulationDto } from './dto/preview-simulation.dto';
+import { SimulationPreview } from './interfaces/simulation-preview.interface';
+import { SimulationSnapshot } from './interfaces/simulation.interface';
+import { SimulationsService } from './simulations.service';
+
+@ApiTags('simulations')
+@ApiBearerAuth('access-token')
+@ApiUnauthorizedResponse({ description: 'Token ausente ou inválido.' })
+@ApiForbiddenResponse({ description: 'Permissão insuficiente.' })
+@Controller('simulations')
+export class SimulationsController {
+  constructor(private readonly simulationsService: SimulationsService) {}
+
+  @ApiOperation({
+    summary: 'Lista as simulações persistidas do parceiro autenticado.',
+    description:
+      'Filtros opcionais `name` (contains, case-insensitive) e `document` (CPF, só dígitos). Combinam com AND no recorte do parceiro.',
+  })
+  @ApiOkResponse({ type: [SimulationSnapshot] })
+  @RequirePermissions(PermissionKey.QUOTE_CREATE)
+  @Get()
+  listSimulations(
+    @CurrentUser('sub') userId: string,
+    @Query() query: ListSimulationsQueryDto,
+  ) {
+    return this.simulationsService.listSimulations(userId, query);
+  }
+
+  @ApiOperation({
+    summary: 'Calcula a parcela oficial via Celcoin sem persistir a simulação.',
+    description:
+      'Usado pela tela de Simulação para exibir o mesmo payment_amount que será gravado no POST/PATCH.',
+  })
+  @ApiOkResponse({ type: SimulationPreview })
+  @ApiBadRequestResponse({
+    description: 'Payload ou regra de negócio inválida.',
+  })
+  @ApiForbiddenResponse({
+    description: 'Fila de cobrança impede simular proposta.',
+  })
+  @ApiUnprocessableEntityResponse({
+    description: 'A Celcoin recusou as condições financeiras informadas.',
+  })
+  @ApiServiceUnavailableResponse({
+    description: 'Integração Celcoin não configurada ou indisponível.',
+  })
+  @RequirePermissions(PermissionKey.QUOTE_CREATE)
+  @Post('preview')
+  previewSimulation(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: PreviewSimulationDto,
+  ) {
+    return this.simulationsService.previewSimulation(user, dto);
+  }
+
+  @ApiOperation({
+    summary: 'Cria e persiste uma simulação de cotação do parceiro.',
+  })
+  @ApiCreatedResponse({ type: SimulationSnapshot })
+  @ApiBadRequestResponse({
+    description: 'Payload ou regra de negócio inválida.',
+  })
+  @ApiForbiddenResponse({
+    description: 'Fila de cobrança impede simular proposta.',
+  })
+  @ApiUnprocessableEntityResponse({
+    description: 'A Celcoin recusou as condições financeiras informadas.',
+  })
+  @ApiServiceUnavailableResponse({
+    description: 'Integração Celcoin não configurada ou indisponível.',
+  })
+  @RequirePermissions(PermissionKey.QUOTE_CREATE)
+  @Post()
+  createSimulation(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: CreateSimulationDto,
+  ) {
+    return this.simulationsService.createSimulation(user, dto);
+  }
+
+  @ApiOperation({
+    summary: 'Atualiza uma simulação persistida do parceiro autenticado.',
+  })
+  @ApiOkResponse({ type: SimulationSnapshot })
+  @ApiBadRequestResponse({
+    description: 'Payload ou regra de negócio inválida.',
+  })
+  @ApiForbiddenResponse({
+    description: 'Fila de cobrança impede simular proposta.',
+  })
+  @ApiNotFoundResponse({
+    description: 'Simulação não encontrada para o parceiro autenticado.',
+  })
+  @ApiConflictResponse({
+    description: 'A simulação já originou uma proposta e não pode ser editada.',
+  })
+  @ApiUnprocessableEntityResponse({
+    description: 'A Celcoin recusou as condições financeiras informadas.',
+  })
+  @ApiServiceUnavailableResponse({
+    description: 'Integração Celcoin não configurada ou indisponível.',
+  })
+  @RequirePermissions(PermissionKey.QUOTE_CREATE)
+  @Patch(':id')
+  updateSimulation(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateSimulationDto,
+  ) {
+    return this.simulationsService.updateSimulation(user, id, dto);
+  }
+}
