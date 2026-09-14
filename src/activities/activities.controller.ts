@@ -58,7 +58,7 @@ export class ActivitiesController {
   @RequirePermissions(
     PermissionKey.INSTALLMENT_VIEW,
     PermissionKey.INSTALLMENT_VIEW_ALL,
-    PermissionKey.ROLE_BACKOFFICE,
+    PermissionKey.ROLE_SUPPORT,
   )
   @Get('tasks/today')
   getTodayQueue(
@@ -81,7 +81,7 @@ export class ActivitiesController {
   @RequirePermissions(
     PermissionKey.INSTALLMENT_VIEW,
     PermissionKey.INSTALLMENT_VIEW_ALL,
-    PermissionKey.ROLE_BACKOFFICE,
+    PermissionKey.ROLE_SUPPORT,
   )
   @Get('subordinates')
   getSubordinates(@CurrentUser() user: JwtPayload) {
@@ -106,7 +106,7 @@ export class ActivitiesController {
   @RequirePermissions(
     PermissionKey.INSTALLMENT_VIEW,
     PermissionKey.INSTALLMENT_VIEW_ALL,
-    PermissionKey.ROLE_BACKOFFICE,
+    PermissionKey.ROLE_SUPPORT,
   )
   @Get('installments/:installmentId')
   getInstallmentDetail(
