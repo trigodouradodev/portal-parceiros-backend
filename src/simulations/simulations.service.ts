@@ -15,7 +15,9 @@ import { PartiesService } from '../parties/parties.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSimulationDto } from './dto/create-simulation.dto';
 import { ListSimulationsQueryDto } from './dto/list-simulations-query.dto';
+import { PreviewSimulationDto } from './dto/preview-simulation.dto';
 import { SimulationStatus } from './enums/simulation-status.enum';
+import { SimulationPreview } from './interfaces/simulation-preview.interface';
 import { SimulationSnapshot } from './interfaces/simulation.interface';
 
 const ALLOWED_DUE_DAYS = [5, 10, 15, 20];
@@ -118,6 +120,23 @@ export class SimulationsService {
     `;
 
     return rows.map((row) => this.toSnapshot(row));
+  }
+
+  async previewSimulation(
+    user: JwtPayload,
+    dto: PreviewSimulationDto,
+  ): Promise<SimulationPreview> {
+    await this.assertCanSimulate(user);
+    const prepared = await this.prepareFinancialPreview(user, dto);
+    return {
+      productId: prepared.product.id,
+      amount: prepared.amount,
+      installments: prepared.installments,
+      firstInstallmentDate: toSqlDate(prepared.firstInstallmentDate),
+      interestRate: prepared.interestRate,
+      installmentAmount: prepared.installmentAmount,
+      totalAmountOwed: prepared.simulationResult.total_amount_owed,
+    };
   }
 
   async createSimulation(
@@ -294,6 +313,42 @@ export class SimulationsService {
     const telephone = this.normalizePhone(dto.telephone);
     const birthDate = this.parseDateOnly(dto.birthDate, 'Data de nascimento');
     this.assertAdultAge(birthDate);
+    const financial = await this.prepareFinancialPreview(user, {
+      productId: dto.productId,
+      amount: dto.amount,
+      installments: dto.installments,
+      firstInstallmentDate: dto.firstInstallmentDate,
+      interestRate: dto.interestRate,
+    });
+
+    return {
+      name,
+      document,
+      telephone,
+      email: dto.email.trim().toLowerCase(),
+      birthDate,
+      firstInstallmentDate: financial.firstInstallmentDate,
+      product: financial.product,
+      amount: financial.amount,
+      installments: financial.installments,
+      interestRate: financial.interestRate,
+      installmentAmount: financial.installmentAmount,
+      simulationResult: financial.simulationResult,
+    };
+  }
+
+  private async prepareFinancialPreview(
+    user: JwtPayload,
+    dto: PreviewSimulationDto,
+  ): Promise<{
+    product: LinkedProduct;
+    amount: number;
+    installments: number;
+    interestRate: number;
+    firstInstallmentDate: Date;
+    installmentAmount: number;
+    simulationResult: CelcoinSimulationResult;
+  }> {
     const firstInstallmentDate = this.parseDateOnly(
       dto.firstInstallmentDate,
       'Data da primeira parcela',
@@ -334,16 +389,11 @@ export class SimulationsService {
       });
 
     return {
-      name,
-      document,
-      telephone,
-      email: dto.email.trim().toLowerCase(),
-      birthDate,
-      firstInstallmentDate,
       product,
       amount: dto.amount,
       installments: dto.installments,
       interestRate,
+      firstInstallmentDate,
       installmentAmount: simulationResult.payment_amount,
       simulationResult,
     };
