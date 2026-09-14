@@ -61,7 +61,7 @@ const ROLLOUT_PARTNER_ROLES = [
 
 const ROLLOUT_OBSERVER_ROLES = [
   PermissionKey.ROLE_ADMIN,
-  PermissionKey.ROLE_BACKOFFICE,
+  PermissionKey.ROLE_SUPPORT,
 ];
 
 @Injectable()
@@ -96,7 +96,7 @@ export class ActivitiesService {
     }
     const scopeClause = await this.scope.buildContractScopeSql(viewer, [
       PermissionKey.INSTALLMENT_VIEW_ALL,
-      PermissionKey.ROLE_BACKOFFICE,
+      PermissionKey.ROLE_SUPPORT,
     ]);
     if (!scopeClause) {
       return this.emptyTodayQueue(page, limit);
@@ -321,7 +321,7 @@ export class ActivitiesService {
 
     const canView = await this.scope.canViewContract(contractId, viewer, [
       PermissionKey.INSTALLMENT_VIEW_ALL,
-      PermissionKey.ROLE_BACKOFFICE,
+      PermissionKey.ROLE_SUPPORT,
     ]);
     if (!canView) throw new NotFoundException('installment_not_found');
 
