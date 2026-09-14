@@ -1418,6 +1418,7 @@ model quotes {
   signature_type                                              String                       @db.VarChar(20)
   observations                                                String?
   current_sales_agent_id                                      String                       @db.Uuid
+  created_by                                                  String                       @db.Uuid
   current_collection_agent_id                                 String?                      @db.Uuid
   quote_status                                                String                       @default("PENDING") @db.VarChar(20)
   created_at                                                  DateTime?                    @default(now()) @db.Timestamptz(6)
@@ -1470,6 +1471,7 @@ model quotes {
   quote_serasa_analysis                                       quote_serasa_analysis[]
   trigo_users_quotes_current_collection_agent_idTotrigo_users trigo_users?                 @relation("quotes_current_collection_agent_idTotrigo_users", fields: [current_collection_agent_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "quotes_current_collection_agent_id_foreign")
   trigo_users_quotes_current_sales_agent_idTotrigo_users      trigo_users                  @relation("quotes_current_sales_agent_idTotrigo_users", fields: [current_sales_agent_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "quotes_current_sales_agent_id_foreign")
+  trigo_users_quotes_created_byTotrigo_users                  trigo_users                  @relation("quotes_created_byTotrigo_users", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "quotes_created_by_foreign")
   finance_products                                            finance_products             @relation(fields: [finance_product_id], references: [id], onDelete: SetNull)
   parties_quotes_guarantor_party_idToparties                  parties?                     @relation("quotes_guarantor_party_idToparties", fields: [guarantor_party_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "quotes_guarantor_party_id_foreign")
   parties_quotes_party_idToparties                            parties?                     @relation("quotes_party_idToparties", fields: [party_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "quotes_party_id_foreign")
@@ -1480,6 +1482,7 @@ model quotes {
   @@index([client_address], map: "idx_quotes_address_gin", type: Gin)
   @@index([created_at], map: "idx_quotes_created_at")
   @@index([current_sales_agent_id], map: "idx_quotes_current_sales_agent_id")
+  @@index([created_by], map: "quotes_created_by_index")
   @@index([document], map: "idx_quotes_document")
   @@index([email], map: "idx_quotes_email")
   @@index([guarantor], map: "idx_quotes_guarantor_gin", type: Gin)
@@ -1839,6 +1842,7 @@ model trigo_users {
   quote_events                                                                   quote_events[]
   quotes_quotes_current_collection_agent_idTotrigo_users                         quotes[]                       @relation("quotes_current_collection_agent_idTotrigo_users")
   quotes_quotes_current_sales_agent_idTotrigo_users                              quotes[]                       @relation("quotes_current_sales_agent_idTotrigo_users")
+  quotes_quotes_created_byTotrigo_users                                          quotes[]                       @relation("quotes_created_byTotrigo_users")
   renegotiation_simulations_renegotiation_simulations_decision_userTotrigo_users renegotiation_simulations[]    @relation("renegotiation_simulations_decision_userTotrigo_users")
   renegotiation_simulations_renegotiation_simulations_proposed_byTotrigo_users   renegotiation_simulations[]    @relation("renegotiation_simulations_proposed_byTotrigo_users")
   renegotiation_status_history                                                   renegotiation_status_history[]
