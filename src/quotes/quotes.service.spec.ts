@@ -366,6 +366,7 @@ describe('QuotesService.createDraftFromSimulation', () => {
       simulation_id: SIMULATION_ID,
       party_id: PARTY_ID,
       current_sales_agent_id: OWNER_ID,
+      created_by: OWNER_ID,
       quote_status: QuoteStatus.DRAFT,
       document: '52998224725',
       client_name: 'Maria Souza',

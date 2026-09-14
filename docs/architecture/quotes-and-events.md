@@ -96,6 +96,8 @@ Regras:
   constraint única de `quotes.simulation_id` para fechar concorrência;
 - copia para a quote o `party_id`, identidade, contato, produto, taxa,
   condições de parcelamento e o resultado Celcoin já persistido;
+- registra o usuário autenticado em `created_by`, preservando separadamente o
+  criador e o responsável atual da proposta;
 - quando a party possui endereço, copia o registro primário (ou o mais recente)
   para `client_address` e o devolve no snapshot de criação para pré-preencher o
   formulário;

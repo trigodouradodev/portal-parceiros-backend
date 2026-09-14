@@ -136,6 +136,7 @@ export class QuotesService {
             payment_pix_code: '',
             signature_type: 'EMAIL',
             current_sales_agent_id: actor.sub,
+            created_by: actor.sub,
             quote_status: QuoteStatus.DRAFT,
             document_attachment: [],
             proof_of_residence_attachment: [],
