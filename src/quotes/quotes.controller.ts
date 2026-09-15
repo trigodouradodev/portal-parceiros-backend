@@ -43,6 +43,7 @@ import { QuoteGuarantorSnapshot } from './interfaces/quote-guarantor-snapshot.in
 import { QuoteIncomeSnapshot } from './interfaces/quote-income-snapshot.interface';
 import { QuotePartnerOpinionSnapshot } from './interfaces/quote-partner-opinion-snapshot.interface';
 import { QuoteRegistrationSnapshot } from './interfaces/quote-registration-snapshot.interface';
+import { QuoteRenewalPrefillResponse } from './interfaces/quote-renewal-prefill-response.interface';
 import { QuoteStatusResponse } from './interfaces/quote-status-response.interface';
 import { QuotesPage } from './interfaces/quote-list.interface';
 import { QuotesService } from './quotes.service';
@@ -53,6 +54,7 @@ import { QuoteDraftIncomeService } from './services/quote-draft-income.service';
 import { QuoteDraftPartnerOpinionService } from './services/quote-draft-partner-opinion.service';
 import { QuoteDraftRegistrationService } from './services/quote-draft-registration.service';
 import { QuoteReadService } from './services/quote-read.service';
+import { QuoteRenewalPrefillService } from './services/quote-renewal-prefill.service';
 
 @ApiTags('quotes')
 @ApiBearerAuth('access-token')
@@ -71,6 +73,7 @@ export class QuotesController {
     private readonly quoteDraftPartnerOpinion: QuoteDraftPartnerOpinionService,
     private readonly quoteDraftRegistration: QuoteDraftRegistrationService,
     private readonly quoteRead: QuoteReadService,
+    private readonly quoteRenewalPrefill: QuoteRenewalPrefillService,
   ) {}
 
   @ApiOperation({
@@ -131,6 +134,28 @@ export class QuotesController {
     @Body() dto: CreateDraftQuoteDto,
   ): Promise<QuoteDraftSnapshot> {
     return this.quotesService.createDraftFromSimulation(dto.simulationId, user);
+  }
+
+  @ApiOperation({
+    summary: 'Copia uma única vez os dados permitidos da última renovação.',
+    description:
+      'Usa o último contrato disbursed/closed com quote do tomador. Preserva os dados da simulação, não copia geolocalização nem os passos 4 a 7.',
+  })
+  @ApiOkResponse({ type: QuoteRenewalPrefillResponse })
+  @ApiNotFoundResponse({
+    description: 'Proposta ou contrato de origem não encontrado.',
+  })
+  @ApiConflictResponse({ description: 'A proposta não está mais em draft.' })
+  @RequirePermissions(PermissionKey.QUOTE_CREATE)
+  @Post('draft/:quoteId/renewal-prefill')
+  @HttpCode(HttpStatus.OK)
+  async applyRenewalPrefill(
+    @CurrentUser() user: JwtPayload,
+    @Param('quoteId', ParseUUIDPipe) quoteId: string,
+  ): Promise<QuoteRenewalPrefillResponse> {
+    const result = await this.quoteRenewalPrefill.apply(quoteId, user);
+    const quote = await this.quoteRead.findById(quoteId, user);
+    return { ...result, quote };
   }
 
   @ApiOperation({ summary: 'Salva o passo Cadastro da proposta draft.' })
