@@ -16,6 +16,7 @@ import { QuoteDraftPartnerOpinionService } from './services/quote-draft-partner-
 import { QuoteDraftRegistrationService } from './services/quote-draft-registration.service';
 import { QuoteDraftStepsService } from './services/quote-draft-steps.service';
 import { QuoteReadService } from './services/quote-read.service';
+import { QuoteRenewalPrefillService } from './services/quote-renewal-prefill.service';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { QuoteReadService } from './services/quote-read.service';
     QuoteDraftRegistrationService,
     QuoteDraftStepsService,
     QuoteReadService,
+    QuoteRenewalPrefillService,
     QuotesService,
   ],
   exports: [QuotesService],
