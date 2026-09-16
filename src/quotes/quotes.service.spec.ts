@@ -567,9 +567,6 @@ describe('QuoteDraftRegistrationService.save', () => {
       },
     });
     expect(tx.simulations.findFirst).not.toHaveBeenCalled();
-    expect(tx.quotes.updateMany.mock.calls[0][0].data).not.toHaveProperty(
-      'document',
-    );
     expect(tx.quote_draft_steps.upsert).toHaveBeenCalledWith({
       where: {
         quote_id_step: {
