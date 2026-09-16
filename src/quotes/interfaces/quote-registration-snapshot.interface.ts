@@ -27,6 +27,18 @@ export class QuoteRegistrationSnapshot {
   @ApiProperty()
   updatedAt: Date;
 
+  @ApiProperty({ example: 'Maria Souza' })
+  name: string;
+
+  @ApiProperty({ example: '1990-05-20', format: 'date' })
+  birthDate: string;
+
+  @ApiProperty({ example: 'maria@email.com', format: 'email' })
+  email: string;
+
+  @ApiProperty({ example: '11987654321' })
+  telephone: string;
+
   @ApiProperty()
   isRenegotiation: boolean;
 

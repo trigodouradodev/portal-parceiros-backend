@@ -14,6 +14,9 @@ import { QuoteStatus } from '../enums/quote-status.enum';
 import { QuoteRegistrationSnapshot } from '../interfaces/quote-registration-snapshot.interface';
 import { QuoteDraftStepsService } from './quote-draft-steps.service';
 
+const MIN_AGE = 18;
+const MAX_AGE = 120;
+
 @Injectable()
 export class QuoteDraftRegistrationService {
   constructor(
@@ -39,6 +42,10 @@ export class QuoteDraftRegistrationService {
           ...(isAdmin ? {} : { current_sales_agent_id: actor.sub }),
         },
         data: {
+          client_name: registration.name,
+          birth_date: registration.birthDate,
+          email: registration.email,
+          telephone: registration.telephone,
           is_renegotiation: registration.isRenegotiation,
           gender: registration.gender,
           secondary_document: registration.secondaryDocument,
@@ -82,6 +89,10 @@ export class QuoteDraftRegistrationService {
         step: QuoteDraftStep.REGISTRATION,
         completedAt: progress.completed_at,
         updatedAt: progress.updated_at,
+        name: registration.name,
+        birthDate: toDateOnly(registration.birthDate),
+        email: registration.email,
+        telephone: registration.telephone,
         isRenegotiation: registration.isRenegotiation,
         gender: registration.gender,
         secondaryDocument: registration.secondaryDocument,
@@ -111,8 +122,9 @@ export class QuoteDraftRegistrationService {
 
 type NormalizedRegistration = Omit<
   SaveQuoteRegistrationDto,
-  'economicActivityOther' | 'spouseDocument' | 'vehicleFinanced'
+  'birthDate' | 'economicActivityOther' | 'spouseDocument' | 'vehicleFinanced'
 > & {
+  birthDate: Date;
   economicActivityOther: string | null;
   spouseDocument: string | null;
   vehicleFinanced: boolean | null;
@@ -121,6 +133,19 @@ type NormalizedRegistration = Omit<
 function normalizeRegistration(
   dto: SaveQuoteRegistrationDto,
 ): NormalizedRegistration {
+  const name = dto.name.trim();
+  if (name.length < 3) {
+    throw new BadRequestException('Informe o nome do tomador.');
+  }
+
+  const birthDate = parseDateOnly(dto.birthDate);
+  const age = differenceInUtcYears(birthDate, utcToday());
+  if (age < MIN_AGE || age > MAX_AGE) {
+    throw new BadRequestException('O tomador deve ter entre 18 e 120 anos.');
+  }
+
+  const telephone = normalizePhone(dto.telephone);
+
   const hasOtherActivity = dto.economicActivityCategories.includes(
     EconomicActivityCategory.OTHER,
   );
@@ -162,10 +187,64 @@ function normalizeRegistration(
 
   return {
     ...dto,
+    name,
+    birthDate,
+    email: dto.email.trim().toLowerCase(),
+    telephone,
     secondaryDocument: dto.secondaryDocument.trim(),
     profession: dto.profession.trim(),
     economicActivityOther,
     spouseDocument,
     vehicleFinanced: dto.ownsVehicle ? (dto.vehicleFinanced ?? null) : null,
   };
+}
+
+function normalizePhone(value: string): string {
+  const digits = value.replace(/\D/g, '');
+  if (digits.length < 10 || digits.length > 13) {
+    throw new BadRequestException('Celular inválido.');
+  }
+  return digits;
+}
+
+function parseDateOnly(value: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    throw new BadRequestException('Data de nascimento inválida.');
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    throw new BadRequestException('Data de nascimento inválida.');
+  }
+  return date;
+}
+
+function toDateOnly(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+function utcToday(): Date {
+  const now = new Date();
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+}
+
+function differenceInUtcYears(from: Date, to: Date): number {
+  let years = to.getUTCFullYear() - from.getUTCFullYear();
+  const monthDelta = to.getUTCMonth() - from.getUTCMonth();
+  if (
+    monthDelta < 0 ||
+    (monthDelta === 0 && to.getUTCDate() < from.getUTCDate())
+  ) {
+    years -= 1;
+  }
+  return years;
 }
