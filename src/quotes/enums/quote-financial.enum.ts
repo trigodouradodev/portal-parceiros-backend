@@ -33,3 +33,11 @@ export enum LoanCategory {
   LOAN_SHARK = 'loan_shark',
   OTHER = 'other',
 }
+
+/** Contrato compartilhado com o backoffice (`quotes.payment_pix_type`). */
+export enum PaymentPixType {
+  CPF = 'CPF',
+  TELEPHONE = 'TELEPHONE',
+  EMAIL = 'EMAIL',
+  RANDOM_KEY = 'RANDOM_KEY',
+}

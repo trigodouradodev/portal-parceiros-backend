@@ -25,6 +25,7 @@ import {
   LoanCategory,
   LoanFrequency,
   LoanInstitution,
+  PaymentPixType,
 } from './enums/quote-financial.enum';
 import { GuarantorRelationship } from './enums/quote-guarantor.enum';
 import {
@@ -158,6 +159,8 @@ const financial: SaveQuoteFinancialDto = {
       description: ' Parcelamento do cartão ',
     },
   ],
+  paymentPixType: PaymentPixType.CPF,
+  paymentPixCode: '529.982.247-25',
 };
 
 const simulation = {
@@ -1325,6 +1328,8 @@ describe('QuoteDraftFinancialService.save', () => {
           description: 'Parcelamento do cartão',
         },
       ],
+      paymentPixType: PaymentPixType.CPF,
+      paymentPixCode: '52998224725',
     });
 
     expect(tx.quotes.updateMany).toHaveBeenCalledWith({
@@ -1350,6 +1355,8 @@ describe('QuoteDraftFinancialService.save', () => {
             institution: LoanInstitution.NUBANK,
           },
         ],
+        payment_pix_type: PaymentPixType.CPF,
+        payment_pix_code: '52998224725',
         updated_at: expect.any(Date) as unknown,
       },
     });
@@ -1376,11 +1383,30 @@ describe('QuoteDraftFinancialService.save', () => {
     const { financialService: service, tx } = await build();
 
     await expect(
-      service.save(QUOTE_ID, { expenses: [], loans: [] }, actor()),
-    ).resolves.toMatchObject({ expenses: [], loans: [] });
+      service.save(
+        QUOTE_ID,
+        {
+          expenses: [],
+          loans: [],
+          paymentPixType: PaymentPixType.EMAIL,
+          paymentPixCode: ' cliente@exemplo.com ',
+        },
+        actor(),
+      ),
+    ).resolves.toMatchObject({
+      expenses: [],
+      loans: [],
+      paymentPixType: PaymentPixType.EMAIL,
+      paymentPixCode: 'cliente@exemplo.com',
+    });
     expect(tx.quotes.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ debts: [], loans: [] }) as unknown,
+        data: expect.objectContaining({
+          debts: [],
+          loans: [],
+          payment_pix_type: PaymentPixType.EMAIL,
+          payment_pix_code: 'cliente@exemplo.com',
+        }) as unknown,
       }),
     );
   });
@@ -1417,6 +1443,13 @@ describe('QuoteDraftFinancialService.save', () => {
             description: undefined,
           },
         ],
+      },
+    },
+    {
+      name: 'chave PIX CPF inválida',
+      dto: {
+        ...financial,
+        paymentPixCode: '111.111.111-11',
       },
     },
   ])('recusa $name antes de abrir a transação', async ({ dto }) => {

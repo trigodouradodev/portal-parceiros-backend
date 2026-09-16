@@ -246,7 +246,7 @@ export class QuotesController {
   @ApiOperation({ summary: 'Salva o passo Financeiro da proposta draft.' })
   @ApiOkResponse({ type: QuoteFinancialSnapshot })
   @ApiBadRequestResponse({
-    description: 'Despesas ou empréstimos inválidos.',
+    description: 'Despesas, empréstimos ou chave PIX inválidos.',
   })
   @ApiNotFoundResponse({ description: 'Proposta não encontrada.' })
   @ApiConflictResponse({ description: 'A proposta não está mais em draft.' })
