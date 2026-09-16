@@ -5,6 +5,7 @@ import {
   LoanCategory,
   LoanFrequency,
   LoanInstitution,
+  PaymentPixType,
 } from '../enums/quote-financial.enum';
 import { QuoteStatus } from '../enums/quote-status.enum';
 
@@ -57,4 +58,10 @@ export class QuoteFinancialSnapshot {
 
   @ApiProperty({ type: [QuoteLoanSnapshot] })
   loans: QuoteLoanSnapshot[];
+
+  @ApiProperty({ enum: PaymentPixType })
+  paymentPixType: PaymentPixType;
+
+  @ApiProperty()
+  paymentPixCode: string;
 }

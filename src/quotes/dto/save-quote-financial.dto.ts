@@ -9,6 +9,7 @@ import {
   IsString,
   MaxLength,
   Min,
+  MinLength,
   ValidateNested,
 } from 'class-validator';
 import {
@@ -16,7 +17,11 @@ import {
   LoanCategory,
   LoanFrequency,
   LoanInstitution,
+  PaymentPixType,
 } from '../enums/quote-financial.enum';
+
+const trim = ({ value }: { value: unknown }): unknown =>
+  typeof value === 'string' ? value.trim() : value;
 
 const trimOptional = ({ value }: { value: unknown }): unknown => {
   if (typeof value !== 'string') return value;
@@ -84,4 +89,15 @@ export class SaveQuoteFinancialDto {
   @ValidateNested({ each: true })
   @Type(() => QuoteLoanDto)
   loans: QuoteLoanDto[];
+
+  @ApiProperty({ enum: PaymentPixType, example: PaymentPixType.CPF })
+  @IsEnum(PaymentPixType)
+  paymentPixType: PaymentPixType;
+
+  @ApiProperty({ example: '52998224725' })
+  @Transform(trim)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(255)
+  paymentPixCode: string;
 }

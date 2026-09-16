@@ -114,6 +114,8 @@ const DETAIL_SELECT = {
   guarantor: true,
   debts: true,
   loans: true,
+  payment_pix_type: true,
+  payment_pix_code: true,
   document_attachment: true,
   proof_of_residence_attachment: true,
   activity_photos_attachment: true,
@@ -314,6 +316,8 @@ export class QuoteReadService {
       financial: {
         expenses: mapExpenses(row.debts),
         loans: mapLoans(row.loans),
+        paymentPixType: row.payment_pix_type,
+        paymentPixCode: row.payment_pix_code,
       },
       documentation: mapDocumentation(row),
     };
