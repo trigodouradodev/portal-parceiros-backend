@@ -147,10 +147,14 @@ existência. A leitura não gera evento nem altera a proposta.
 PATCH /quotes/draft/:quoteId/registration
 ```
 
-O endpoint salva somente os campos do Cadastro: renovação, gênero, RG,
-profissão, categorias de atividade econômica, estado civil, composição da
-casa, situação e tempo de residência, programas de governo, veículo e
-finalidade do crédito. Detalhe e credor de dívida não pertencem a esse passo.
+O endpoint salva somente os campos do Cadastro: nome, data de nascimento,
+e-mail, telefone, renovação, gênero, RG, profissão, categorias de atividade
+econômica, estado civil, composição da casa, situação e tempo de residência,
+programas de governo, veículo e finalidade do crédito. Nome, nascimento e
+contato são inicialmente copiados da simulação, mas podem ser corrigidos apenas
+na proposta; a simulação e a party permanecem inalteradas. Detalhe e credor de
+dívida não pertencem a esse passo. O campo `document` pode ser enviado pelo
+formulário por compatibilidade, mas é ignorado e não altera o CPF da proposta.
 
 As opções são códigos estáveis validados no backend/frontend e persistidos em
 `varchar` ou arrays JSONB, sem enum ou `CHECK` no banco. A atividade econômica

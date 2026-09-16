@@ -6,8 +6,11 @@ import {
   ArrayUnique,
   IsArray,
   IsBoolean,
+  IsDateString,
+  IsEmail,
   IsEnum,
   IsInt,
+  IsOptional,
   IsString,
   MaxLength,
   Min,
@@ -28,6 +31,39 @@ const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
 export class SaveQuoteRegistrationDto {
+  @ApiProperty({ example: 'Maria Souza' })
+  @Transform(trim)
+  @IsString()
+  @MinLength(3)
+  @MaxLength(255)
+  name: string;
+
+  @ApiPropertyOptional({
+    example: '00820787264',
+    description:
+      'CPF somente para compatibilidade com o formulário; não é alterado neste endpoint.',
+  })
+  @IsOptional()
+  @IsString()
+  document?: string;
+
+  @ApiProperty({ example: '1990-05-20', format: 'date' })
+  @IsDateString()
+  birthDate: string;
+
+  @ApiProperty({ example: 'maria@email.com', format: 'email' })
+  @Transform(trim)
+  @IsEmail()
+  @MaxLength(255)
+  email: string;
+
+  @ApiProperty({ example: '11987654321' })
+  @Transform(trim)
+  @IsString()
+  @MinLength(10)
+  @MaxLength(20)
+  telephone: string;
+
   @ApiProperty()
   @IsBoolean()
   isRenegotiation: boolean;
