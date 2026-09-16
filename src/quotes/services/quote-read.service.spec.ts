@@ -133,6 +133,8 @@ function detailRow(overrides: Record<string, unknown> = {}) {
         institution: 'nubank',
       },
     ],
+    payment_pix_type: 'CPF',
+    payment_pix_code: '52998224725',
     document_attachment: [
       {
         id: 'attachment-1',
@@ -327,6 +329,8 @@ describe('QuoteReadService.findById', () => {
             description: 'Cartão principal',
           },
         ],
+        paymentPixType: 'CPF',
+        paymentPixCode: '52998224725',
       },
       documentation: {
         identificationDocuments: [

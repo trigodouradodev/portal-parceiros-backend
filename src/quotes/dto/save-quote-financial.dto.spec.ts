@@ -5,6 +5,7 @@ import {
   LoanCategory,
   LoanFrequency,
   LoanInstitution,
+  PaymentPixType,
 } from '../enums/quote-financial.enum';
 import { SaveQuoteFinancialDto } from './save-quote-financial.dto';
 
@@ -25,6 +26,8 @@ const validFinancial = {
       description: 'Parcelamento do cartão',
     },
   ],
+  paymentPixType: PaymentPixType.CPF,
+  paymentPixCode: '529.982.247-25',
 };
 
 async function errors(input: Record<string, unknown>) {
@@ -33,7 +36,14 @@ async function errors(input: Record<string, unknown>) {
 
 describe('SaveQuoteFinancialDto', () => {
   it('aceita listas vazias quando o cliente não possui despesas ou empréstimos', async () => {
-    await expect(errors({ expenses: [], loans: [] })).resolves.toHaveLength(0);
+    await expect(
+      errors({
+        expenses: [],
+        loans: [],
+        paymentPixType: PaymentPixType.CPF,
+        paymentPixCode: '52998224725',
+      }),
+    ).resolves.toHaveLength(0);
   });
 
   it('aceita despesas e empréstimos válidos', async () => {
@@ -76,6 +86,12 @@ describe('SaveQuoteFinancialDto', () => {
       changes: {
         loans: [{ ...validFinancial.loans[0], category: 'personal' }],
       },
+    },
+    { name: 'tipo de PIX ausente', changes: { paymentPixType: undefined } },
+    { name: 'chave PIX vazia', changes: { paymentPixCode: '' } },
+    {
+      name: 'tipo de PIX inválido',
+      changes: { paymentPixType: 'CNPJ' },
     },
   ])('recusa $name', async ({ changes }) => {
     expect(await errors({ ...validFinancial, ...changes })).not.toHaveLength(0);
