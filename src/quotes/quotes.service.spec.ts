@@ -67,6 +67,11 @@ const STEP_COMPLETED_AT = new Date('2026-09-02T13:00:00.000Z');
 const STEP_UPDATED_AT = new Date('2026-09-02T14:00:00.000Z');
 
 const registration: SaveQuoteRegistrationDto = {
+  name: ' Maria Souza ',
+  document: '00820787264',
+  birthDate: '1990-05-20',
+  email: ' MARIA@EMAIL.COM ',
+  telephone: '(11) 98765-4321',
   isRenegotiation: false,
   gender: Gender.FEMALE,
   secondaryDocument: ' 123456789 ',
@@ -506,6 +511,10 @@ describe('QuoteDraftRegistrationService.save', () => {
       step: QuoteDraftStep.REGISTRATION,
       completedAt: STEP_COMPLETED_AT,
       updatedAt: STEP_UPDATED_AT,
+      name: 'Maria Souza',
+      birthDate: '1990-05-20',
+      email: 'maria@email.com',
+      telephone: '11987654321',
       isRenegotiation: false,
       gender: Gender.FEMALE,
       secondaryDocument: '123456789',
@@ -534,6 +543,10 @@ describe('QuoteDraftRegistrationService.save', () => {
         current_sales_agent_id: OWNER_ID,
       },
       data: {
+        client_name: 'Maria Souza',
+        birth_date: new Date('1990-05-20T00:00:00.000Z'),
+        email: 'maria@email.com',
+        telephone: '11987654321',
         is_renegotiation: false,
         gender: Gender.FEMALE,
         secondary_document: '123456789',
@@ -553,6 +566,7 @@ describe('QuoteDraftRegistrationService.save', () => {
         updated_at: expect.any(Date) as unknown,
       },
     });
+    expect(tx.simulations.findFirst).not.toHaveBeenCalled();
     expect(tx.quote_draft_steps.upsert).toHaveBeenCalledWith({
       where: {
         quote_id_step: {
@@ -602,6 +616,25 @@ describe('QuoteDraftRegistrationService.save', () => {
   });
 
   it.each([
+    {
+      name: 'nome inválido',
+      dto: { ...registration, name: '  ' },
+    },
+    {
+      name: 'data de nascimento inexistente',
+      dto: { ...registration, birthDate: '1990-02-30' },
+    },
+    {
+      name: 'tomador menor de idade',
+      dto: {
+        ...registration,
+        birthDate: new Date().toISOString().slice(0, 10),
+      },
+    },
+    {
+      name: 'telefone inválido',
+      dto: { ...registration, telephone: '12345' },
+    },
     {
       name: 'atividade Outros sem descrição',
       dto: {
