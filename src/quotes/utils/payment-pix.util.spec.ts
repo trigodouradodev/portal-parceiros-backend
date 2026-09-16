@@ -4,9 +4,9 @@ import { normalizePaymentPixCode } from './payment-pix.util';
 
 describe('normalizePaymentPixCode', () => {
   it('persiste CPF só com dígitos', () => {
-    expect(
-      normalizePaymentPixCode(PaymentPixType.CPF, '529.982.247-25'),
-    ).toBe('52998224725');
+    expect(normalizePaymentPixCode(PaymentPixType.CPF, '529.982.247-25')).toBe(
+      '52998224725',
+    );
   });
 
   it('recusa CPF inválido', () => {
