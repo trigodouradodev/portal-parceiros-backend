@@ -25,6 +25,7 @@ import {
   QuoteExpenseSnapshot,
   QuoteLoanSnapshot,
 } from './quote-financial-snapshot.interface';
+import { PaymentPixType } from '../enums/quote-financial.enum';
 import { QuoteGeolocationSnapshot } from './quote-address-snapshot.interface';
 import { GuarantorRelationship } from '../enums/quote-guarantor.enum';
 import { QuoteConsultantSummary } from './quote-list.interface';
@@ -209,6 +210,12 @@ export class QuoteFinancialDetail {
 
   @ApiProperty({ type: [QuoteLoanSnapshot] })
   loans: QuoteLoanSnapshot[];
+
+  @ApiProperty({ enum: PaymentPixType })
+  paymentPixType: PaymentPixType | string;
+
+  @ApiProperty()
+  paymentPixCode: string;
 }
 
 export class QuoteDetail {

@@ -11,6 +11,7 @@ import {
 } from '../enums/quote-financial.enum';
 import { QuoteStatus } from '../enums/quote-status.enum';
 import { QuoteFinancialSnapshot } from '../interfaces/quote-financial-snapshot.interface';
+import { normalizePaymentPixCode } from '../utils/payment-pix.util';
 import { QuoteDraftStepsService } from './quote-draft-steps.service';
 
 @Injectable()
@@ -49,6 +50,8 @@ export class QuoteDraftFinancialService {
             frequency: loan.frequency,
             institution: loan.institution,
           })),
+          payment_pix_type: financial.paymentPixType,
+          payment_pix_code: financial.paymentPixCode,
           updated_at: updatedAt,
         },
       });
@@ -78,6 +81,8 @@ export class QuoteDraftFinancialService {
         updatedAt: progress.updated_at,
         expenses: financial.expenses,
         loans: financial.loans,
+        paymentPixType: financial.paymentPixType,
+        paymentPixCode: financial.paymentPixCode,
       };
     });
   }
@@ -119,5 +124,13 @@ function normalizeFinancial(dto: SaveQuoteFinancialDto) {
     };
   });
 
-  return { expenses, loans };
+  return {
+    expenses,
+    loans,
+    paymentPixType: dto.paymentPixType,
+    paymentPixCode: normalizePaymentPixCode(
+      dto.paymentPixType,
+      dto.paymentPixCode,
+    ),
+  };
 }
