@@ -24,7 +24,10 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
+import {
+  RequireExplicitPermissions,
+  RequirePermissions,
+} from '../auth/decorators/require-permissions.decorator';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { CreateDraftQuoteDto } from './dto/create-draft-quote.dto';
@@ -62,6 +65,7 @@ import { QuoteRenewalPrefillService } from './services/quote-renewal-prefill.ser
 @ApiForbiddenResponse({
   description: 'Permissão insuficiente ou proposta de outro parceiro.',
 })
+@RequireExplicitPermissions(PermissionKey.QUOTE_NEW_ORIGINATION_FLOW)
 @Controller('quotes')
 export class QuotesController {
   constructor(

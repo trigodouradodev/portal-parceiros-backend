@@ -3,6 +3,7 @@ import { PermissionKey } from '../permissions/permission-keys';
 
 export const PERMISSIONS_KEY = 'requiredPermissions';
 export const PERMISSIONS_MODE_KEY = 'requiredPermissionsMode';
+export const EXPLICIT_PERMISSIONS_KEY = 'requiredExplicitPermissions';
 
 /** ANY = basta ter uma das permissões; ALL = precisa ter todas. */
 export type PermissionMode = 'ANY' | 'ALL';
@@ -26,3 +27,10 @@ export const RequireAllPermissions = (...permissions: PermissionKey[]) =>
     SetMetadata(PERMISSIONS_KEY, permissions),
     SetMetadata(PERMISSIONS_MODE_KEY, 'ALL'),
   );
+
+/**
+ * Exige permissões atribuídas explicitamente ao usuário. ROLE_ADMIN não
+ * concede bypass: esta variante é destinada a rollouts opt-in.
+ */
+export const RequireExplicitPermissions = (...permissions: PermissionKey[]) =>
+  SetMetadata(EXPLICIT_PERMISSIONS_KEY, permissions);

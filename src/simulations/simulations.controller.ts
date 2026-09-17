@@ -23,7 +23,10 @@ import {
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
+import {
+  RequireExplicitPermissions,
+  RequirePermissions,
+} from '../auth/decorators/require-permissions.decorator';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { CreateSimulationDto } from './dto/create-simulation.dto';
@@ -37,6 +40,7 @@ import { SimulationsService } from './simulations.service';
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ description: 'Token ausente ou inválido.' })
 @ApiForbiddenResponse({ description: 'Permissão insuficiente.' })
+@RequireExplicitPermissions(PermissionKey.QUOTE_NEW_ORIGINATION_FLOW)
 @Controller('simulations')
 export class SimulationsController {
   constructor(private readonly simulationsService: SimulationsService) {}
