@@ -9,7 +9,10 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
+import {
+  RequireExplicitPermissions,
+  RequirePermissions,
+} from '../auth/decorators/require-permissions.decorator';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { PartyFormLookupResponse } from './interfaces/party-form-lookup-response.interface';
 import { PartiesService } from './parties.service';
@@ -18,6 +21,7 @@ import { PartiesService } from './parties.service';
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ description: 'Token ausente ou inválido.' })
 @ApiForbiddenResponse({ description: 'Permissão insuficiente.' })
+@RequireExplicitPermissions(PermissionKey.QUOTE_NEW_ORIGINATION_FLOW)
 @Controller('parties')
 export class PartiesController {
   constructor(private readonly partiesService: PartiesService) {}

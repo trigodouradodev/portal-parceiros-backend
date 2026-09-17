@@ -29,7 +29,10 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
+import {
+  RequireExplicitPermissions,
+  RequirePermissions,
+} from '../auth/decorators/require-permissions.decorator';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { UploadQuoteAttachmentDto } from './dto/upload-quote-attachment.dto';
@@ -48,6 +51,7 @@ const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 @ApiForbiddenResponse({
   description: 'Permissão insuficiente ou proposta de outro parceiro.',
 })
+@RequireExplicitPermissions(PermissionKey.QUOTE_NEW_ORIGINATION_FLOW)
 @Controller('quotes/draft/:quoteId')
 export class QuoteDraftDocumentationController {
   constructor(private readonly documentation: QuoteDraftDocumentationService) {}
