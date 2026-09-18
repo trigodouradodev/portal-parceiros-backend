@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../../auth/permissions/permission-keys';
 import { normalizeCnpj } from '../../common/cnpj.util';
@@ -38,7 +39,8 @@ export class QuoteDraftIncomeService {
           personal_income: income.declaredMonthlyIncome,
           income_source: income.incomeSource,
           has_multiple_income_sources: income.hasMultipleIncomeSources,
-          secondary_income: income.secondaryIncome,
+          additional_incomes:
+            income.additionalIncomes as unknown as Prisma.InputJsonValue,
           available_income_proof: income.availableIncomeProof,
           updated_at: updatedAt,
         },
@@ -74,21 +76,15 @@ export class QuoteDraftIncomeService {
         declaredMonthlyIncome: income.declaredMonthlyIncome,
         incomeSource: income.incomeSource,
         hasMultipleIncomeSources: income.hasMultipleIncomeSources,
-        ...(income.secondaryIncome === null
-          ? {}
-          : { secondaryIncome: income.secondaryIncome }),
+        additionalIncomes: income.additionalIncomes,
         availableIncomeProof: income.availableIncomeProof,
       };
     });
   }
 }
 
-type NormalizedIncome = Omit<
-  SaveQuoteIncomeDto,
-  'businessDocument' | 'secondaryIncome'
-> & {
+type NormalizedIncome = Omit<SaveQuoteIncomeDto, 'businessDocument'> & {
   businessDocument: string | null;
-  secondaryIncome: number | null;
 };
 
 function normalizeIncome(dto: SaveQuoteIncomeDto): NormalizedIncome {
@@ -96,20 +92,18 @@ function normalizeIncome(dto: SaveQuoteIncomeDto): NormalizedIncome {
     ? normalizeCnpj(dto.businessDocument)
     : null;
 
-  if (
-    dto.hasMultipleIncomeSources &&
-    (typeof dto.secondaryIncome !== 'number' || dto.secondaryIncome <= 0)
-  ) {
-    throw new BadRequestException(
-      'Informe uma renda secundária maior que zero.',
-    );
+  if (dto.hasMultipleIncomeSources && dto.additionalIncomes.length === 0) {
+    throw new BadRequestException('Informe ao menos uma renda adicional.');
   }
 
   return {
     ...dto,
     businessDocument,
-    secondaryIncome: dto.hasMultipleIncomeSources
-      ? (dto.secondaryIncome ?? null)
-      : null,
+    additionalIncomes: dto.hasMultipleIncomeSources
+      ? dto.additionalIncomes.map((additionalIncome) => ({
+          source: additionalIncome.source,
+          amount: additionalIncome.amount,
+        }))
+      : [],
   };
 }

@@ -184,15 +184,18 @@ PATCH /quotes/draft/:quoteId/income
 ```
 
 O endpoint salva CNPJ, tempo na atividade, renda mensal principal, fonte da
-renda, existência de múltiplas fontes, renda secundária e comprovante de renda
-disponível. O CNPJ é opcional; quando informado, aceita máscara, valida os
-dígitos verificadores e é persistido somente com os 14 dígitos.
+renda, existência de múltiplas fontes, a lista de rendas adicionais e o
+comprovante de renda disponível. O CNPJ é opcional; quando informado, aceita
+máscara, valida os dígitos verificadores e é persistido somente com os 14
+dígitos.
 
-A renda principal e a secundária representam fontes separadas e não são
-somadas na persistência. A principal reutiliza `quotes.personal_income`; a
-secundária usa `quotes.secondary_income`. Quando
-`hasMultipleIncomeSources=true`, a renda secundária é obrigatória e deve ser
-maior que zero. Quando for `false`, ela é limpa no banco.
+A renda principal e as adicionais representam fontes separadas e não são
+somadas na persistência. A principal reutiliza `quotes.personal_income`; as
+adicionais usam `quotes.additional_incomes`, com `source` e `amount` em cada
+item. Quando `hasMultipleIncomeSources=true`, ao menos uma renda adicional é
+obrigatória, com fonte válida e valor maior que zero. Quando for `false`, a
+lista é limpa no banco. A taxonomia aceita `salary`, `own_business`, `benefit`,
+`rent`, `mixed_income` e `other`.
 
 As opções de tempo, fonte e comprovante são códigos estáveis validados na
 aplicação e persistidos em `varchar`, sem enum ou `CHECK` no banco. Assim como

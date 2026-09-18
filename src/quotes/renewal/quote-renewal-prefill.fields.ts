@@ -31,7 +31,7 @@ export const RENEWAL_PREFILL_FIELD_WHITELIST = {
     personal_income: true,
     income_source: true,
     has_multiple_income_sources: true,
-    secondary_income: true,
+    additional_incomes: true,
     available_income_proof: true,
   },
   address: {
@@ -109,7 +109,8 @@ export function buildRenewalPrefillUpdate(
     personal_income: source.personal_income,
     income_source: source.income_source,
     has_multiple_income_sources: source.has_multiple_income_sources,
-    secondary_income: source.secondary_income,
+    additional_incomes:
+      source.additional_incomes as unknown as Prisma.InputJsonValue,
     available_income_proof: source.available_income_proof,
 
     // Não inclui geolocation.
