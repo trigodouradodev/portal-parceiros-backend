@@ -1,0 +1,52 @@
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import {
+  ActivityDuration,
+  AvailableIncomeProof,
+  IncomeSource,
+} from '../enums/quote-income.enum';
+import { SaveQuoteIncomeDto } from './save-quote-income.dto';
+
+const validIncome = {
+  activityDuration: ActivityDuration.ONE_TO_3_YEARS,
+  declaredMonthlyIncome: 3500,
+  incomeSource: IncomeSource.SALARY,
+  hasMultipleIncomeSources: true,
+  additionalIncomes: [
+    { source: IncomeSource.RENT, amount: 800 },
+    { source: IncomeSource.OTHER, amount: 250 },
+  ],
+  availableIncomeProof: AvailableIncomeProof.BANK_STATEMENT,
+};
+
+async function errors(input: Record<string, unknown>) {
+  return validate(plainToInstance(SaveQuoteIncomeDto, input));
+}
+
+describe('SaveQuoteIncomeDto', () => {
+  it('aceita múltiplas rendas adicionais, inclusive do tipo outro', async () => {
+    await expect(errors(validIncome)).resolves.toHaveLength(0);
+  });
+
+  it.each([
+    { name: 'lista ausente', changes: { additionalIncomes: undefined } },
+    {
+      name: 'fonte inválida',
+      changes: { additionalIncomes: [{ source: 'unknown', amount: 800 }] },
+    },
+    {
+      name: 'valor zerado',
+      changes: {
+        additionalIncomes: [{ source: IncomeSource.RENT, amount: 0 }],
+      },
+    },
+    {
+      name: 'valor com mais de duas casas decimais',
+      changes: {
+        additionalIncomes: [{ source: IncomeSource.RENT, amount: 10.999 }],
+      },
+    },
+  ])('recusa $name', async ({ changes }) => {
+    expect(await errors({ ...validIncome, ...changes })).not.toHaveLength(0);
+  });
+});

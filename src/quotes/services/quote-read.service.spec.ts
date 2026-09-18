@@ -79,7 +79,10 @@ function detailRow(overrides: Record<string, unknown> = {}) {
     personal_income: '4500.00',
     income_source: 'own_business',
     has_multiple_income_sources: true,
-    secondary_income: '800.00',
+    additional_incomes: [
+      { source: 'rent', amount: '800.00' },
+      { source: 'other', amount: 250 },
+    ],
     available_income_proof: 'bank_statement',
     client_address: {
       zipCode: '01001000',
@@ -303,7 +306,10 @@ describe('QuoteReadService.findById', () => {
       },
       income: {
         declaredMonthlyIncome: 4500,
-        secondaryIncome: 800,
+        additionalIncomes: [
+          { source: 'rent', amount: 800 },
+          { source: 'other', amount: 250 },
+        ],
       },
       address: {
         zipCode: '01001000',

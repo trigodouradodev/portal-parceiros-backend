@@ -99,7 +99,10 @@ const income: SaveQuoteIncomeDto = {
   declaredMonthlyIncome: 3500,
   incomeSource: IncomeSource.MIXED_INCOME,
   hasMultipleIncomeSources: true,
-  secondaryIncome: 800,
+  additionalIncomes: [
+    { source: IncomeSource.RENT, amount: 800 },
+    { source: IncomeSource.OTHER, amount: 250 },
+  ],
   availableIncomeProof: AvailableIncomeProof.BANK_STATEMENT,
 };
 
@@ -710,7 +713,7 @@ describe('QuoteDraftRegistrationService.save', () => {
 });
 
 describe('QuoteDraftIncomeService.save', () => {
-  it('salva as rendas principal e secundária separadamente e conclui a etapa', async () => {
+  it('salva as rendas principal e adicionais separadamente e conclui a etapa', async () => {
     const { incomeService: service, tx } = await build();
 
     await expect(service.save(QUOTE_ID, income, actor())).resolves.toEqual({
@@ -724,7 +727,10 @@ describe('QuoteDraftIncomeService.save', () => {
       declaredMonthlyIncome: 3500,
       incomeSource: IncomeSource.MIXED_INCOME,
       hasMultipleIncomeSources: true,
-      secondaryIncome: 800,
+      additionalIncomes: [
+        { source: IncomeSource.RENT, amount: 800 },
+        { source: IncomeSource.OTHER, amount: 250 },
+      ],
       availableIncomeProof: AvailableIncomeProof.BANK_STATEMENT,
     });
 
@@ -740,7 +746,10 @@ describe('QuoteDraftIncomeService.save', () => {
         personal_income: 3500,
         income_source: IncomeSource.MIXED_INCOME,
         has_multiple_income_sources: true,
-        secondary_income: 800,
+        additional_incomes: [
+          { source: IncomeSource.RENT, amount: 800 },
+          { source: IncomeSource.OTHER, amount: 250 },
+        ],
         available_income_proof: AvailableIncomeProof.BANK_STATEMENT,
         updated_at: expect.any(Date) as unknown,
       },
@@ -763,7 +772,7 @@ describe('QuoteDraftIncomeService.save', () => {
     });
   });
 
-  it('aceita CNPJ ausente e limpa a renda secundária quando não há múltiplas fontes', async () => {
+  it('aceita CNPJ ausente e limpa as rendas adicionais quando não há múltiplas fontes', async () => {
     const { incomeService: service, tx } = await build();
 
     const result = await service.save(
@@ -772,7 +781,7 @@ describe('QuoteDraftIncomeService.save', () => {
         ...income,
         businessDocument: undefined,
         hasMultipleIncomeSources: false,
-        secondaryIncome: 999,
+        additionalIncomes: [{ source: IncomeSource.RENT, amount: 999 }],
       },
       actor(),
     );
@@ -782,12 +791,12 @@ describe('QuoteDraftIncomeService.save', () => {
         data: expect.objectContaining({
           business_document: null,
           personal_income: 3500,
-          secondary_income: null,
+          additional_incomes: [],
         }) as unknown,
       }),
     );
     expect(result).not.toHaveProperty('businessDocument');
-    expect(result).not.toHaveProperty('secondaryIncome');
+    expect(result.additionalIncomes).toEqual([]);
   });
 
   it.each([
@@ -796,12 +805,8 @@ describe('QuoteDraftIncomeService.save', () => {
       dto: { ...income, businessDocument: '11111111111111' },
     },
     {
-      name: 'múltiplas fontes sem renda secundária',
-      dto: { ...income, secondaryIncome: undefined },
-    },
-    {
-      name: 'múltiplas fontes com renda secundária zerada',
-      dto: { ...income, secondaryIncome: 0 },
+      name: 'múltiplas fontes sem renda adicional',
+      dto: { ...income, additionalIncomes: [] },
     },
   ])('recusa $name', async ({ dto }) => {
     const { incomeService: service, prisma } = await build();

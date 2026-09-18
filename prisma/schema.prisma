@@ -1390,7 +1390,7 @@ model quotes {
   activity_duration                                           String?                      @db.VarChar(30)
   income_source                                               String?                      @db.VarChar(30)
   has_multiple_income_sources                                 Boolean?
-  secondary_income                                            Decimal?                     @db.Decimal(15, 2)
+  additional_incomes                                          Json                         @default("[]")
   available_income_proof                                      String?                      @db.VarChar(30)
   customer_relationship_duration                              String?                      @db.VarChar(30)
   customer_relationship_origin                                String?                      @db.VarChar(50)

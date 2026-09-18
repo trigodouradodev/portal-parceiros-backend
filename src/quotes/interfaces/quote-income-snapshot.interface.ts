@@ -7,6 +7,14 @@ import {
 } from '../enums/quote-income.enum';
 import { QuoteStatus } from '../enums/quote-status.enum';
 
+export class QuoteAdditionalIncomeSnapshot {
+  @ApiProperty({ enum: IncomeSource })
+  source: IncomeSource;
+
+  @ApiProperty()
+  amount: number;
+}
+
 export class QuoteIncomeSnapshot {
   @ApiProperty({ format: 'uuid' })
   id: string;
@@ -38,8 +46,8 @@ export class QuoteIncomeSnapshot {
   @ApiProperty()
   hasMultipleIncomeSources: boolean;
 
-  @ApiPropertyOptional()
-  secondaryIncome?: number;
+  @ApiProperty({ type: [QuoteAdditionalIncomeSnapshot] })
+  additionalIncomes: QuoteAdditionalIncomeSnapshot[];
 
   @ApiProperty({ enum: AvailableIncomeProof })
   availableIncomeProof: AvailableIncomeProof;
