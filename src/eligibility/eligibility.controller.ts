@@ -8,7 +8,10 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
+import {
+  RequireExplicitPermissions,
+  RequirePermissions,
+} from '../auth/decorators/require-permissions.decorator';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { CheckEligibilityDto } from './dto/check-eligibility.dto';
 import { EligibilityResult } from './interfaces/eligibility-result.interface';
@@ -18,6 +21,7 @@ import { EligibilityService } from './eligibility.service';
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ description: 'Token ausente ou inválido.' })
 @ApiForbiddenResponse({ description: 'Permissão insuficiente.' })
+@RequireExplicitPermissions(PermissionKey.QUOTE_NEW_ORIGINATION_FLOW)
 @Controller('eligibility')
 export class EligibilityController {
   constructor(private readonly eligibilityService: EligibilityService) {}
