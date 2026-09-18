@@ -35,7 +35,7 @@ const sourceQuote = {
   personal_income: new Prisma.Decimal(4500),
   income_source: 'self_employed',
   has_multiple_income_sources: true,
-  secondary_income: new Prisma.Decimal(900),
+  additional_incomes: [{ source: 'other', amount: 900 }],
   available_income_proof: 'bank_statement',
   client_address: {
     zipCode: '20000000',

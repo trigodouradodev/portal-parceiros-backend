@@ -1,7 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsBoolean,
+  IsArray,
   IsEnum,
   IsNumber,
   IsOptional,
@@ -9,7 +11,7 @@ import {
   MaxLength,
   Min,
   MinLength,
-  ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import {
   ActivityDuration,
@@ -19,6 +21,18 @@ import {
 
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
+
+export class QuoteAdditionalIncomeDto {
+  @ApiProperty({ enum: IncomeSource })
+  @IsEnum(IncomeSource)
+  source: IncomeSource;
+
+  @ApiProperty({ example: 800, minimum: 0.01 })
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  amount: number;
+}
 
 export class SaveQuoteIncomeDto {
   @ApiPropertyOptional({
@@ -50,12 +64,12 @@ export class SaveQuoteIncomeDto {
   @IsBoolean()
   hasMultipleIncomeSources: boolean;
 
-  @ApiPropertyOptional({ example: 800, minimum: 0.01 })
-  @ValidateIf((dto: SaveQuoteIncomeDto) => dto.hasMultipleIncomeSources)
-  @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0.01)
-  secondaryIncome?: number;
+  @ApiProperty({ type: [QuoteAdditionalIncomeDto] })
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => QuoteAdditionalIncomeDto)
+  additionalIncomes: QuoteAdditionalIncomeDto[];
 
   @ApiProperty({ enum: AvailableIncomeProof })
   @IsEnum(AvailableIncomeProof)

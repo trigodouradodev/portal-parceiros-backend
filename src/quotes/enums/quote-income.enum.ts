@@ -12,6 +12,7 @@ export enum IncomeSource {
   BENEFIT = 'benefit',
   RENT = 'rent',
   MIXED_INCOME = 'mixed_income',
+  OTHER = 'other',
 }
 
 export enum AvailableIncomeProof {

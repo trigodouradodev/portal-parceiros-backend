@@ -46,6 +46,7 @@ import {
 import { QuoteExpenseSnapshot } from '../interfaces/quote-financial-snapshot.interface';
 import { QuoteLoanSnapshot } from '../interfaces/quote-financial-snapshot.interface';
 import { QuoteListItem, QuotesPage } from '../interfaces/quote-list.interface';
+import { QuoteAdditionalIncomeSnapshot } from '../interfaces/quote-income-snapshot.interface';
 
 const LIST_SELECT = {
   id: true,
@@ -99,7 +100,7 @@ const DETAIL_SELECT = {
   personal_income: true,
   income_source: true,
   has_multiple_income_sources: true,
-  secondary_income: true,
+  additional_incomes: true,
   available_income_proof: true,
   client_address: true,
   geolocation: true,
@@ -284,8 +285,7 @@ export class QuoteReadService {
         declaredMonthlyIncome: Number(row.personal_income),
         incomeSource: row.income_source as IncomeSource | null,
         hasMultipleIncomeSources: row.has_multiple_income_sources,
-        secondaryIncome:
-          row.secondary_income === null ? null : Number(row.secondary_income),
+        additionalIncomes: mapAdditionalIncomes(row.additional_incomes),
         availableIncomeProof:
           row.available_income_proof as AvailableIncomeProof | null,
       },
@@ -419,6 +419,17 @@ function mapExpenses(value: unknown): QuoteExpenseSnapshot[] {
         ...(description ? { description } : {}),
       },
     ];
+  });
+}
+
+function mapAdditionalIncomes(value: unknown): QuoteAdditionalIncomeSnapshot[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const income = asRecord(item);
+    const source = enumOrNull(income?.source, IncomeSource);
+    const amount = numberOrNull(income?.amount);
+    if (!source || amount === null || amount <= 0) return [];
+    return [{ source, amount }];
   });
 }
 

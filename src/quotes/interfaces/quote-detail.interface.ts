@@ -29,6 +29,7 @@ import { PaymentPixType } from '../enums/quote-financial.enum';
 import { QuoteGeolocationSnapshot } from './quote-address-snapshot.interface';
 import { GuarantorRelationship } from '../enums/quote-guarantor.enum';
 import { QuoteConsultantSummary } from './quote-list.interface';
+import { QuoteAdditionalIncomeSnapshot } from './quote-income-snapshot.interface';
 
 export class QuoteRegistrationDetail {
   @ApiProperty()
@@ -96,8 +97,8 @@ export class QuoteIncomeDetail {
   @ApiPropertyOptional({ nullable: true })
   hasMultipleIncomeSources: boolean | null;
 
-  @ApiPropertyOptional({ nullable: true })
-  secondaryIncome: number | null;
+  @ApiProperty({ type: [QuoteAdditionalIncomeSnapshot] })
+  additionalIncomes: QuoteAdditionalIncomeSnapshot[];
 
   @ApiPropertyOptional({ enum: AvailableIncomeProof, nullable: true })
   availableIncomeProof: AvailableIncomeProof | null;
