@@ -49,6 +49,6 @@ export class QuoteIncomeSnapshot {
   @ApiProperty({ type: [QuoteAdditionalIncomeSnapshot] })
   additionalIncomes: QuoteAdditionalIncomeSnapshot[];
 
-  @ApiProperty({ enum: AvailableIncomeProof })
-  availableIncomeProof: AvailableIncomeProof;
+  @ApiPropertyOptional({ enum: AvailableIncomeProof })
+  availableIncomeProof?: AvailableIncomeProof;
 }

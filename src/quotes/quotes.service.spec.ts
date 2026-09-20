@@ -39,6 +39,8 @@ import {
   PartnerAssessment,
 } from './enums/quote-partner-opinion.enum';
 import {
+  BusinessActivityBranch,
+  BusinessActivitySubcategory,
   CreditPurpose,
   EconomicActivityCategory,
   Gender,
@@ -76,6 +78,8 @@ const registration: SaveQuoteRegistrationDto = {
   gender: Gender.FEMALE,
   secondaryDocument: ' 123456789 ',
   profession: ' Comerciante ',
+  businessActivityBranch: BusinessActivityBranch.RETAIL_COMMERCE,
+  businessActivitySubcategory: BusinessActivitySubcategory.GENERAL_COMMERCE,
   economicActivityCategories: [
     EconomicActivityCategory.BUSINESS_OWNER,
     EconomicActivityCategory.OTHER,
@@ -522,6 +526,8 @@ describe('QuoteDraftRegistrationService.save', () => {
       gender: Gender.FEMALE,
       secondaryDocument: '123456789',
       profession: 'Comerciante',
+      businessActivityBranch: BusinessActivityBranch.RETAIL_COMMERCE,
+      businessActivitySubcategory: BusinessActivitySubcategory.GENERAL_COMMERCE,
       economicActivityCategories: [
         EconomicActivityCategory.BUSINESS_OWNER,
         EconomicActivityCategory.OTHER,
@@ -554,6 +560,8 @@ describe('QuoteDraftRegistrationService.save', () => {
         gender: Gender.FEMALE,
         secondary_document: '123456789',
         profession: 'Comerciante',
+        business_activity_branch: 'retail_commerce',
+        business_activity_subcategory: 'general_commerce',
         economic_activity_categories: registration.economicActivityCategories,
         economic_activity_other: 'Artesanato',
         marital_status: MaritalStatus.MARRIED,
@@ -594,6 +602,9 @@ describe('QuoteDraftRegistrationService.save', () => {
       QUOTE_ID,
       {
         ...registration,
+        businessActivityBranch: BusinessActivityBranch.FOOD,
+        businessActivitySubcategory:
+          BusinessActivitySubcategory.RESTAURANT_OR_SNACK_BAR,
         economicActivityCategories: [EconomicActivityCategory.CLT_EMPLOYEE],
         economicActivityOther: 'Ignorar',
         maritalStatus: MaritalStatus.SINGLE,
@@ -607,6 +618,7 @@ describe('QuoteDraftRegistrationService.save', () => {
     expect(tx.quotes.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
+          business_activity_subcategory: 'restaurant_or_snack_bar',
           economic_activity_other: null,
           spouse_document: null,
           vehicle_financed: null,

@@ -50,6 +50,9 @@ export class QuoteDraftRegistrationService {
           gender: registration.gender,
           secondary_document: registration.secondaryDocument,
           profession: registration.profession,
+          business_activity_branch: registration.businessActivityBranch,
+          business_activity_subcategory:
+            registration.businessActivitySubcategory,
           economic_activity_categories: registration.economicActivityCategories,
           economic_activity_other: registration.economicActivityOther,
           marital_status: registration.maritalStatus,
@@ -97,6 +100,8 @@ export class QuoteDraftRegistrationService {
         gender: registration.gender,
         secondaryDocument: registration.secondaryDocument,
         profession: registration.profession,
+        businessActivityBranch: registration.businessActivityBranch,
+        businessActivitySubcategory: registration.businessActivitySubcategory,
         economicActivityCategories: registration.economicActivityCategories,
         ...(registration.economicActivityOther === null
           ? {}

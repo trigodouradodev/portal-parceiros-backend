@@ -62,6 +62,8 @@ function detailRow(overrides: Record<string, unknown> = {}) {
     gender: 'female',
     secondary_document: '123456789',
     profession: 'Comerciante',
+    business_activity_branch: 'retail_commerce',
+    business_activity_subcategory: 'general_commerce',
     economic_activity_categories: ['self_employed_or_informal'],
     economic_activity_other: null,
     marital_status: 'single',
@@ -302,6 +304,8 @@ describe('QuoteReadService.findById', () => {
       totalAmountOwed: 8159.7,
       registration: {
         gender: 'female',
+        businessActivityBranch: 'retail_commerce',
+        businessActivitySubcategory: 'general_commerce',
         economicActivityCategories: ['self_employed_or_informal'],
       },
       income: {

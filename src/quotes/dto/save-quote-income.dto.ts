@@ -71,7 +71,14 @@ export class SaveQuoteIncomeDto {
   @Type(() => QuoteAdditionalIncomeDto)
   additionalIncomes: QuoteAdditionalIncomeDto[];
 
-  @ApiProperty({ enum: AvailableIncomeProof })
+  @ApiPropertyOptional({
+    enum: AvailableIncomeProof,
+    description:
+      'Legado: mantido apenas para compatibilidade com dados já salvos. O ' +
+      'comprovante de renda agora é sempre obrigatório na Documentação, ' +
+      'independentemente deste campo.',
+  })
+  @IsOptional()
   @IsEnum(AvailableIncomeProof)
-  availableIncomeProof: AvailableIncomeProof;
+  availableIncomeProof?: AvailableIncomeProof;
 }

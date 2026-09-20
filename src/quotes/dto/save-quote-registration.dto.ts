@@ -18,6 +18,8 @@ import {
   ValidateIf,
 } from 'class-validator';
 import {
+  BusinessActivityBranch,
+  BusinessActivitySubcategory,
   CreditPurpose,
   EconomicActivityCategory,
   Gender,
@@ -85,6 +87,26 @@ export class SaveQuoteRegistrationDto {
   @MinLength(2)
   @MaxLength(255)
   profession: string;
+
+  @ApiProperty({
+    enum: BusinessActivityBranch,
+    description:
+      'Ramo de atividade do cliente — dado estruturado equivalente ao ' +
+      'subgrupo ocupacional do Analytics, coletado na origem em vez de ' +
+      'classificado por regex sobre a profissão em texto livre.',
+  })
+  @IsEnum(BusinessActivityBranch)
+  businessActivityBranch: BusinessActivityBranch;
+
+  @ApiProperty({
+    enum: BusinessActivitySubcategory,
+    description:
+      'Subcategoria dentro do ramo de atividade — desambigua o ramo ' +
+      '(ex.: pedreiro vs. eletricista em Construção Civil). Sempre exigida ' +
+      'junto de businessActivityBranch.',
+  })
+  @IsEnum(BusinessActivitySubcategory)
+  businessActivitySubcategory: BusinessActivitySubcategory;
 
   @ApiProperty({ enum: EconomicActivityCategory, isArray: true })
   @IsArray()
