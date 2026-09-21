@@ -7,6 +7,8 @@ import { EligibilityResult } from './interfaces/eligibility-result.interface';
 const MIN_AGE = 18;
 const MAX_AGE = 120;
 
+export type EligibilityAssessment = Omit<EligibilityResult, 'party'>;
+
 @Injectable()
 export class EligibilityService {
   constructor(private readonly partiesService: PartiesService) {}
@@ -17,6 +19,19 @@ export class EligibilityService {
    * o contrato HTTP não muda.
    */
   async check(dto: CheckEligibilityDto): Promise<EligibilityResult> {
+    const assessment = this.evaluate(dto);
+
+    if (!assessment.eligible) {
+      return { ...assessment, party: null };
+    }
+
+    const party = await this.partiesService.findDataByCpf(assessment.document);
+
+    return { ...assessment, party };
+  }
+
+  /** Avalia e normaliza a elegibilidade sem consultar ou persistir cadastro. */
+  evaluate(dto: CheckEligibilityDto): EligibilityAssessment {
     const name = dto.name.trim();
     if (name.length < 3) {
       throw new BadRequestException('Informe o nome.');
@@ -32,18 +47,14 @@ export class EligibilityService {
         name,
         document,
         birthDate: normalizedBirthDate,
-        party: null,
       };
     }
-
-    const party = await this.partiesService.findDataByCpf(document);
 
     return {
       eligible: true,
       name,
       document,
       birthDate: normalizedBirthDate,
-      party,
     };
   }
 

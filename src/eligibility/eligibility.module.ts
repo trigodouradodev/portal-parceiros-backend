@@ -7,5 +7,6 @@ import { EligibilityService } from './eligibility.service';
   imports: [PartiesModule],
   controllers: [EligibilityController],
   providers: [EligibilityService],
+  exports: [EligibilityService],
 })
 export class EligibilityModule {}

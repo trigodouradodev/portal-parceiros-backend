@@ -11,14 +11,14 @@ import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { normalizeCpf } from '../common/cpf.util';
 import { CelcoinSimulationService } from '../celcoin/celcoin-simulation.service';
 import { CelcoinSimulationResult } from '../celcoin/interfaces/celcoin-simulation.interface';
+import { EligibilityService } from '../eligibility/eligibility.service';
 import { PartiesService } from '../parties/parties.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateSimulationDto } from './dto/create-simulation.dto';
 import { ListSimulationsQueryDto } from './dto/list-simulations-query.dto';
-import { PreviewSimulationDto } from './dto/preview-simulation.dto';
+import { SimulateDto } from './dto/simulate.dto';
 import { SimulationStatus } from './enums/simulation-status.enum';
-import { SimulationPreview } from './interfaces/simulation-preview.interface';
 import { SimulationSnapshot } from './interfaces/simulation.interface';
+import { SimulateResult } from './interfaces/simulate-result.interface';
 
 const ALLOWED_DUE_DAYS = [5, 10, 15, 20];
 const FIRST_INSTALLMENT_MAX_DAYS = 45;
@@ -74,6 +74,15 @@ interface PreparedSimulation {
   simulationResult: CelcoinSimulationResult;
 }
 
+type FinancialSimulationInput = Pick<
+  SimulateDto,
+  | 'productId'
+  | 'amount'
+  | 'installments'
+  | 'firstInstallmentDate'
+  | 'interestRate'
+>;
+
 @Injectable()
 export class SimulationsService {
   constructor(
@@ -81,6 +90,7 @@ export class SimulationsService {
     private readonly quoteActivityPermissions: QuoteActivityPermissionsService,
     private readonly partiesService: PartiesService,
     private readonly celcoinSimulation: CelcoinSimulationService,
+    private readonly eligibilityService: EligibilityService,
   ) {}
 
   async listSimulations(
@@ -122,35 +132,34 @@ export class SimulationsService {
     return rows.map((row) => this.toSnapshot(row));
   }
 
-  async previewSimulation(
-    user: JwtPayload,
-    dto: PreviewSimulationDto,
-  ): Promise<SimulationPreview> {
+  async simulate(user: JwtPayload, dto: SimulateDto): Promise<SimulateResult> {
+    const eligibility = this.eligibilityService.evaluate(dto);
+    if (!eligibility.eligible) {
+      return { eligible: false, simulation: null };
+    }
+
     await this.assertCanSimulate(user);
-    const prepared = await this.prepareFinancialPreview(user, dto);
-    return {
-      productId: prepared.product.id,
-      amount: prepared.amount,
-      installments: prepared.installments,
-      firstInstallmentDate: toSqlDate(prepared.firstInstallmentDate),
-      interestRate: prepared.interestRate,
-      installmentAmount: prepared.installmentAmount,
-      totalAmountOwed: prepared.simulationResult.total_amount_owed,
-    };
+    if (dto.simulationId) {
+      await this.assertSimulationIsEditable(user.sub, dto.simulationId);
+    }
+    const prepared = await this.prepareSimulation(user, dto);
+    const simulation = dto.simulationId
+      ? await this.updateSimulation(user, dto.simulationId, prepared)
+      : await this.createSimulation(user, prepared);
+
+    return { eligible: true, simulation };
   }
 
-  async createSimulation(
+  private async createSimulation(
     user: JwtPayload,
-    dto: CreateSimulationDto,
+    prepared: PreparedSimulation,
   ): Promise<SimulationSnapshot> {
-    await this.assertCanSimulate(user);
-    const prepared = await this.prepareSimulation(user, dto);
     const row = await this.prisma.$transaction(async (tx) => {
       const partyId = await this.partiesService.resolveForSimulation(
         {
-          name: dto.name,
+          name: prepared.name,
           document: prepared.document,
-          email: dto.email,
+          email: prepared.email,
           telephone: prepared.telephone,
         },
         tx,
@@ -222,14 +231,11 @@ export class SimulationsService {
     });
   }
 
-  async updateSimulation(
+  private async updateSimulation(
     user: JwtPayload,
     id: string,
-    dto: CreateSimulationDto,
+    prepared: PreparedSimulation,
   ): Promise<SimulationSnapshot> {
-    await this.assertCanSimulate(user);
-    await this.assertSimulationIsEditable(user.sub, id);
-    const prepared = await this.prepareSimulation(user, dto);
     const row = await this.prisma.$transaction(async (tx) => {
       const partyId = await this.partiesService.resolveForSimulation(
         {
@@ -302,7 +308,7 @@ export class SimulationsService {
 
   private async prepareSimulation(
     user: JwtPayload,
-    dto: CreateSimulationDto,
+    dto: SimulateDto,
   ): Promise<PreparedSimulation> {
     const name = dto.name.trim();
     if (name.length < 3) {
@@ -339,7 +345,7 @@ export class SimulationsService {
 
   private async prepareFinancialPreview(
     user: JwtPayload,
-    dto: PreviewSimulationDto,
+    dto: FinancialSimulationInput,
   ): Promise<{
     product: LinkedProduct;
     amount: number;
