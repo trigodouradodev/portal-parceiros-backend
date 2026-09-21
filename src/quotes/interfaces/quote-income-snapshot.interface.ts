@@ -9,6 +9,7 @@ import { QuoteStatus } from '../enums/quote-status.enum';
 import {
   BusinessActivityBranch,
   BusinessActivitySubcategory,
+  EconomicActivityCategory,
 } from '../enums/quote-registration.enum';
 
 export class QuoteAdditionalIncomeSnapshot {
@@ -37,6 +38,15 @@ export class QuoteIncomeSnapshot {
 
   @ApiPropertyOptional()
   businessDocument?: string;
+
+  @ApiPropertyOptional()
+  profession?: string;
+
+  @ApiProperty({ enum: EconomicActivityCategory, isArray: true })
+  economicActivityCategories: EconomicActivityCategory[];
+
+  @ApiPropertyOptional()
+  economicActivityOther?: string;
 
   @ApiProperty({ enum: BusinessActivityBranch })
   businessActivityBranch: BusinessActivityBranch;

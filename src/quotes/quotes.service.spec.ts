@@ -77,12 +77,6 @@ const registration: SaveQuoteRegistrationDto = {
   isRenegotiation: false,
   gender: Gender.FEMALE,
   secondaryDocument: ' 123456789 ',
-  profession: ' Comerciante ',
-  economicActivityCategories: [
-    EconomicActivityCategory.BUSINESS_OWNER,
-    EconomicActivityCategory.OTHER,
-  ],
-  economicActivityOther: ' Artesanato ',
   maritalStatus: MaritalStatus.MARRIED,
   spouseDocument: '390.533.447-05',
   childrenCount: 2,
@@ -96,6 +90,12 @@ const registration: SaveQuoteRegistrationDto = {
 };
 
 const income: SaveQuoteIncomeDto = {
+  profession: ' Comerciante ',
+  economicActivityCategories: [
+    EconomicActivityCategory.BUSINESS_OWNER,
+    EconomicActivityCategory.OTHER,
+  ],
+  economicActivityOther: ' Artesanato ',
   businessActivityBranch: BusinessActivityBranch.RETAIL_COMMERCE,
   businessActivitySubcategory: BusinessActivitySubcategory.GENERAL_COMMERCE,
   businessDocument: '11.222.333/0001-81',
@@ -525,11 +525,6 @@ describe('QuoteDraftRegistrationService.save', () => {
       isRenegotiation: false,
       gender: Gender.FEMALE,
       secondaryDocument: '123456789',
-      economicActivityCategories: [
-        EconomicActivityCategory.BUSINESS_OWNER,
-        EconomicActivityCategory.OTHER,
-      ],
-      economicActivityOther: 'Artesanato',
       maritalStatus: MaritalStatus.MARRIED,
       spouseDocument: '39053344705',
       childrenCount: 2,
@@ -556,9 +551,6 @@ describe('QuoteDraftRegistrationService.save', () => {
         is_renegotiation: false,
         gender: Gender.FEMALE,
         secondary_document: '123456789',
-        profession: null,
-        economic_activity_categories: registration.economicActivityCategories,
-        economic_activity_other: 'Artesanato',
         marital_status: MaritalStatus.MARRIED,
         spouse_document: '39053344705',
         children_count: 2,
@@ -591,14 +583,12 @@ describe('QuoteDraftRegistrationService.save', () => {
     });
   });
 
-  it('limpa os campos condicionais quando eles não se aplicam', async () => {
+  it('limpa os campos condicionais do Cadastro quando eles não se aplicam', async () => {
     const { registrationService: service, tx } = await build();
     const result = await service.save(
       QUOTE_ID,
       {
         ...registration,
-        economicActivityCategories: [EconomicActivityCategory.CLT_EMPLOYEE],
-        economicActivityOther: 'Ignorar',
         maritalStatus: MaritalStatus.SINGLE,
         spouseDocument: '39053344705',
         ownsVehicle: false,
@@ -610,17 +600,13 @@ describe('QuoteDraftRegistrationService.save', () => {
     expect(tx.quotes.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          economic_activity_other: null,
           spouse_document: null,
           vehicle_financed: null,
         }) as unknown,
       }),
     );
-    expect(result).not.toHaveProperty('economicActivityOther');
     expect(result).not.toHaveProperty('spouseDocument');
     expect(result).not.toHaveProperty('vehicleFinanced');
-    // CLT_EMPLOYEE está entre as categorias, então profissão continua exigida e presente.
-    expect(result.profession).toBe('Comerciante');
   });
 
   it.each([
@@ -644,13 +630,6 @@ describe('QuoteDraftRegistrationService.save', () => {
       dto: { ...registration, telephone: '12345' },
     },
     {
-      name: 'atividade Outros sem descrição',
-      dto: {
-        ...registration,
-        economicActivityOther: undefined,
-      },
-    },
-    {
       name: 'CPF inválido do cônjuge',
       dto: { ...registration, spouseDocument: '11111111111' },
     },
@@ -664,14 +643,6 @@ describe('QuoteDraftRegistrationService.save', () => {
     {
       name: 'veículo sem informação de financiamento',
       dto: { ...registration, vehicleFinanced: undefined },
-    },
-    {
-      name: 'CLT sem profissão',
-      dto: {
-        ...registration,
-        economicActivityCategories: [EconomicActivityCategory.CLT_EMPLOYEE],
-        profession: undefined,
-      },
     },
   ])('recusa $name', async ({ dto }) => {
     const { registrationService: service, prisma } = await build();
@@ -736,6 +707,11 @@ describe('QuoteDraftIncomeService.save', () => {
       completedAt: STEP_COMPLETED_AT,
       updatedAt: STEP_UPDATED_AT,
       businessDocument: '11222333000181',
+      economicActivityCategories: [
+        EconomicActivityCategory.BUSINESS_OWNER,
+        EconomicActivityCategory.OTHER,
+      ],
+      economicActivityOther: 'Artesanato',
       businessActivityBranch: BusinessActivityBranch.RETAIL_COMMERCE,
       businessActivitySubcategory: BusinessActivitySubcategory.GENERAL_COMMERCE,
       activityDuration: ActivityDuration.THREE_TO_5_YEARS,
@@ -756,6 +732,9 @@ describe('QuoteDraftIncomeService.save', () => {
         current_sales_agent_id: OWNER_ID,
       },
       data: {
+        profession: null,
+        economic_activity_categories: income.economicActivityCategories,
+        economic_activity_other: 'Artesanato',
         business_activity_branch: 'retail_commerce',
         business_activity_subcategory: 'general_commerce',
         business_document: '11222333000181',
@@ -816,6 +795,32 @@ describe('QuoteDraftIncomeService.save', () => {
     expect(result.additionalIncomes).toEqual([]);
   });
 
+  it('normaliza profissão e limpa a descrição de Outros quando não se aplica', async () => {
+    const { incomeService: service, tx } = await build();
+
+    const result = await service.save(
+      QUOTE_ID,
+      {
+        ...income,
+        economicActivityCategories: [EconomicActivityCategory.CLT_EMPLOYEE],
+        economicActivityOther: 'Ignorar',
+        profession: ' Recepcionista ',
+      },
+      actor(),
+    );
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          profession: 'Recepcionista',
+          economic_activity_other: null,
+        }) as unknown,
+      }),
+    );
+    expect(result.profession).toBe('Recepcionista');
+    expect(result).not.toHaveProperty('economicActivityOther');
+  });
+
   it('aceita subcategoria "Outro" em qualquer ramo de atividade', async () => {
     const { incomeService: service } = await build();
 
@@ -851,6 +856,21 @@ describe('QuoteDraftIncomeService.save', () => {
         businessActivityBranch: BusinessActivityBranch.FOOD,
         businessActivitySubcategory:
           BusinessActivitySubcategory.GENERAL_COMMERCE,
+      },
+    },
+    {
+      name: 'atividade Outros sem descrição',
+      dto: {
+        ...income,
+        economicActivityOther: undefined,
+      },
+    },
+    {
+      name: 'CLT sem profissão',
+      dto: {
+        ...income,
+        economicActivityCategories: [EconomicActivityCategory.CLT_EMPLOYEE],
+        profession: undefined,
       },
     },
   ])('recusa $name', async ({ dto }) => {

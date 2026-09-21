@@ -2,7 +2,6 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { QuoteDraftStep } from '../enums/quote-draft-step.enum';
 import {
   CreditPurpose,
-  EconomicActivityCategory,
   Gender,
   GovernmentProgram,
   HousingStatus,
@@ -47,15 +46,6 @@ export class QuoteRegistrationSnapshot {
 
   @ApiProperty()
   secondaryDocument: string;
-
-  @ApiPropertyOptional()
-  profession?: string;
-
-  @ApiProperty({ enum: EconomicActivityCategory, isArray: true })
-  economicActivityCategories: EconomicActivityCategory[];
-
-  @ApiPropertyOptional()
-  economicActivityOther?: string;
 
   @ApiProperty({ enum: MaritalStatus })
   maritalStatus: MaritalStatus;

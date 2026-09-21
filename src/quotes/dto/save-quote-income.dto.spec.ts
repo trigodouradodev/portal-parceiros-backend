@@ -8,10 +8,12 @@ import {
 import {
   BusinessActivityBranch,
   BusinessActivitySubcategory,
+  EconomicActivityCategory,
 } from '../enums/quote-registration.enum';
 import { SaveQuoteIncomeDto } from './save-quote-income.dto';
 
 const validIncome = {
+  economicActivityCategories: [EconomicActivityCategory.BUSINESS_OWNER],
   businessActivityBranch: BusinessActivityBranch.RETAIL_COMMERCE,
   businessActivitySubcategory: BusinessActivitySubcategory.GENERAL_COMMERCE,
   activityDuration: ActivityDuration.ONE_TO_3_YEARS,
@@ -40,6 +42,54 @@ describe('SaveQuoteIncomeDto', () => {
     };
     delete withoutAvailableIncomeProof.availableIncomeProof;
     await expect(errors(withoutAvailableIncomeProof)).resolves.toHaveLength(0);
+  });
+
+  it.each([
+    EconomicActivityCategory.CLT_EMPLOYEE,
+    EconomicActivityCategory.PUBLIC_SERVANT,
+    EconomicActivityCategory.RETIRED_OR_PENSIONER,
+    EconomicActivityCategory.UNEMPLOYED,
+  ])('exige profissão quando a atividade econômica é %s', async (category) => {
+    await expect(
+      errors({
+        ...validIncome,
+        economicActivityCategories: [category],
+        profession: undefined,
+      }),
+    ).resolves.not.toHaveLength(0);
+
+    await expect(
+      errors({
+        ...validIncome,
+        economicActivityCategories: [category],
+        profession: 'Recepcionista',
+      }),
+    ).resolves.toHaveLength(0);
+  });
+
+  it.each([
+    EconomicActivityCategory.BUSINESS_OWNER,
+    EconomicActivityCategory.SELF_EMPLOYED_OR_INFORMAL,
+  ])(
+    'não exige profissão quando a atividade econômica é %s — Subcategoria já descreve a atividade',
+    async (category) => {
+      await expect(
+        errors({
+          ...validIncome,
+          economicActivityCategories: [category],
+          profession: undefined,
+        }),
+      ).resolves.toHaveLength(0);
+    },
+  );
+
+  it('recusa quando economicActivityCategories não é um array', async () => {
+    await expect(
+      errors({
+        ...validIncome,
+        economicActivityCategories: 'not-an-array',
+      }),
+    ).resolves.not.toHaveLength(0);
   });
 
   it.each([
