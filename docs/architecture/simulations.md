@@ -10,12 +10,12 @@ partner portal. Its public HTTP contract is:
   contains) query params combine with AND. Empty query lists all of the
   partner's simulations, newest first. Each item exposes the derived status
   `available` or `converted`.
-- `POST /simulations`: calculates and persists a simulation for the
-  authenticated partner through Celcoin.
-- `PATCH /simulations/:id`: updates a simulation owned by the authenticated
-  partner only while it has not originated a quote, using the same payload and
-  business rules and Celcoin calculation as `POST`. A missing/foreign
-  simulation returns 404 and a converted simulation returns 409.
+- `POST /simulations/simulate`: evaluates customer eligibility, calculates the
+  installment through Celcoin and persists the result. Without `simulationId`
+  it creates a simulation; with `simulationId` it updates the authenticated
+  partner's existing simulation. An ineligible customer does not trigger
+  Celcoin or persistence. A missing/foreign simulation returns 404 and a
+  converted simulation returns 409.
 - `POST /quotes/draft`: converts one available simulation into its unique quote
   draft and reuses the persisted customer and financial snapshot.
 
@@ -30,16 +30,17 @@ means no quote references the simulation; `converted` means a quote has a
 committed in the same transaction. Both the preliminary edit check and the
 conditional `UPDATE` enforce immutability after conversion.
 
-Each new simulation resolves the customer identity through `PartiesModule` and
-stores the resulting `party_id`. Name, CPF, birth date, e-mail and telephone
-remain in `simulations` as the historical snapshot entered at simulation time;
-they are not replaced by later changes to the canonical party.
+Each successful simulation resolves the customer identity through
+`PartiesModule` and stores the resulting `party_id`. Name, CPF, birth date,
+e-mail and telephone remain in `simulations` as the historical snapshot entered
+at simulation time; they are not replaced by later changes to the canonical
+party.
 
 The module must not own quote lifecycle transitions or interactions such as
 partner submission and client review. Those belong to the quote and quote-event
 boundaries, respectively.
 
-## Celcoin preview
+## Celcoin calculation
 
 `SimulationsModule` owns the simulation use case, but not the HTTP details of
 the provider. Those live behind `CelcoinSimulationService`, exported by
@@ -77,7 +78,7 @@ depending on the large provider-specific contract. Legacy rows without a
 provider result omit `totalAmountOwed`. A provider rejection (HTTP 4xx) becomes
 422; configuration, authentication, network, timeout, malformed response and
 provider 5xx failures become 503. No party or simulation changes are persisted
-when the preview fails.
+when the provider calculation fails.
 
 Originator authentication uses OAuth2 client credentials. The access token is
 cached in memory until shortly before `expires_in`, and concurrent calls share

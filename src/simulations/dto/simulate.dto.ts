@@ -13,8 +13,17 @@ import {
   MinLength,
 } from 'class-validator';
 
-/** Payload para criar uma simulação do parceiro autenticado. */
-export class CreateSimulationDto {
+/** Comando unificado para criar ou recalcular uma simulação persistida. */
+export class SimulateDto {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Simulação existente a atualizar. Omitido para criar uma nova simulação.',
+  })
+  @IsOptional()
+  @IsUUID()
+  simulationId?: string;
+
   @ApiProperty({ example: 'Maria Souza' })
   @IsString()
   @MinLength(3)
