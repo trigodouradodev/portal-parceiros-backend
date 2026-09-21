@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 import { SimulationStatus } from '../enums/simulation-status.enum';
 
 /** Snapshot persistido da simulação. Campos em camelCase EN. */
@@ -33,13 +33,6 @@ export class SimulationSnapshot {
   @ApiProperty({ example: 'GIRO' })
   productName: string;
 
-  @ApiProperty({
-    example: 0.095,
-    description:
-      'Taxa a.m. em decimal (0.095 = 9,5%), como no POST e no banco.',
-  })
-  interestRate: number;
-
   @ApiProperty({ example: 5000 })
   amount: number;
 
@@ -51,11 +44,4 @@ export class SimulationSnapshot {
 
   @ApiProperty({ example: 1560.32 })
   installmentAmount: number;
-
-  @ApiPropertyOptional({
-    example: 15603.2,
-    description:
-      'Valor total devido calculado pela Celcoin. Ausente em simulações legadas sem resultado do provedor.',
-  })
-  totalAmountOwed?: number;
 }
