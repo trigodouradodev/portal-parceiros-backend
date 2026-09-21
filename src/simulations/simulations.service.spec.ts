@@ -123,6 +123,7 @@ function buildService(options?: {
       return [
         {
           id: SIMULATION_ID,
+          document: '52998224725',
           converted: options?.editableState === 'converted',
         },
       ];
@@ -264,12 +265,12 @@ describe('SimulationsService.simulate — criação', () => {
     expect(simulation.document).toBe('52998224725');
     expect(simulation.productName).toBe('CRÉDITO PESSOAL');
     expect(simulation.productId).toBe(PRODUCT_ID);
-    expect(simulation.interestRate).toBe(0.0339);
+    expect(simulation).not.toHaveProperty('interestRate');
     expect(simulation.amount).toBe(5000);
     expect(simulation.installments).toBe(10);
     expect(simulation.firstInstallmentDate).toBe(futureDueDate());
     expect(simulation.installmentAmount).toBe(celcoinResult.payment_amount);
-    expect(simulation.totalAmountOwed).toBe(celcoinResult.total_amount_owed);
+    expect(simulation).not.toHaveProperty('totalAmountOwed');
     expect(simulation).not.toHaveProperty('simulationResult');
     expect(simulation.createdAt).toBe('2026-08-26T12:00:00.000Z');
     expect(simulation.status).toBe(SimulationStatus.AVAILABLE);
@@ -387,9 +388,8 @@ describe('SimulationsService.simulate — atualização', () => {
     expect(simulation.installmentAmount).toBe(
       updatedCelcoinResult.payment_amount,
     );
-    expect(simulation.totalAmountOwed).toBe(
-      updatedCelcoinResult.total_amount_owed,
-    );
+    expect(simulation).not.toHaveProperty('interestRate');
+    expect(simulation).not.toHaveProperty('totalAmountOwed');
     expect(simulation).not.toHaveProperty('simulationResult');
     expect(simulation.createdAt).toBe('2026-08-26T12:00:00.000Z');
 
@@ -428,6 +428,25 @@ describe('SimulationsService.simulate — atualização', () => {
         simulationId: SIMULATION_ID,
       }),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  it('bloqueia a troca de CPF em uma simulação existente', async () => {
+    const { service, resolveForSimulation, simulateRequestedAmount } =
+      buildService();
+
+    await expect(
+      service.simulate(actor, {
+        ...dto({ document: '11144477735' }),
+        simulationId: SIMULATION_ID,
+      }),
+    ).rejects.toThrow(
+      new BadRequestException(
+        'O CPF não pode ser alterado em uma simulação existente.',
+      ),
+    );
+
+    expect(resolveForSimulation).not.toHaveBeenCalled();
+    expect(simulateRequestedAmount).not.toHaveBeenCalled();
   });
 
   it('bloqueia edição quando a simulação já originou uma quote', async () => {
@@ -519,7 +538,7 @@ describe('SimulationsService.listSimulations', () => {
     expect(where.strings.join(' ')).not.toContain('s.document LIKE');
   });
 
-  it('não expõe o JSON cru e omite o total em simulação legada', async () => {
+  it('não expõe o JSON cru, a taxa ou o total da simulação', async () => {
     const { service } = listService([
       simulationRow({
         product_name: 'CRÉDITO PESSOAL',
@@ -530,6 +549,7 @@ describe('SimulationsService.listSimulations', () => {
     const [result] = await service.listSimulations(USER_ID);
 
     expect(result).not.toHaveProperty('simulationResult');
+    expect(result).not.toHaveProperty('interestRate');
     expect(result).not.toHaveProperty('totalAmountOwed');
   });
 
