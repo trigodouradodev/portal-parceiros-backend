@@ -2,16 +2,14 @@ import {
   Body,
   Controller,
   Get,
-  Param,
-  ParseUUIDPipe,
-  Patch,
+  HttpCode,
+  HttpStatus,
   Post,
   Query,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
-  ApiCreatedResponse,
   ApiConflictResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
@@ -29,11 +27,10 @@ import {
 } from '../auth/decorators/require-permissions.decorator';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
-import { CreateSimulationDto } from './dto/create-simulation.dto';
 import { ListSimulationsQueryDto } from './dto/list-simulations-query.dto';
-import { PreviewSimulationDto } from './dto/preview-simulation.dto';
-import { SimulationPreview } from './interfaces/simulation-preview.interface';
+import { SimulateDto } from './dto/simulate.dto';
 import { SimulationSnapshot } from './interfaces/simulation.interface';
+import { SimulateResult } from './interfaces/simulate-result.interface';
 import { SimulationsService } from './simulations.service';
 
 @ApiTags('simulations')
@@ -61,61 +58,11 @@ export class SimulationsController {
   }
 
   @ApiOperation({
-    summary: 'Calcula a parcela oficial via Celcoin sem persistir a simulação.',
+    summary: 'Avalia, calcula e persiste uma simulação em uma única operação.',
     description:
-      'Usado pela tela de Simulação para exibir o mesmo payment_amount que será gravado no POST/PATCH.',
+      'Sem simulationId cria uma simulação; com simulationId atualiza a simulação do parceiro. Clientes inelegíveis não acionam a Celcoin nem geram persistência.',
   })
-  @ApiOkResponse({ type: SimulationPreview })
-  @ApiBadRequestResponse({
-    description: 'Payload ou regra de negócio inválida.',
-  })
-  @ApiForbiddenResponse({
-    description: 'Fila de cobrança impede simular proposta.',
-  })
-  @ApiUnprocessableEntityResponse({
-    description: 'A Celcoin recusou as condições financeiras informadas.',
-  })
-  @ApiServiceUnavailableResponse({
-    description: 'Integração Celcoin não configurada ou indisponível.',
-  })
-  @RequirePermissions(PermissionKey.QUOTE_CREATE)
-  @Post('preview')
-  previewSimulation(
-    @CurrentUser() user: JwtPayload,
-    @Body() dto: PreviewSimulationDto,
-  ) {
-    return this.simulationsService.previewSimulation(user, dto);
-  }
-
-  @ApiOperation({
-    summary: 'Cria e persiste uma simulação de cotação do parceiro.',
-  })
-  @ApiCreatedResponse({ type: SimulationSnapshot })
-  @ApiBadRequestResponse({
-    description: 'Payload ou regra de negócio inválida.',
-  })
-  @ApiForbiddenResponse({
-    description: 'Fila de cobrança impede simular proposta.',
-  })
-  @ApiUnprocessableEntityResponse({
-    description: 'A Celcoin recusou as condições financeiras informadas.',
-  })
-  @ApiServiceUnavailableResponse({
-    description: 'Integração Celcoin não configurada ou indisponível.',
-  })
-  @RequirePermissions(PermissionKey.QUOTE_CREATE)
-  @Post()
-  createSimulation(
-    @CurrentUser() user: JwtPayload,
-    @Body() dto: CreateSimulationDto,
-  ) {
-    return this.simulationsService.createSimulation(user, dto);
-  }
-
-  @ApiOperation({
-    summary: 'Atualiza uma simulação persistida do parceiro autenticado.',
-  })
-  @ApiOkResponse({ type: SimulationSnapshot })
+  @ApiOkResponse({ type: SimulateResult })
   @ApiBadRequestResponse({
     description: 'Payload ou regra de negócio inválida.',
   })
@@ -135,12 +82,9 @@ export class SimulationsController {
     description: 'Integração Celcoin não configurada ou indisponível.',
   })
   @RequirePermissions(PermissionKey.QUOTE_CREATE)
-  @Patch(':id')
-  updateSimulation(
-    @CurrentUser() user: JwtPayload,
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: CreateSimulationDto,
-  ) {
-    return this.simulationsService.updateSimulation(user, id, dto);
+  @Post('simulate')
+  @HttpCode(HttpStatus.OK)
+  simulate(@CurrentUser() user: JwtPayload, @Body() dto: SimulateDto) {
+    return this.simulationsService.simulate(user, dto);
   }
 }

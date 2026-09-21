@@ -10,9 +10,10 @@ import { PermissionKey } from '../auth/permissions/permission-keys';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
 import { CelcoinSimulationService } from '../celcoin/celcoin-simulation.service';
 import { CelcoinSimulationResult } from '../celcoin/interfaces/celcoin-simulation.interface';
+import { EligibilityService } from '../eligibility/eligibility.service';
 import { PartiesService } from '../parties/parties.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateSimulationDto } from './dto/create-simulation.dto';
+import { SimulateDto } from './dto/simulate.dto';
 import { SimulationStatus } from './enums/simulation-status.enum';
 import { SimulationsService } from './simulations.service';
 
@@ -64,9 +65,7 @@ function futureDueDate(day = 10): string {
   return date.toISOString().slice(0, 10);
 }
 
-function dto(
-  overrides: Partial<CreateSimulationDto> = {},
-): CreateSimulationDto {
+function dto(overrides: Partial<SimulateDto> = {}): SimulateDto {
   return {
     name: 'Maria Souza',
     document: '529.982.247-25',
@@ -109,6 +108,7 @@ function buildService(options?: {
   updated?: Record<string, unknown> | null;
   editableState?: 'available' | 'converted' | 'missing';
   celcoinResult?: CelcoinSimulationResult;
+  eligible?: boolean;
 }) {
   const queryRaw = jest.fn((strings: TemplateStringsArray) => {
     const sql = strings.join(' ');
@@ -161,6 +161,15 @@ function buildService(options?: {
   const celcoinSimulation = {
     simulateRequestedAmount,
   } as unknown as CelcoinSimulationService;
+  const evaluateEligibility = jest.fn().mockReturnValue({
+    eligible: options?.eligible ?? true,
+    name: 'Maria Souza',
+    document: '52998224725',
+    birthDate: '1990-05-20',
+  });
+  const eligibilityService = {
+    evaluate: evaluateEligibility,
+  } as unknown as EligibilityService;
 
   return {
     service: new SimulationsService(
@@ -168,65 +177,100 @@ function buildService(options?: {
       quoteActivityPermissions,
       partiesService,
       celcoinSimulation,
+      eligibilityService,
     ),
     queryRaw,
     quoteActivityPermissions,
     partiesService,
     resolveForSimulation,
     simulateRequestedAmount,
+    evaluateEligibility,
   };
 }
 
-describe('SimulationsService.previewSimulation', () => {
-  it('devolve a parcela Celcoin sem persistir', async () => {
-    const { service, queryRaw, resolveForSimulation, simulateRequestedAmount } =
-      buildService();
+describe('SimulationsService.simulate', () => {
+  it('avalia a elegibilidade e cria uma simulação quando não recebe UUID', async () => {
+    const { service, evaluateEligibility, queryRaw } = buildService();
 
-    const result = await service.previewSimulation(actor, {
-      productId: PRODUCT_ID,
-      amount: 5000,
-      installments: 10,
-      firstInstallmentDate: futureDueDate(),
-    });
+    const result = await service.simulate(actor, dto());
 
-    expect(result).toEqual({
-      productId: PRODUCT_ID,
-      amount: 5000,
-      installments: 10,
-      firstInstallmentDate: futureDueDate(),
-      interestRate: 0.0339,
+    expect(evaluateEligibility).toHaveBeenCalledWith(dto());
+    expect(result.eligible).toBe(true);
+    expect(result.simulation).toMatchObject({
+      id: 'sim-1',
+      document: '52998224725',
       installmentAmount: celcoinResult.payment_amount,
-      totalAmountOwed: celcoinResult.total_amount_owed,
     });
-    expect(simulateRequestedAmount).toHaveBeenCalledTimes(1);
+    expect(
+      queryRaw.mock.calls.some((call) =>
+        call[0].join(' ').includes('INSERT INTO public.simulations'),
+      ),
+    ).toBe(true);
+  });
+
+  it('atualiza a simulação existente quando recebe UUID', async () => {
+    const { service, queryRaw } = buildService();
+
+    const result = await service.simulate(actor, {
+      ...dto({ amount: 8000, installments: 12 }),
+      simulationId: SIMULATION_ID,
+    });
+
+    expect(result.eligible).toBe(true);
+    expect(result.simulation?.id).toBe(SIMULATION_ID);
+    expect(
+      queryRaw.mock.calls.some((call) =>
+        call[0].join(' ').includes('UPDATE public.simulations'),
+      ),
+    ).toBe(true);
+    expect(
+      queryRaw.mock.calls.some((call) =>
+        call[0].join(' ').includes('INSERT INTO public.simulations'),
+      ),
+    ).toBe(false);
+  });
+
+  it('não chama a Celcoin nem persiste quando o cliente é inelegível', async () => {
+    const {
+      service,
+      queryRaw,
+      quoteActivityPermissions,
+      resolveForSimulation,
+      simulateRequestedAmount,
+    } = buildService({ eligible: false });
+
+    await expect(service.simulate(actor, dto())).resolves.toEqual({
+      eligible: false,
+      simulation: null,
+    });
+    expect(quoteActivityPermissions.getPermissions).not.toHaveBeenCalled();
+    expect(simulateRequestedAmount).not.toHaveBeenCalled();
     expect(resolveForSimulation).not.toHaveBeenCalled();
-    expect(queryRaw).toHaveBeenCalledTimes(1);
-    const sql = queryRaw.mock.calls[0][0].join(' ');
-    expect(sql).toContain('FROM public.consultant_finance_products');
-    expect(sql).not.toContain('INSERT INTO public.simulations');
+    expect(queryRaw).not.toHaveBeenCalled();
   });
 });
 
-describe('SimulationsService.createSimulation', () => {
+describe('SimulationsService.simulate — criação', () => {
   it('persiste a simulação do parceiro e devolve o snapshot em inglês', async () => {
     const { service, queryRaw, resolveForSimulation, simulateRequestedAmount } =
       buildService();
 
-    const result = await service.createSimulation(actor, dto());
+    const result = await service.simulate(actor, dto());
+    const simulation = result.simulation!;
 
-    expect(result.name).toBe('Maria Souza');
-    expect(result.document).toBe('52998224725');
-    expect(result.productName).toBe('CRÉDITO PESSOAL');
-    expect(result.productId).toBe(PRODUCT_ID);
-    expect(result.interestRate).toBe(0.0339);
-    expect(result.amount).toBe(5000);
-    expect(result.installments).toBe(10);
-    expect(result.firstInstallmentDate).toBe(futureDueDate());
-    expect(result.installmentAmount).toBe(celcoinResult.payment_amount);
-    expect(result.totalAmountOwed).toBe(celcoinResult.total_amount_owed);
-    expect(result).not.toHaveProperty('simulationResult');
-    expect(result.createdAt).toBe('2026-08-26T12:00:00.000Z');
-    expect(result.status).toBe(SimulationStatus.AVAILABLE);
+    expect(simulation.name).toBe('Maria Souza');
+    expect(simulation.document).toBe('52998224725');
+    expect(simulation.productName).toBe('CRÉDITO PESSOAL');
+    expect(simulation.productId).toBe(PRODUCT_ID);
+    expect(simulation.interestRate).toBe(0.0339);
+    expect(simulation.amount).toBe(5000);
+    expect(simulation.installments).toBe(10);
+    expect(simulation.firstInstallmentDate).toBe(futureDueDate());
+    expect(simulation.installmentAmount).toBe(celcoinResult.payment_amount);
+    expect(simulation.totalAmountOwed).toBe(celcoinResult.total_amount_owed);
+    expect(simulation).not.toHaveProperty('simulationResult');
+    expect(simulation.createdAt).toBe('2026-08-26T12:00:00.000Z');
+    expect(simulation.status).toBe(SimulationStatus.AVAILABLE);
 
     const insertSql = queryRaw.mock.calls[1][0].join(' ');
     expect(insertSql).toContain('INSERT INTO public.simulations');
@@ -253,7 +297,7 @@ describe('SimulationsService.createSimulation', () => {
   it('bloqueia quando a fila de cobrança impede simular', async () => {
     const { service } = buildService({ canSimulateQuote: false });
 
-    await expect(service.createSimulation(actor, dto())).rejects.toThrow(
+    await expect(service.simulate(actor, dto())).rejects.toThrow(
       ForbiddenException,
     );
   });
@@ -261,7 +305,7 @@ describe('SimulationsService.createSimulation', () => {
   it('rejeita produto que não está vinculado ao parceiro', async () => {
     const { service } = buildService({ product: null });
 
-    await expect(service.createSimulation(actor, dto())).rejects.toThrow(
+    await expect(service.simulate(actor, dto())).rejects.toThrow(
       BadRequestException,
     );
   });
@@ -273,7 +317,7 @@ describe('SimulationsService.createSimulation', () => {
       new ServiceUnavailableException('Celcoin indisponível'),
     );
 
-    await expect(service.createSimulation(actor, dto())).rejects.toThrow(
+    await expect(service.simulate(actor, dto())).rejects.toThrow(
       ServiceUnavailableException,
     );
     expect(queryRaw).toHaveBeenCalledTimes(1);
@@ -296,7 +340,7 @@ describe('SimulationsService.createSimulation', () => {
       : tomorrow;
 
     await expect(
-      service.createSimulation(
+      service.simulate(
         actor,
         dto({ firstInstallmentDate: invalidDay.toISOString().slice(0, 10) }),
       ),
@@ -304,7 +348,7 @@ describe('SimulationsService.createSimulation', () => {
   });
 });
 
-describe('SimulationsService.updateSimulation', () => {
+describe('SimulationsService.simulate — atualização', () => {
   it('usa a nova parcela Celcoin e atualiza só a linha do parceiro autenticado', async () => {
     const payload = dto({
       name: 'Maria Souza Silva',
@@ -328,20 +372,24 @@ describe('SimulationsService.updateSimulation', () => {
         }),
       });
 
-    const result = await service.updateSimulation(
-      actor,
-      SIMULATION_ID,
-      payload,
-    );
+    const result = await service.simulate(actor, {
+      ...payload,
+      simulationId: SIMULATION_ID,
+    });
+    const simulation = result.simulation!;
 
-    expect(result.id).toBe(SIMULATION_ID);
-    expect(result.name).toBe('Maria Souza Silva');
-    expect(result.amount).toBe(8000);
-    expect(result.installments).toBe(12);
-    expect(result.installmentAmount).toBe(updatedCelcoinResult.payment_amount);
-    expect(result.totalAmountOwed).toBe(updatedCelcoinResult.total_amount_owed);
-    expect(result).not.toHaveProperty('simulationResult');
-    expect(result.createdAt).toBe('2026-08-26T12:00:00.000Z');
+    expect(simulation.id).toBe(SIMULATION_ID);
+    expect(simulation.name).toBe('Maria Souza Silva');
+    expect(simulation.amount).toBe(8000);
+    expect(simulation.installments).toBe(12);
+    expect(simulation.installmentAmount).toBe(
+      updatedCelcoinResult.payment_amount,
+    );
+    expect(simulation.totalAmountOwed).toBe(
+      updatedCelcoinResult.total_amount_owed,
+    );
+    expect(simulation).not.toHaveProperty('simulationResult');
+    expect(simulation.createdAt).toBe('2026-08-26T12:00:00.000Z');
 
     const updateCall = queryRaw.mock.calls[2];
     const updateSql = updateCall[0].join(' ');
@@ -373,7 +421,10 @@ describe('SimulationsService.updateSimulation', () => {
     const { service } = buildService({ editableState: 'missing' });
 
     await expect(
-      service.updateSimulation(otherActor, SIMULATION_ID, dto()),
+      service.simulate(otherActor, {
+        ...dto(),
+        simulationId: SIMULATION_ID,
+      }),
     ).rejects.toThrow(NotFoundException);
   });
 
@@ -384,7 +435,7 @@ describe('SimulationsService.updateSimulation', () => {
       });
 
     await expect(
-      service.updateSimulation(actor, SIMULATION_ID, dto()),
+      service.simulate(actor, { ...dto(), simulationId: SIMULATION_ID }),
     ).rejects.toThrow(ConflictException);
 
     expect(queryRaw).toHaveBeenCalledTimes(1);
@@ -396,15 +447,15 @@ describe('SimulationsService.updateSimulation', () => {
     const { service } = buildService({ updated: null });
 
     await expect(
-      service.updateSimulation(actor, SIMULATION_ID, dto()),
+      service.simulate(actor, { ...dto(), simulationId: SIMULATION_ID }),
     ).rejects.toThrow(ConflictException);
   });
 
-  it('bloqueia o PATCH quando a fila de cobrança impede simular', async () => {
+  it('bloqueia a atualização quando a fila de cobrança impede simular', async () => {
     const { service, queryRaw } = buildService({ canSimulateQuote: false });
 
     await expect(
-      service.updateSimulation(actor, SIMULATION_ID, dto()),
+      service.simulate(actor, { ...dto(), simulationId: SIMULATION_ID }),
     ).rejects.toThrow(ForbiddenException);
     expect(queryRaw).not.toHaveBeenCalled();
   });
@@ -423,12 +474,16 @@ describe('SimulationsService.listSimulations', () => {
     const celcoinSimulation = {
       simulateRequestedAmount: jest.fn(),
     } as unknown as CelcoinSimulationService;
+    const eligibilityService = {
+      evaluate: jest.fn(),
+    } as unknown as EligibilityService;
     return {
       service: new SimulationsService(
         prisma,
         quoteActivityPermissions,
         partiesService,
         celcoinSimulation,
+        eligibilityService,
       ),
       queryRaw,
     };
