@@ -13,9 +13,10 @@ partner portal. Its public HTTP contract is:
 - `POST /simulations/simulate`: evaluates customer eligibility, calculates the
   installment through Celcoin and persists the result. Without `simulationId`
   it creates a simulation; with `simulationId` it updates the authenticated
-  partner's existing simulation. An ineligible customer does not trigger
-  Celcoin or persistence. A missing/foreign simulation returns 404 and a
-  converted simulation returns 409.
+  partner's existing simulation without allowing its CPF to change. A
+  different customer requires a new simulation. An ineligible customer does
+  not trigger Celcoin or persistence. A missing/foreign simulation returns 404
+  and a converted simulation returns 409.
 - `POST /quotes/draft`: converts one available simulation into its unique quote
   draft and reuses the persisted customer and financial snapshot.
 
@@ -72,13 +73,13 @@ from `schedule` and the former local Price calculation must not replace it.
 
 The complete successful provider response is stored in
 `simulations.simulation_result` for audit, but it is not part of the public HTTP
-contract. Responses expose only the normalized `installmentAmount` and
-`totalAmountOwed` fields. This prevents the frontend and list payloads from
-depending on the large provider-specific contract. Legacy rows without a
-provider result omit `totalAmountOwed`. A provider rejection (HTTP 4xx) becomes
-422; configuration, authentication, network, timeout, malformed response and
-provider 5xx failures become 503. No party or simulation changes are persisted
-when the provider calculation fails.
+contract. Simulation responses expose only the normalized `installmentAmount`;
+the monthly interest rate and total amount owed remain internal. This prevents
+the frontend and list payloads from depending on the large provider-specific
+contract. A provider rejection (HTTP 4xx) becomes 422; configuration,
+authentication, network, timeout, malformed response and provider 5xx failures
+become 503. No party or simulation changes are persisted when the provider
+calculation fails.
 
 Originator authentication uses OAuth2 client credentials. The access token is
 cached in memory until shortly before `expires_in`, and concurrent calls share

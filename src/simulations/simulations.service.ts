@@ -45,17 +45,16 @@ interface SimulationRow {
   email: string;
   telephone: string;
   finance_amount: Prisma.Decimal | number | string;
-  interest_rate: Prisma.Decimal | number | string;
   installment_numbers: number;
   first_installment_date: Date;
   installment_amount: Prisma.Decimal | number | string;
-  simulation_result: unknown;
   created_at: Date;
   status?: string;
 }
 
 interface EditableSimulationRow {
   id: string;
+  document: string;
   converted: boolean;
 }
 
@@ -109,11 +108,9 @@ export class SimulationsService {
         s.email,
         s.telephone,
         s.finance_amount,
-        s.interest_rate,
         s.installment_numbers,
         s.first_installment_date,
         s.installment_amount,
-        s.simulation_result,
         s.created_at,
         CASE
           WHEN EXISTS (
@@ -140,7 +137,11 @@ export class SimulationsService {
 
     await this.assertCanSimulate(user);
     if (dto.simulationId) {
-      await this.assertSimulationIsEditable(user.sub, dto.simulationId);
+      await this.assertSimulationIsEditable(
+        user.sub,
+        dto.simulationId,
+        dto.document,
+      );
     }
     const prepared = await this.prepareSimulation(user, dto);
     const simulation = dto.simulationId
@@ -209,11 +210,9 @@ export class SimulationsService {
         email,
         telephone,
         finance_amount,
-        interest_rate,
         installment_numbers,
         first_installment_date,
         installment_amount,
-        simulation_result,
         created_at,
         ${SimulationStatus.AVAILABLE} AS status
       `;
@@ -282,11 +281,9 @@ export class SimulationsService {
           email,
           telephone,
           finance_amount,
-          interest_rate,
           installment_numbers,
           first_installment_date,
           installment_amount,
-          simulation_result,
           created_at,
           ${SimulationStatus.AVAILABLE} AS status
       `;
@@ -439,10 +436,12 @@ export class SimulationsService {
   private async assertSimulationIsEditable(
     userId: string,
     simulationId: string,
+    document: string,
   ): Promise<void> {
     const [simulation] = await this.prisma.$queryRaw<EditableSimulationRow[]>`
       SELECT
         s.id,
+        s.document,
         EXISTS (
           SELECT 1
           FROM public.quotes q
@@ -461,6 +460,12 @@ export class SimulationsService {
     if (simulation.converted) {
       throw new ConflictException(
         'A simulação já foi convertida em proposta e não pode ser editada.',
+      );
+    }
+
+    if (simulation.document !== normalizeCpf(document)) {
+      throw new BadRequestException(
+        'O CPF não pode ser alterado em uma simulação existente.',
       );
     }
   }
@@ -490,7 +495,6 @@ export class SimulationsService {
   private toSnapshot(row: SimulationRow): SimulationSnapshot {
     const createdAt = new Date(row.created_at);
     const firstInstallmentDate = new Date(row.first_installment_date);
-    const totalAmountOwed = extractTotalAmountOwed(row.simulation_result);
 
     return {
       id: row.id,
@@ -506,12 +510,10 @@ export class SimulationsService {
       document: row.document,
       productId: row.finance_product_id,
       productName: row.product_name,
-      interestRate: toNum(row.interest_rate),
       amount: toNum(row.finance_amount),
       installments: Number(row.installment_numbers),
       firstInstallmentDate: toSqlDate(firstInstallmentDate),
       installmentAmount: toNum(row.installment_amount),
-      ...(totalAmountOwed === undefined ? {} : { totalAmountOwed }),
     };
   }
 
@@ -575,14 +577,6 @@ export class SimulationsService {
 
 function toNum(value: Prisma.Decimal | number | string): number {
   return Number(value);
-}
-
-function extractTotalAmountOwed(value: unknown): number | undefined {
-  if (!value || typeof value !== 'object') return undefined;
-  const total = (value as Record<string, unknown>).total_amount_owed;
-  return typeof total === 'number' && Number.isFinite(total)
-    ? total
-    : undefined;
 }
 
 function toSqlDate(date: Date): string {
