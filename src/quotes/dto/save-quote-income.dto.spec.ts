@@ -28,6 +28,14 @@ describe('SaveQuoteIncomeDto', () => {
     await expect(errors(validIncome)).resolves.toHaveLength(0);
   });
 
+  it('aceita a ausência de availableIncomeProof (comprovante de renda agora é sempre obrigatório na Documentação)', async () => {
+    const withoutAvailableIncomeProof: Record<string, unknown> = {
+      ...validIncome,
+    };
+    delete withoutAvailableIncomeProof.availableIncomeProof;
+    await expect(errors(withoutAvailableIncomeProof)).resolves.toHaveLength(0);
+  });
+
   it.each([
     { name: 'lista ausente', changes: { additionalIncomes: undefined } },
     {

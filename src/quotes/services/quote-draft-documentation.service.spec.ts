@@ -10,7 +10,6 @@ import {
   IncomeProofType,
   QuoteAttachmentType,
 } from '../enums/quote-documentation.enum';
-import { AvailableIncomeProof } from '../enums/quote-income.enum';
 import { QuoteStatus } from '../enums/quote-status.enum';
 import { QuoteDraftDocumentationService } from './quote-draft-documentation.service';
 import { QuoteDraftStepsService } from './quote-draft-steps.service';
@@ -45,7 +44,6 @@ function editableQuote(overrides: Record<string, unknown> = {}) {
   return {
     quote_status: QuoteStatus.DRAFT,
     current_sales_agent_id: USER_ID,
-    available_income_proof: AvailableIncomeProof.PAYSLIP,
     document_attachment: [],
     proof_of_residence_attachment: [],
     activity_photos_attachment: [],
@@ -314,7 +312,7 @@ describe('QuoteDraftDocumentationService', () => {
     expect(result.step).toBe(QuoteDraftStep.DOCUMENTATION);
   });
 
-  it('dispensa arquivo de renda somente quando o passo 2 declarou none', async () => {
+  it('exige comprovante de renda mesmo quando o passo Atividade e Renda não se aplica mais', async () => {
     const required = editableQuote({
       document_attachment: [attachment()],
       proof_of_residence_attachment: [attachment()],
@@ -324,14 +322,6 @@ describe('QuoteDraftDocumentationService', () => {
     await expect(
       missingIncome.service.complete(QUOTE_ID, actor),
     ).rejects.toBeInstanceOf(BadRequestException);
-
-    const noProofAvailable = build({
-      ...required,
-      available_income_proof: AvailableIncomeProof.NONE,
-    });
-    await expect(
-      noProofAvailable.service.complete(QUOTE_ID, actor),
-    ).resolves.toEqual(expect.objectContaining({ id: QUOTE_ID }));
   });
 
   it('recusa alterações quando a quote já saiu de draft', async () => {

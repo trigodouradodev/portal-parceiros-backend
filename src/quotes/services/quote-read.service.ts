@@ -29,6 +29,8 @@ import {
   PartnerAssessment,
 } from '../enums/quote-partner-opinion.enum';
 import {
+  BusinessActivityBranch,
+  BusinessActivitySubcategory,
   CreditPurpose,
   EconomicActivityCategory,
   Gender,
@@ -83,6 +85,8 @@ const DETAIL_SELECT = {
   gender: true,
   secondary_document: true,
   profession: true,
+  business_activity_branch: true,
+  business_activity_subcategory: true,
   economic_activity_categories: true,
   economic_activity_other: true,
   marital_status: true,
@@ -262,6 +266,10 @@ export class QuoteReadService {
         gender: row.gender as Gender | null,
         secondaryDocument: row.secondary_document,
         profession: row.profession,
+        businessActivityBranch:
+          row.business_activity_branch as BusinessActivityBranch | null,
+        businessActivitySubcategory:
+          row.business_activity_subcategory as BusinessActivitySubcategory | null,
         economicActivityCategories: stringArray(
           row.economic_activity_categories,
         ) as EconomicActivityCategory[],

@@ -12,6 +12,8 @@ import {
   PartnerAssessment,
 } from '../enums/quote-partner-opinion.enum';
 import {
+  BusinessActivityBranch,
+  BusinessActivitySubcategory,
   CreditPurpose,
   EconomicActivityCategory,
   Gender,
@@ -41,8 +43,14 @@ export class QuoteRegistrationDetail {
   @ApiPropertyOptional({ nullable: true })
   secondaryDocument: string | null;
 
-  @ApiProperty()
-  profession: string;
+  @ApiPropertyOptional({ nullable: true })
+  profession: string | null;
+
+  @ApiPropertyOptional({ enum: BusinessActivityBranch, nullable: true })
+  businessActivityBranch: BusinessActivityBranch | null;
+
+  @ApiPropertyOptional({ enum: BusinessActivitySubcategory, nullable: true })
+  businessActivitySubcategory: BusinessActivitySubcategory | null;
 
   @ApiProperty({ enum: EconomicActivityCategory, isArray: true })
   economicActivityCategories: EconomicActivityCategory[];

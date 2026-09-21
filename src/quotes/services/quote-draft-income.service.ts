@@ -6,6 +6,7 @@ import { normalizeCnpj } from '../../common/cnpj.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SaveQuoteIncomeDto } from '../dto/save-quote-income.dto';
 import { QuoteDraftStep } from '../enums/quote-draft-step.enum';
+import { AvailableIncomeProof } from '../enums/quote-income.enum';
 import { QuoteStatus } from '../enums/quote-status.enum';
 import { QuoteIncomeSnapshot } from '../interfaces/quote-income-snapshot.interface';
 import { QuoteDraftStepsService } from './quote-draft-steps.service';
@@ -77,14 +78,20 @@ export class QuoteDraftIncomeService {
         incomeSource: income.incomeSource,
         hasMultipleIncomeSources: income.hasMultipleIncomeSources,
         additionalIncomes: income.additionalIncomes,
-        availableIncomeProof: income.availableIncomeProof,
+        ...(income.availableIncomeProof === null
+          ? {}
+          : { availableIncomeProof: income.availableIncomeProof }),
       };
     });
   }
 }
 
-type NormalizedIncome = Omit<SaveQuoteIncomeDto, 'businessDocument'> & {
+type NormalizedIncome = Omit<
+  SaveQuoteIncomeDto,
+  'businessDocument' | 'availableIncomeProof'
+> & {
   businessDocument: string | null;
+  availableIncomeProof: AvailableIncomeProof | null;
 };
 
 function normalizeIncome(dto: SaveQuoteIncomeDto): NormalizedIncome {
@@ -99,6 +106,7 @@ function normalizeIncome(dto: SaveQuoteIncomeDto): NormalizedIncome {
   return {
     ...dto,
     businessDocument,
+    availableIncomeProof: dto.availableIncomeProof ?? null,
     additionalIncomes: dto.hasMultipleIncomeSources
       ? dto.additionalIncomes.map((additionalIncome) => ({
           source: additionalIncome.source,
