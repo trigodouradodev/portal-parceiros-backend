@@ -27,6 +27,7 @@ import {
   HousingStatus,
   MaritalStatus,
   ResidenceDuration,
+  requiresProfession,
 } from '../enums/quote-registration.enum';
 
 const trim = ({ value }: { value: unknown }): unknown =>
@@ -81,12 +82,22 @@ export class SaveQuoteRegistrationDto {
   @MaxLength(255)
   secondaryDocument: string;
 
-  @ApiProperty({ example: 'Comerciante' })
+  @ApiPropertyOptional({
+    example: 'Comerciante',
+    description:
+      'Cargo/ocupação do cliente — exigido para CLT, Servidor Público, ' +
+      'Aposentado/Pensionista e Desempregado. Pra Empresário e Autônomo, ' +
+      'o Ramo de atividade e a Subcategoria já descrevem a atividade de ' +
+      'forma estruturada.',
+  })
+  @ValidateIf((dto: SaveQuoteRegistrationDto) =>
+    requiresProfession(dto.economicActivityCategories ?? []),
+  )
   @Transform(trim)
   @IsString()
   @MinLength(2)
   @MaxLength(255)
-  profession: string;
+  profession?: string;
 
   @ApiProperty({
     enum: BusinessActivityBranch,

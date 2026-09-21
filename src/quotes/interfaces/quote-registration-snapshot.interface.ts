@@ -50,8 +50,8 @@ export class QuoteRegistrationSnapshot {
   @ApiProperty()
   secondaryDocument: string;
 
-  @ApiProperty()
-  profession: string;
+  @ApiPropertyOptional()
+  profession?: string;
 
   @ApiProperty({ enum: BusinessActivityBranch })
   businessActivityBranch: BusinessActivityBranch;

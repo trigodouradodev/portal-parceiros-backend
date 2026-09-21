@@ -1400,7 +1400,7 @@ model quotes {
   informal_debt_signs                                         Boolean?
   financial_urgency_signs                                     Boolean?
   activity_type                                               String                       @db.VarChar(20)
-  profession                                                  String                       @db.VarChar(255)
+  profession                                                  String?                      @db.VarChar(255)
   business_activity_branch                                    String?                      @db.VarChar(40)
   business_activity_subcategory                               String?                      @db.VarChar(40)
   email                                                       String                       @db.VarChar(255)

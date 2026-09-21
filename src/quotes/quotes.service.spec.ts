@@ -525,7 +525,6 @@ describe('QuoteDraftRegistrationService.save', () => {
       isRenegotiation: false,
       gender: Gender.FEMALE,
       secondaryDocument: '123456789',
-      profession: 'Comerciante',
       businessActivityBranch: BusinessActivityBranch.RETAIL_COMMERCE,
       businessActivitySubcategory: BusinessActivitySubcategory.GENERAL_COMMERCE,
       economicActivityCategories: [
@@ -559,7 +558,7 @@ describe('QuoteDraftRegistrationService.save', () => {
         is_renegotiation: false,
         gender: Gender.FEMALE,
         secondary_document: '123456789',
-        profession: 'Comerciante',
+        profession: null,
         business_activity_branch: 'retail_commerce',
         business_activity_subcategory: 'general_commerce',
         economic_activity_categories: registration.economicActivityCategories,
@@ -628,6 +627,8 @@ describe('QuoteDraftRegistrationService.save', () => {
     expect(result).not.toHaveProperty('economicActivityOther');
     expect(result).not.toHaveProperty('spouseDocument');
     expect(result).not.toHaveProperty('vehicleFinanced');
+    // CLT_EMPLOYEE está entre as categorias, então profissão continua exigida e presente.
+    expect(result.profession).toBe('Comerciante');
   });
 
   it.each([
@@ -671,6 +672,14 @@ describe('QuoteDraftRegistrationService.save', () => {
     {
       name: 'veículo sem informação de financiamento',
       dto: { ...registration, vehicleFinanced: undefined },
+    },
+    {
+      name: 'CLT sem profissão',
+      dto: {
+        ...registration,
+        economicActivityCategories: [EconomicActivityCategory.CLT_EMPLOYEE],
+        profession: undefined,
+      },
     },
   ])('recusa $name', async ({ dto }) => {
     const { registrationService: service, prisma } = await build();

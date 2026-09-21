@@ -93,4 +93,43 @@ describe('SaveQuoteRegistrationDto', () => {
       }),
     ).resolves.toHaveLength(0);
   });
+
+  it.each([
+    EconomicActivityCategory.CLT_EMPLOYEE,
+    EconomicActivityCategory.PUBLIC_SERVANT,
+    EconomicActivityCategory.RETIRED_OR_PENSIONER,
+    EconomicActivityCategory.UNEMPLOYED,
+  ])('exige profissão quando a atividade econômica é %s', async (category) => {
+    await expect(
+      errors({
+        ...validRegistration,
+        economicActivityCategories: [category],
+        profession: undefined,
+      }),
+    ).resolves.not.toHaveLength(0);
+
+    await expect(
+      errors({
+        ...validRegistration,
+        economicActivityCategories: [category],
+        profession: 'Recepcionista',
+      }),
+    ).resolves.toHaveLength(0);
+  });
+
+  it.each([
+    EconomicActivityCategory.BUSINESS_OWNER,
+    EconomicActivityCategory.SELF_EMPLOYED_OR_INFORMAL,
+  ])(
+    'não exige profissão quando a atividade econômica é %s — Subcategoria já descreve a atividade',
+    async (category) => {
+      await expect(
+        errors({
+          ...validRegistration,
+          economicActivityCategories: [category],
+          profession: undefined,
+        }),
+      ).resolves.toHaveLength(0);
+    },
+  );
 });

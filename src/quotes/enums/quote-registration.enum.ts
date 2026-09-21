@@ -14,6 +14,29 @@ export enum EconomicActivityCategory {
   OTHER = 'other',
 }
 
+/**
+ * Categorias em que profissão faz sentido como dado próprio da pessoa —
+ * CLT e Servidor Público porque Ramo de atividade pode ser o setor do
+ * empregador (distinto do cargo da pessoa); Aposentado e Desempregado
+ * porque não têm Ramo de atividade em curso para descrever a ocupação.
+ * Empresário/Autônomo ficam de fora: a Subcategoria já descreve a
+ * atividade de forma estruturada.
+ */
+export const PROFESSION_REQUIRED_CATEGORIES = [
+  EconomicActivityCategory.CLT_EMPLOYEE,
+  EconomicActivityCategory.PUBLIC_SERVANT,
+  EconomicActivityCategory.RETIRED_OR_PENSIONER,
+  EconomicActivityCategory.UNEMPLOYED,
+];
+
+export function requiresProfession(
+  categories: EconomicActivityCategory[],
+): boolean {
+  return categories.some((category) =>
+    PROFESSION_REQUIRED_CATEGORIES.includes(category),
+  );
+}
+
 export enum MaritalStatus {
   SINGLE = 'single',
   MARRIED = 'married',
