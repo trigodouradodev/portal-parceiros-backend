@@ -631,6 +631,25 @@ describe('QuoteDraftRegistrationService.save', () => {
     expect(result.profession).toBe('Comerciante');
   });
 
+  it('aceita subcategoria "Outro" em qualquer ramo de atividade', async () => {
+    const { registrationService: service } = await build();
+
+    await expect(
+      service.save(
+        QUOTE_ID,
+        {
+          ...registration,
+          businessActivityBranch: BusinessActivityBranch.FOOD,
+          businessActivitySubcategory: BusinessActivitySubcategory.OTHER,
+        },
+        actor(),
+      ),
+    ).resolves.toMatchObject({
+      businessActivityBranch: BusinessActivityBranch.FOOD,
+      businessActivitySubcategory: BusinessActivitySubcategory.OTHER,
+    });
+  });
+
   it.each([
     {
       name: 'nome inválido',
@@ -679,6 +698,15 @@ describe('QuoteDraftRegistrationService.save', () => {
         ...registration,
         economicActivityCategories: [EconomicActivityCategory.CLT_EMPLOYEE],
         profession: undefined,
+      },
+    },
+    {
+      name: 'subcategoria que não pertence ao ramo de atividade',
+      dto: {
+        ...registration,
+        businessActivityBranch: BusinessActivityBranch.FOOD,
+        businessActivitySubcategory:
+          BusinessActivitySubcategory.GENERAL_COMMERCE,
       },
     },
   ])('recusa $name', async ({ dto }) => {

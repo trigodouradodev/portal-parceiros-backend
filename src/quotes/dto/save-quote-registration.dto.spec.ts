@@ -132,4 +132,13 @@ describe('SaveQuoteRegistrationDto', () => {
       ).resolves.toHaveLength(0);
     },
   );
+
+  it('recusa (sem lançar exceção) quando economicActivityCategories não é um array', async () => {
+    await expect(
+      errors({
+        ...validRegistration,
+        economicActivityCategories: 'not-an-array',
+      }),
+    ).resolves.not.toHaveLength(0);
+  });
 });

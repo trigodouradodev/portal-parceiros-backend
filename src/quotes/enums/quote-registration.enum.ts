@@ -32,6 +32,9 @@ export const PROFESSION_REQUIRED_CATEGORIES = [
 export function requiresProfession(
   categories: EconomicActivityCategory[],
 ): boolean {
+  // Chamada a partir de @ValidateIf antes de economicActivityCategories ter
+  // sido validado como array — payload malformado não pode virar exceção.
+  if (!Array.isArray(categories)) return false;
   return categories.some((category) =>
     PROFESSION_REQUIRED_CATEGORIES.includes(category),
   );
@@ -193,4 +196,108 @@ export enum BusinessActivitySubcategory {
 
   // Comum a qualquer ramo
   OTHER = 'other',
+}
+
+/**
+ * Subcategorias válidas por ramo — usada para rejeitar combinações
+ * inconsistentes (ex.: branch "food" com subcategory "general_commerce").
+ * `OTHER` é aceito em qualquer ramo, então não precisa estar listado aqui.
+ */
+export const BUSINESS_ACTIVITY_SUBCATEGORIES_BY_BRANCH: Record<
+  BusinessActivityBranch,
+  BusinessActivitySubcategory[]
+> = {
+  [BusinessActivityBranch.RETAIL_COMMERCE]: [
+    BusinessActivitySubcategory.CLOTHING_AND_FASHION,
+    BusinessActivitySubcategory.COSMETICS_AND_PERFUMERY,
+    BusinessActivitySubcategory.FOOD_AND_BEVERAGE_COMMERCE,
+    BusinessActivitySubcategory.STREET_VENDING,
+    BusinessActivitySubcategory.BEVERAGE_DISTRIBUTOR,
+    BusinessActivitySubcategory.GENERAL_COMMERCE,
+  ],
+  [BusinessActivityBranch.FOOD]: [
+    BusinessActivitySubcategory.RESTAURANT_OR_SNACK_BAR,
+    BusinessActivitySubcategory.BAKERY_OR_CONFECTIONERY,
+    BusinessActivitySubcategory.HOME_MEALS_OR_CATERING,
+    BusinessActivitySubcategory.FOOD_TRUCK_OR_STREET_FOOD,
+    BusinessActivitySubcategory.EVENTS_CATERING,
+  ],
+  [BusinessActivityBranch.AGRICULTURE_RURAL]: [
+    BusinessActivitySubcategory.CROP_FARMING,
+    BusinessActivitySubcategory.LIVESTOCK,
+    BusinessActivitySubcategory.POULTRY_OR_SWINE,
+    BusinessActivitySubcategory.FISHING_OR_AQUACULTURE,
+  ],
+  [BusinessActivityBranch.CONSTRUCTION]: [
+    BusinessActivitySubcategory.BRICKLAYER_OR_LABORER,
+    BusinessActivitySubcategory.ELECTRICIAN_OR_PLUMBER,
+    BusinessActivitySubcategory.SMALL_CONTRACTOR,
+    BusinessActivitySubcategory.PAINTER,
+    BusinessActivitySubcategory.CARPENTRY_OR_MASONRY_WORK,
+  ],
+  [BusinessActivityBranch.TRANSPORTATION]: [
+    BusinessActivitySubcategory.APP_DRIVER,
+    BusinessActivitySubcategory.TAXI_DRIVER,
+    BusinessActivitySubcategory.DELIVERY_OR_MOTORCYCLE_COURIER,
+    BusinessActivitySubcategory.FREIGHT_TRANSPORT,
+    BusinessActivitySubcategory.SCHOOL_OR_CHARTER_TRANSPORT,
+  ],
+  [BusinessActivityBranch.HEALTH_AND_CARE]: [
+    BusinessActivitySubcategory.ELDERLY_OR_HOME_CAREGIVER,
+    BusinessActivitySubcategory.NURSING_TECHNICIAN,
+    BusinessActivitySubcategory.THERAPIST_OR_PHYSIOTHERAPIST,
+    BusinessActivitySubcategory.DOMESTIC_CARE_WORKER,
+  ],
+  [BusinessActivityBranch.EDUCATION]: [
+    BusinessActivitySubcategory.PRIVATE_TUTOR,
+    BusinessActivitySubcategory.DAYCARE_OR_SMALL_SCHOOL,
+    BusinessActivitySubcategory.LANGUAGE_OR_VOCATIONAL_COURSE,
+  ],
+  [BusinessActivityBranch.BEAUTY_AND_AESTHETICS]: [
+    BusinessActivitySubcategory.HAIR_SALON_OR_BARBERSHOP,
+    BusinessActivitySubcategory.MANICURE_OR_PEDICURE,
+    BusinessActivitySubcategory.MOBILE_HAIRDRESSER,
+    BusinessActivitySubcategory.MAKEUP_OR_EYEBROW_DESIGN,
+    BusinessActivitySubcategory.BODY_AESTHETICS_CLINIC,
+  ],
+  [BusinessActivityBranch.AUTOMOTIVE]: [
+    BusinessActivitySubcategory.AUTO_REPAIR_SHOP,
+    BusinessActivitySubcategory.AUTO_PARTS,
+    BusinessActivitySubcategory.CAR_WASH_OR_DETAILING,
+    BusinessActivitySubcategory.BODY_SHOP_OR_PAINT,
+  ],
+  [BusinessActivityBranch.INDUSTRY_AND_LOGISTICS]: [
+    BusinessActivitySubcategory.SMALL_MANUFACTURING,
+    BusinessActivitySubcategory.GARMENT_OR_SEWING_PRODUCTION,
+    BusinessActivitySubcategory.CARPENTRY_OR_METALWORK_PRODUCTION,
+    BusinessActivitySubcategory.WAREHOUSING_OR_LOGISTICS,
+  ],
+  [BusinessActivityBranch.DOMESTIC_SERVICES]: [
+    BusinessActivitySubcategory.DAY_LABORER_CLEANING,
+    BusinessActivitySubcategory.LIVE_IN_OR_MONTHLY_HOUSEKEEPER,
+    BusinessActivitySubcategory.LAUNDRY_OR_IRONING,
+    BusinessActivitySubcategory.CLEANING_TEAM_OR_COMPANY,
+  ],
+  [BusinessActivityBranch.SECURITY]: [
+    BusinessActivitySubcategory.SECURITY_GUARD_EMPLOYEE,
+    BusinessActivitySubcategory.FREELANCE_SECURITY,
+    BusinessActivitySubcategory.SECURITY_COMPANY_OWNER,
+  ],
+  [BusinessActivityBranch.ADMINISTRATIVE_OFFICE]: [
+    BusinessActivitySubcategory.FREELANCE_ADMIN_ASSISTANT,
+    BusinessActivitySubcategory.ACCOUNTING_OFFICE,
+    BusinessActivitySubcategory.VIRTUAL_ASSISTANT_OR_FREELANCER,
+    BusinessActivitySubcategory.REAL_ESTATE_OR_INSURANCE_BROKER,
+  ],
+};
+
+export function isSubcategoryValidForBranch(
+  branch: BusinessActivityBranch,
+  subcategory: BusinessActivitySubcategory,
+): boolean {
+  if (subcategory === BusinessActivitySubcategory.OTHER) return true;
+  return (
+    BUSINESS_ACTIVITY_SUBCATEGORIES_BY_BRANCH[branch]?.includes(subcategory) ??
+    false
+  );
 }

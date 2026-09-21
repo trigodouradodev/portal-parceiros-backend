@@ -9,6 +9,7 @@ import {
   EconomicActivityCategory,
   GovernmentProgram,
   MaritalStatus,
+  isSubcategoryValidForBranch,
   requiresProfession,
 } from '../enums/quote-registration.enum';
 import { QuoteStatus } from '../enums/quote-status.enum';
@@ -158,6 +159,17 @@ function normalizeRegistration(
   }
 
   const telephone = normalizePhone(dto.telephone);
+
+  if (
+    !isSubcategoryValidForBranch(
+      dto.businessActivityBranch,
+      dto.businessActivitySubcategory,
+    )
+  ) {
+    throw new BadRequestException(
+      'A subcategoria não pertence ao ramo de atividade selecionado.',
+    );
+  }
 
   const professionRequired = requiresProfession(dto.economicActivityCategories);
   const profession = professionRequired ? (dto.profession?.trim() ?? '') : null;
