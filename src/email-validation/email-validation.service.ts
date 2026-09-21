@@ -48,12 +48,16 @@ export class EmailValidationService {
       return this.uncheckedResult(email);
     }
 
-    const url = new URL(apiUrl || DEFAULT_API_URL);
-    url.searchParams.set('api_key', apiKey);
-    url.searchParams.set('email', email);
-
     let payload: ZeroBounceRawResponse;
     try {
+      // ZEROBOUNCE_API_URL vem de uma tabela mutável e compartilhada com o
+      // trigo-connector — `new URL()` lança de forma síncrona se o valor
+      // estiver malformado, então precisa estar dentro do try pra não
+      // furar o fail-open.
+      const url = new URL(apiUrl || DEFAULT_API_URL);
+      url.searchParams.set('api_key', apiKey);
+      url.searchParams.set('email', email);
+
       const response = await fetch(url, {
         method: 'GET',
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),

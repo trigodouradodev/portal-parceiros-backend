@@ -207,4 +207,21 @@ describe('EmailValidationService', () => {
     expect(calledUrl.searchParams.get('api_key')).toBe('fake-key');
     expect(calledUrl.searchParams.get('email')).toBe('maria@email.com');
   });
+
+  it('falha aberto (sem lançar) quando ZEROBOUNCE_API_URL está malformada', async () => {
+    systemConfigs.getValues.mockResolvedValue({
+      ZEROBOUNCE_API_KEY: 'fake-key',
+      ZEROBOUNCE_API_URL: 'não é uma url válida ://',
+    });
+
+    await expect(service.validate('maria@email.com')).resolves.toEqual({
+      email: 'maria@email.com',
+      status: 'unknown',
+      subStatus: '',
+      isAcceptable: true,
+      checked: false,
+      didYouMean: null,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
