@@ -6,10 +6,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { SaveQuoteRegistrationDto } from '../dto/save-quote-registration.dto';
 import { QuoteDraftStep } from '../enums/quote-draft-step.enum';
 import {
-  EconomicActivityCategory,
   GovernmentProgram,
   MaritalStatus,
-  requiresProfession,
 } from '../enums/quote-registration.enum';
 import { QuoteStatus } from '../enums/quote-status.enum';
 import { QuoteRegistrationSnapshot } from '../interfaces/quote-registration-snapshot.interface';
@@ -50,9 +48,6 @@ export class QuoteDraftRegistrationService {
           is_renegotiation: registration.isRenegotiation,
           gender: registration.gender,
           secondary_document: registration.secondaryDocument,
-          profession: registration.profession,
-          economic_activity_categories: registration.economicActivityCategories,
-          economic_activity_other: registration.economicActivityOther,
           marital_status: registration.maritalStatus,
           spouse_document: registration.spouseDocument,
           children_count: registration.childrenCount,
@@ -97,13 +92,6 @@ export class QuoteDraftRegistrationService {
         isRenegotiation: registration.isRenegotiation,
         gender: registration.gender,
         secondaryDocument: registration.secondaryDocument,
-        ...(registration.profession === null
-          ? {}
-          : { profession: registration.profession }),
-        economicActivityCategories: registration.economicActivityCategories,
-        ...(registration.economicActivityOther === null
-          ? {}
-          : { economicActivityOther: registration.economicActivityOther }),
         maritalStatus: registration.maritalStatus,
         ...(registration.spouseDocument === null
           ? {}
@@ -125,15 +113,9 @@ export class QuoteDraftRegistrationService {
 
 type NormalizedRegistration = Omit<
   SaveQuoteRegistrationDto,
-  | 'birthDate'
-  | 'profession'
-  | 'economicActivityOther'
-  | 'spouseDocument'
-  | 'vehicleFinanced'
+  'birthDate' | 'spouseDocument' | 'vehicleFinanced'
 > & {
   birthDate: Date;
-  profession: string | null;
-  economicActivityOther: string | null;
   spouseDocument: string | null;
   vehicleFinanced: boolean | null;
 };
@@ -153,27 +135,6 @@ function normalizeRegistration(
   }
 
   const telephone = normalizePhone(dto.telephone);
-
-  const professionRequired = requiresProfession(dto.economicActivityCategories);
-  const profession = professionRequired ? (dto.profession?.trim() ?? '') : null;
-  if (professionRequired && (!profession || profession.length < 2)) {
-    throw new BadRequestException('Informe a profissão.');
-  }
-
-  const hasOtherActivity = dto.economicActivityCategories.includes(
-    EconomicActivityCategory.OTHER,
-  );
-  const economicActivityOther = hasOtherActivity
-    ? (dto.economicActivityOther?.trim() ?? '')
-    : null;
-  if (
-    hasOtherActivity &&
-    (!economicActivityOther || economicActivityOther.length < 2)
-  ) {
-    throw new BadRequestException(
-      'Informe a categoria de atividade econômica em Outros.',
-    );
-  }
 
   const hasSpouse =
     dto.maritalStatus === MaritalStatus.MARRIED ||
@@ -206,8 +167,6 @@ function normalizeRegistration(
     email: dto.email.trim().toLowerCase(),
     telephone,
     secondaryDocument: dto.secondaryDocument.trim(),
-    profession,
-    economicActivityOther,
     spouseDocument,
     vehicleFinanced: dto.ownsVehicle ? (dto.vehicleFinanced ?? null) : null,
   };

@@ -2,6 +2,8 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayMinSize,
+  ArrayUnique,
   IsBoolean,
   IsArray,
   IsEnum,
@@ -11,6 +13,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import {
@@ -21,6 +24,8 @@ import {
 import {
   BusinessActivityBranch,
   BusinessActivitySubcategory,
+  EconomicActivityCategory,
+  requiresProfession,
 } from '../enums/quote-registration.enum';
 
 const trim = ({ value }: { value: unknown }): unknown =>
@@ -39,6 +44,38 @@ export class QuoteAdditionalIncomeDto {
 }
 
 export class SaveQuoteIncomeDto {
+  @ApiProperty({ enum: EconomicActivityCategory, isArray: true })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(7)
+  @ArrayUnique()
+  @IsEnum(EconomicActivityCategory, { each: true })
+  economicActivityCategories: EconomicActivityCategory[];
+
+  @ApiPropertyOptional({ example: 'Artesanato' })
+  @ValidateIf((dto: SaveQuoteIncomeDto) =>
+    dto.economicActivityCategories?.includes(EconomicActivityCategory.OTHER),
+  )
+  @Transform(trim)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(500)
+  economicActivityOther?: string;
+
+  @ApiPropertyOptional({
+    example: 'Comerciante',
+    description:
+      'Exigido para CLT, Servidor Público, Aposentado/Pensionista e Desempregado.',
+  })
+  @ValidateIf((dto: SaveQuoteIncomeDto) =>
+    requiresProfession(dto.economicActivityCategories ?? []),
+  )
+  @Transform(trim)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(255)
+  profession?: string;
+
   @ApiProperty({
     enum: BusinessActivityBranch,
     description: 'Ramo de atividade do cliente.',

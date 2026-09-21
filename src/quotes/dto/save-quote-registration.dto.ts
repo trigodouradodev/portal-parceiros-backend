@@ -19,13 +19,11 @@ import {
 } from 'class-validator';
 import {
   CreditPurpose,
-  EconomicActivityCategory,
   Gender,
   GovernmentProgram,
   HousingStatus,
   MaritalStatus,
   ResidenceDuration,
-  requiresProfession,
 } from '../enums/quote-registration.enum';
 
 const trim = ({ value }: { value: unknown }): unknown =>
@@ -79,41 +77,6 @@ export class SaveQuoteRegistrationDto {
   @MinLength(1)
   @MaxLength(255)
   secondaryDocument: string;
-
-  @ApiPropertyOptional({
-    example: 'Comerciante',
-    description:
-      'Cargo/ocupação do cliente — exigido para CLT, Servidor Público, ' +
-      'Aposentado/Pensionista e Desempregado. Pra Empresário e Autônomo, ' +
-      'o Ramo de atividade e a Subcategoria já descrevem a atividade de ' +
-      'forma estruturada.',
-  })
-  @ValidateIf((dto: SaveQuoteRegistrationDto) =>
-    requiresProfession(dto.economicActivityCategories ?? []),
-  )
-  @Transform(trim)
-  @IsString()
-  @MinLength(2)
-  @MaxLength(255)
-  profession?: string;
-
-  @ApiProperty({ enum: EconomicActivityCategory, isArray: true })
-  @IsArray()
-  @ArrayMinSize(1)
-  @ArrayMaxSize(7)
-  @ArrayUnique()
-  @IsEnum(EconomicActivityCategory, { each: true })
-  economicActivityCategories: EconomicActivityCategory[];
-
-  @ApiPropertyOptional({ example: 'Artesanato' })
-  @ValidateIf((dto: SaveQuoteRegistrationDto) =>
-    dto.economicActivityCategories?.includes(EconomicActivityCategory.OTHER),
-  )
-  @Transform(trim)
-  @IsString()
-  @MinLength(2)
-  @MaxLength(500)
-  economicActivityOther?: string;
 
   @ApiProperty({ enum: MaritalStatus })
   @IsEnum(MaritalStatus)

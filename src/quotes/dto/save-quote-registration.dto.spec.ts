@@ -2,7 +2,6 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import {
   CreditPurpose,
-  EconomicActivityCategory,
   Gender,
   GovernmentProgram,
   HousingStatus,
@@ -20,8 +19,6 @@ const validRegistration = {
   isRenegotiation: false,
   gender: Gender.FEMALE,
   secondaryDocument: '123456789',
-  profession: 'Comerciante',
-  economicActivityCategories: [EconomicActivityCategory.BUSINESS_OWNER],
   maritalStatus: MaritalStatus.SINGLE,
   childrenCount: 2,
   householdMembers: 4,
@@ -53,53 +50,5 @@ describe('SaveQuoteRegistrationDto', () => {
     expect(await errors({ ...validRegistration, ...changes })).not.toHaveLength(
       0,
     );
-  });
-
-  it.each([
-    EconomicActivityCategory.CLT_EMPLOYEE,
-    EconomicActivityCategory.PUBLIC_SERVANT,
-    EconomicActivityCategory.RETIRED_OR_PENSIONER,
-    EconomicActivityCategory.UNEMPLOYED,
-  ])('exige profissão quando a atividade econômica é %s', async (category) => {
-    await expect(
-      errors({
-        ...validRegistration,
-        economicActivityCategories: [category],
-        profession: undefined,
-      }),
-    ).resolves.not.toHaveLength(0);
-
-    await expect(
-      errors({
-        ...validRegistration,
-        economicActivityCategories: [category],
-        profession: 'Recepcionista',
-      }),
-    ).resolves.toHaveLength(0);
-  });
-
-  it.each([
-    EconomicActivityCategory.BUSINESS_OWNER,
-    EconomicActivityCategory.SELF_EMPLOYED_OR_INFORMAL,
-  ])(
-    'não exige profissão quando a atividade econômica é %s — Subcategoria já descreve a atividade',
-    async (category) => {
-      await expect(
-        errors({
-          ...validRegistration,
-          economicActivityCategories: [category],
-          profession: undefined,
-        }),
-      ).resolves.toHaveLength(0);
-    },
-  );
-
-  it('recusa (sem lançar exceção) quando economicActivityCategories não é um array', async () => {
-    await expect(
-      errors({
-        ...validRegistration,
-        economicActivityCategories: 'not-an-array',
-      }),
-    ).resolves.not.toHaveLength(0);
   });
 });

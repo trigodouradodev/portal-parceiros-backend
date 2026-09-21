@@ -7,7 +7,11 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { SaveQuoteIncomeDto } from '../dto/save-quote-income.dto';
 import { QuoteDraftStep } from '../enums/quote-draft-step.enum';
 import { AvailableIncomeProof } from '../enums/quote-income.enum';
-import { isSubcategoryValidForBranch } from '../enums/quote-registration.enum';
+import {
+  EconomicActivityCategory,
+  isSubcategoryValidForBranch,
+  requiresProfession,
+} from '../enums/quote-registration.enum';
 import { QuoteStatus } from '../enums/quote-status.enum';
 import { QuoteIncomeSnapshot } from '../interfaces/quote-income-snapshot.interface';
 import { QuoteDraftStepsService } from './quote-draft-steps.service';
@@ -36,6 +40,9 @@ export class QuoteDraftIncomeService {
           ...(isAdmin ? {} : { current_sales_agent_id: actor.sub }),
         },
         data: {
+          profession: income.profession,
+          economic_activity_categories: income.economicActivityCategories,
+          economic_activity_other: income.economicActivityOther,
           business_activity_branch: income.businessActivityBranch,
           business_activity_subcategory: income.businessActivitySubcategory,
           business_document: income.businessDocument,
@@ -76,6 +83,13 @@ export class QuoteDraftIncomeService {
         ...(income.businessDocument === null
           ? {}
           : { businessDocument: income.businessDocument }),
+        ...(income.profession === null
+          ? {}
+          : { profession: income.profession }),
+        economicActivityCategories: income.economicActivityCategories,
+        ...(income.economicActivityOther === null
+          ? {}
+          : { economicActivityOther: income.economicActivityOther }),
         businessActivityBranch: income.businessActivityBranch,
         businessActivitySubcategory: income.businessActivitySubcategory,
         activityDuration: income.activityDuration,
@@ -93,16 +107,42 @@ export class QuoteDraftIncomeService {
 
 type NormalizedIncome = Omit<
   SaveQuoteIncomeDto,
-  'businessDocument' | 'availableIncomeProof'
+  | 'businessDocument'
+  | 'availableIncomeProof'
+  | 'profession'
+  | 'economicActivityOther'
 > & {
   businessDocument: string | null;
   availableIncomeProof: AvailableIncomeProof | null;
+  profession: string | null;
+  economicActivityOther: string | null;
 };
 
 function normalizeIncome(dto: SaveQuoteIncomeDto): NormalizedIncome {
   const businessDocument = dto.businessDocument
     ? normalizeCnpj(dto.businessDocument)
     : null;
+
+  const professionRequired = requiresProfession(dto.economicActivityCategories);
+  const profession = professionRequired ? (dto.profession?.trim() ?? '') : null;
+  if (professionRequired && (!profession || profession.length < 2)) {
+    throw new BadRequestException('Informe a profissão.');
+  }
+
+  const hasOtherActivity = dto.economicActivityCategories.includes(
+    EconomicActivityCategory.OTHER,
+  );
+  const economicActivityOther = hasOtherActivity
+    ? (dto.economicActivityOther?.trim() ?? '')
+    : null;
+  if (
+    hasOtherActivity &&
+    (!economicActivityOther || economicActivityOther.length < 2)
+  ) {
+    throw new BadRequestException(
+      'Informe a categoria de atividade econômica em Outros.',
+    );
+  }
 
   if (
     !isSubcategoryValidForBranch(
@@ -122,6 +162,8 @@ function normalizeIncome(dto: SaveQuoteIncomeDto): NormalizedIncome {
   return {
     ...dto,
     businessDocument,
+    profession,
+    economicActivityOther,
     availableIncomeProof: dto.availableIncomeProof ?? null,
     additionalIncomes: dto.hasMultipleIncomeSources
       ? dto.additionalIncomes.map((additionalIncome) => ({
