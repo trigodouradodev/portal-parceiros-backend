@@ -1,8 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { QuoteDraftStep } from '../enums/quote-draft-step.enum';
 import {
-  BusinessActivityBranch,
-  BusinessActivitySubcategory,
   CreditPurpose,
   EconomicActivityCategory,
   Gender,
@@ -52,12 +50,6 @@ export class QuoteRegistrationSnapshot {
 
   @ApiPropertyOptional()
   profession?: string;
-
-  @ApiProperty({ enum: BusinessActivityBranch })
-  businessActivityBranch: BusinessActivityBranch;
-
-  @ApiProperty({ enum: BusinessActivitySubcategory })
-  businessActivitySubcategory: BusinessActivitySubcategory;
 
   @ApiProperty({ enum: EconomicActivityCategory, isArray: true })
   economicActivityCategories: EconomicActivityCategory[];

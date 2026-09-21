@@ -5,9 +5,15 @@ import {
   AvailableIncomeProof,
   IncomeSource,
 } from '../enums/quote-income.enum';
+import {
+  BusinessActivityBranch,
+  BusinessActivitySubcategory,
+} from '../enums/quote-registration.enum';
 import { SaveQuoteIncomeDto } from './save-quote-income.dto';
 
 const validIncome = {
+  businessActivityBranch: BusinessActivityBranch.RETAIL_COMMERCE,
+  businessActivitySubcategory: BusinessActivitySubcategory.GENERAL_COMMERCE,
   activityDuration: ActivityDuration.ONE_TO_3_YEARS,
   declaredMonthlyIncome: 3500,
   incomeSource: IncomeSource.SALARY,
@@ -37,6 +43,22 @@ describe('SaveQuoteIncomeDto', () => {
   });
 
   it.each([
+    {
+      name: 'ramo de atividade ausente',
+      changes: { businessActivityBranch: undefined },
+    },
+    {
+      name: 'ramo de atividade inválido',
+      changes: { businessActivityBranch: 'invalido' },
+    },
+    {
+      name: 'subcategoria ausente',
+      changes: { businessActivitySubcategory: undefined },
+    },
+    {
+      name: 'subcategoria inválida',
+      changes: { businessActivitySubcategory: 'invalido' },
+    },
     { name: 'lista ausente', changes: { additionalIncomes: undefined } },
     {
       name: 'fonte inválida',

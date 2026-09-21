@@ -18,6 +18,10 @@ import {
   AvailableIncomeProof,
   IncomeSource,
 } from '../enums/quote-income.enum';
+import {
+  BusinessActivityBranch,
+  BusinessActivitySubcategory,
+} from '../enums/quote-registration.enum';
 
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
@@ -35,6 +39,20 @@ export class QuoteAdditionalIncomeDto {
 }
 
 export class SaveQuoteIncomeDto {
+  @ApiProperty({
+    enum: BusinessActivityBranch,
+    description: 'Ramo de atividade do cliente.',
+  })
+  @IsEnum(BusinessActivityBranch)
+  businessActivityBranch: BusinessActivityBranch;
+
+  @ApiProperty({
+    enum: BusinessActivitySubcategory,
+    description: 'Subcategoria pertencente ao ramo de atividade selecionado.',
+  })
+  @IsEnum(BusinessActivitySubcategory)
+  businessActivitySubcategory: BusinessActivitySubcategory;
+
   @ApiPropertyOptional({
     example: '11222333000181',
     description: 'CNPJ opcional, com ou sem máscara.',

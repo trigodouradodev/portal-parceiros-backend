@@ -7,6 +7,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { SaveQuoteIncomeDto } from '../dto/save-quote-income.dto';
 import { QuoteDraftStep } from '../enums/quote-draft-step.enum';
 import { AvailableIncomeProof } from '../enums/quote-income.enum';
+import { isSubcategoryValidForBranch } from '../enums/quote-registration.enum';
 import { QuoteStatus } from '../enums/quote-status.enum';
 import { QuoteIncomeSnapshot } from '../interfaces/quote-income-snapshot.interface';
 import { QuoteDraftStepsService } from './quote-draft-steps.service';
@@ -35,6 +36,8 @@ export class QuoteDraftIncomeService {
           ...(isAdmin ? {} : { current_sales_agent_id: actor.sub }),
         },
         data: {
+          business_activity_branch: income.businessActivityBranch,
+          business_activity_subcategory: income.businessActivitySubcategory,
           business_document: income.businessDocument,
           activity_duration: income.activityDuration,
           personal_income: income.declaredMonthlyIncome,
@@ -73,6 +76,8 @@ export class QuoteDraftIncomeService {
         ...(income.businessDocument === null
           ? {}
           : { businessDocument: income.businessDocument }),
+        businessActivityBranch: income.businessActivityBranch,
+        businessActivitySubcategory: income.businessActivitySubcategory,
         activityDuration: income.activityDuration,
         declaredMonthlyIncome: income.declaredMonthlyIncome,
         incomeSource: income.incomeSource,
@@ -98,6 +103,17 @@ function normalizeIncome(dto: SaveQuoteIncomeDto): NormalizedIncome {
   const businessDocument = dto.businessDocument
     ? normalizeCnpj(dto.businessDocument)
     : null;
+
+  if (
+    !isSubcategoryValidForBranch(
+      dto.businessActivityBranch,
+      dto.businessActivitySubcategory,
+    )
+  ) {
+    throw new BadRequestException(
+      'A subcategoria não pertence ao ramo de atividade selecionado.',
+    );
+  }
 
   if (dto.hasMultipleIncomeSources && dto.additionalIncomes.length === 0) {
     throw new BadRequestException('Informe ao menos uma renda adicional.');

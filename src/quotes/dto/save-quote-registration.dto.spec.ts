@@ -1,8 +1,6 @@
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import {
-  BusinessActivityBranch,
-  BusinessActivitySubcategory,
   CreditPurpose,
   EconomicActivityCategory,
   Gender,
@@ -23,8 +21,6 @@ const validRegistration = {
   gender: Gender.FEMALE,
   secondaryDocument: '123456789',
   profession: 'Comerciante',
-  businessActivityBranch: BusinessActivityBranch.RETAIL_COMMERCE,
-  businessActivitySubcategory: BusinessActivitySubcategory.GENERAL_COMMERCE,
   economicActivityCategories: [EconomicActivityCategory.BUSINESS_OWNER],
   maritalStatus: MaritalStatus.SINGLE,
   childrenCount: 2,
@@ -53,45 +49,10 @@ describe('SaveQuoteRegistrationDto', () => {
     { name: 'data fora do formato', changes: { birthDate: '20/05/1990' } },
     { name: 'e-mail inválido', changes: { email: 'maria' } },
     { name: 'telefone ausente', changes: { telephone: '' } },
-    {
-      name: 'ramo de atividade ausente',
-      changes: { businessActivityBranch: undefined },
-    },
-    {
-      name: 'ramo de atividade inválido',
-      changes: { businessActivityBranch: 'invalido' },
-    },
-    {
-      name: 'subcategoria ausente',
-      changes: { businessActivitySubcategory: undefined },
-    },
-    {
-      name: 'subcategoria inválida',
-      changes: { businessActivitySubcategory: 'invalido' },
-    },
   ])('recusa $name', async ({ changes }) => {
     expect(await errors({ ...validRegistration, ...changes })).not.toHaveLength(
       0,
     );
-  });
-
-  it('exige subcategoria também para ramos fora de Comércio / Varejo', async () => {
-    await expect(
-      errors({
-        ...validRegistration,
-        businessActivityBranch: BusinessActivityBranch.CONSTRUCTION,
-        businessActivitySubcategory: undefined,
-      }),
-    ).resolves.not.toHaveLength(0);
-
-    await expect(
-      errors({
-        ...validRegistration,
-        businessActivityBranch: BusinessActivityBranch.CONSTRUCTION,
-        businessActivitySubcategory:
-          BusinessActivitySubcategory.ELECTRICIAN_OR_PLUMBER,
-      }),
-    ).resolves.toHaveLength(0);
   });
 
   it.each([
