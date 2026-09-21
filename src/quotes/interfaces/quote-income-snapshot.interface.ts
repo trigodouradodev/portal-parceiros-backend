@@ -6,6 +6,10 @@ import {
   IncomeSource,
 } from '../enums/quote-income.enum';
 import { QuoteStatus } from '../enums/quote-status.enum';
+import {
+  BusinessActivityBranch,
+  BusinessActivitySubcategory,
+} from '../enums/quote-registration.enum';
 
 export class QuoteAdditionalIncomeSnapshot {
   @ApiProperty({ enum: IncomeSource })
@@ -33,6 +37,12 @@ export class QuoteIncomeSnapshot {
 
   @ApiPropertyOptional()
   businessDocument?: string;
+
+  @ApiProperty({ enum: BusinessActivityBranch })
+  businessActivityBranch: BusinessActivityBranch;
+
+  @ApiProperty({ enum: BusinessActivitySubcategory })
+  businessActivitySubcategory: BusinessActivitySubcategory;
 
   @ApiProperty({ enum: ActivityDuration })
   activityDuration: ActivityDuration;

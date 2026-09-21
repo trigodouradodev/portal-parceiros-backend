@@ -78,8 +78,6 @@ const registration: SaveQuoteRegistrationDto = {
   gender: Gender.FEMALE,
   secondaryDocument: ' 123456789 ',
   profession: ' Comerciante ',
-  businessActivityBranch: BusinessActivityBranch.RETAIL_COMMERCE,
-  businessActivitySubcategory: BusinessActivitySubcategory.GENERAL_COMMERCE,
   economicActivityCategories: [
     EconomicActivityCategory.BUSINESS_OWNER,
     EconomicActivityCategory.OTHER,
@@ -98,6 +96,8 @@ const registration: SaveQuoteRegistrationDto = {
 };
 
 const income: SaveQuoteIncomeDto = {
+  businessActivityBranch: BusinessActivityBranch.RETAIL_COMMERCE,
+  businessActivitySubcategory: BusinessActivitySubcategory.GENERAL_COMMERCE,
   businessDocument: '11.222.333/0001-81',
   activityDuration: ActivityDuration.THREE_TO_5_YEARS,
   declaredMonthlyIncome: 3500,
@@ -525,8 +525,6 @@ describe('QuoteDraftRegistrationService.save', () => {
       isRenegotiation: false,
       gender: Gender.FEMALE,
       secondaryDocument: '123456789',
-      businessActivityBranch: BusinessActivityBranch.RETAIL_COMMERCE,
-      businessActivitySubcategory: BusinessActivitySubcategory.GENERAL_COMMERCE,
       economicActivityCategories: [
         EconomicActivityCategory.BUSINESS_OWNER,
         EconomicActivityCategory.OTHER,
@@ -559,8 +557,6 @@ describe('QuoteDraftRegistrationService.save', () => {
         gender: Gender.FEMALE,
         secondary_document: '123456789',
         profession: null,
-        business_activity_branch: 'retail_commerce',
-        business_activity_subcategory: 'general_commerce',
         economic_activity_categories: registration.economicActivityCategories,
         economic_activity_other: 'Artesanato',
         marital_status: MaritalStatus.MARRIED,
@@ -601,9 +597,6 @@ describe('QuoteDraftRegistrationService.save', () => {
       QUOTE_ID,
       {
         ...registration,
-        businessActivityBranch: BusinessActivityBranch.FOOD,
-        businessActivitySubcategory:
-          BusinessActivitySubcategory.RESTAURANT_OR_SNACK_BAR,
         economicActivityCategories: [EconomicActivityCategory.CLT_EMPLOYEE],
         economicActivityOther: 'Ignorar',
         maritalStatus: MaritalStatus.SINGLE,
@@ -617,7 +610,6 @@ describe('QuoteDraftRegistrationService.save', () => {
     expect(tx.quotes.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          business_activity_subcategory: 'restaurant_or_snack_bar',
           economic_activity_other: null,
           spouse_document: null,
           vehicle_financed: null,
@@ -629,25 +621,6 @@ describe('QuoteDraftRegistrationService.save', () => {
     expect(result).not.toHaveProperty('vehicleFinanced');
     // CLT_EMPLOYEE está entre as categorias, então profissão continua exigida e presente.
     expect(result.profession).toBe('Comerciante');
-  });
-
-  it('aceita subcategoria "Outro" em qualquer ramo de atividade', async () => {
-    const { registrationService: service } = await build();
-
-    await expect(
-      service.save(
-        QUOTE_ID,
-        {
-          ...registration,
-          businessActivityBranch: BusinessActivityBranch.FOOD,
-          businessActivitySubcategory: BusinessActivitySubcategory.OTHER,
-        },
-        actor(),
-      ),
-    ).resolves.toMatchObject({
-      businessActivityBranch: BusinessActivityBranch.FOOD,
-      businessActivitySubcategory: BusinessActivitySubcategory.OTHER,
-    });
   });
 
   it.each([
@@ -698,15 +671,6 @@ describe('QuoteDraftRegistrationService.save', () => {
         ...registration,
         economicActivityCategories: [EconomicActivityCategory.CLT_EMPLOYEE],
         profession: undefined,
-      },
-    },
-    {
-      name: 'subcategoria que não pertence ao ramo de atividade',
-      dto: {
-        ...registration,
-        businessActivityBranch: BusinessActivityBranch.FOOD,
-        businessActivitySubcategory:
-          BusinessActivitySubcategory.GENERAL_COMMERCE,
       },
     },
   ])('recusa $name', async ({ dto }) => {
@@ -772,6 +736,8 @@ describe('QuoteDraftIncomeService.save', () => {
       completedAt: STEP_COMPLETED_AT,
       updatedAt: STEP_UPDATED_AT,
       businessDocument: '11222333000181',
+      businessActivityBranch: BusinessActivityBranch.RETAIL_COMMERCE,
+      businessActivitySubcategory: BusinessActivitySubcategory.GENERAL_COMMERCE,
       activityDuration: ActivityDuration.THREE_TO_5_YEARS,
       declaredMonthlyIncome: 3500,
       incomeSource: IncomeSource.MIXED_INCOME,
@@ -790,6 +756,8 @@ describe('QuoteDraftIncomeService.save', () => {
         current_sales_agent_id: OWNER_ID,
       },
       data: {
+        business_activity_branch: 'retail_commerce',
+        business_activity_subcategory: 'general_commerce',
         business_document: '11222333000181',
         activity_duration: ActivityDuration.THREE_TO_5_YEARS,
         personal_income: 3500,
@@ -848,6 +816,25 @@ describe('QuoteDraftIncomeService.save', () => {
     expect(result.additionalIncomes).toEqual([]);
   });
 
+  it('aceita subcategoria "Outro" em qualquer ramo de atividade', async () => {
+    const { incomeService: service } = await build();
+
+    await expect(
+      service.save(
+        QUOTE_ID,
+        {
+          ...income,
+          businessActivityBranch: BusinessActivityBranch.FOOD,
+          businessActivitySubcategory: BusinessActivitySubcategory.OTHER,
+        },
+        actor(),
+      ),
+    ).resolves.toMatchObject({
+      businessActivityBranch: BusinessActivityBranch.FOOD,
+      businessActivitySubcategory: BusinessActivitySubcategory.OTHER,
+    });
+  });
+
   it.each([
     {
       name: 'CNPJ inválido',
@@ -856,6 +843,15 @@ describe('QuoteDraftIncomeService.save', () => {
     {
       name: 'múltiplas fontes sem renda adicional',
       dto: { ...income, additionalIncomes: [] },
+    },
+    {
+      name: 'subcategoria que não pertence ao ramo de atividade',
+      dto: {
+        ...income,
+        businessActivityBranch: BusinessActivityBranch.FOOD,
+        businessActivitySubcategory:
+          BusinessActivitySubcategory.GENERAL_COMMERCE,
+      },
     },
   ])('recusa $name', async ({ dto }) => {
     const { incomeService: service, prisma } = await build();
