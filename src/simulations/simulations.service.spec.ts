@@ -145,11 +145,12 @@ function buildService(options?: {
       callback(prisma),
     ),
   } as unknown as PrismaService;
+  const getPermissions = jest.fn().mockResolvedValue({
+    canSimulateQuote: options?.canSimulateQuote ?? true,
+    canCreateQuote: true,
+  });
   const quoteActivityPermissions = {
-    getPermissions: jest.fn().mockResolvedValue({
-      canSimulateQuote: options?.canSimulateQuote ?? true,
-      canCreateQuote: true,
-    }),
+    getPermissions,
   } as unknown as QuoteActivityPermissionsService;
   const resolveForSimulation = jest.fn().mockResolvedValue(PARTY_ID);
   const partiesService = {
@@ -181,6 +182,7 @@ function buildService(options?: {
     ),
     queryRaw,
     quoteActivityPermissions,
+    getPermissions,
     partiesService,
     resolveForSimulation,
     simulateRequestedAmount,
@@ -234,7 +236,7 @@ describe('SimulationsService.simulate', () => {
     const {
       service,
       queryRaw,
-      quoteActivityPermissions,
+      getPermissions,
       resolveForSimulation,
       simulateRequestedAmount,
     } = buildService({ eligible: false });
@@ -243,7 +245,7 @@ describe('SimulationsService.simulate', () => {
       eligible: false,
       simulation: null,
     });
-    expect(quoteActivityPermissions.getPermissions).not.toHaveBeenCalled();
+    expect(getPermissions).not.toHaveBeenCalled();
     expect(simulateRequestedAmount).not.toHaveBeenCalled();
     expect(resolveForSimulation).not.toHaveBeenCalled();
     expect(queryRaw).not.toHaveBeenCalled();
