@@ -18,6 +18,8 @@ const sourceQuote = {
   gender: 'female',
   secondary_document: '123456789',
   profession: 'Comerciante',
+  business_activity_branch: 'retail_commerce',
+  business_activity_subcategory: 'general_commerce',
   economic_activity_categories: ['commerce'],
   economic_activity_other: null,
   marital_status: 'single',
@@ -162,6 +164,8 @@ describe('QuoteRenewalPrefillService', () => {
     expect(update).toMatchObject({
       is_renegotiation: true,
       profession: sourceQuote.profession,
+      business_activity_branch: sourceQuote.business_activity_branch,
+      business_activity_subcategory: sourceQuote.business_activity_subcategory,
       personal_income: sourceQuote.personal_income,
       client_address: {
         zipCode: '01001000',

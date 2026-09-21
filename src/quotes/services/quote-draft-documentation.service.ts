@@ -23,7 +23,6 @@ import {
   IncomeProofType,
   QuoteAttachmentType,
 } from '../enums/quote-documentation.enum';
-import { AvailableIncomeProof } from '../enums/quote-income.enum';
 import { QuoteStatus } from '../enums/quote-status.enum';
 import {
   QuoteAttachmentSnapshot,
@@ -56,7 +55,6 @@ interface QuoteAttachmentRecord {
 interface EditableQuote {
   quote_status: string;
   current_sales_agent_id: string;
-  available_income_proof: string | null;
   document_attachment: unknown;
   proof_of_residence_attachment: unknown;
   activity_photos_attachment: unknown;
@@ -236,7 +234,7 @@ export class QuoteDraftDocumentationService {
     return this.runSerializableTransaction(async (tx) => {
       const quote = await this.findEditableQuote(quoteId, actor, tx);
       const groups = toGroups(quote);
-      validateRequiredDocumentation(quote, groups);
+      validateRequiredDocumentation(groups);
 
       const updatedAt = new Date();
       await tx.quotes.update({
@@ -271,7 +269,6 @@ export class QuoteDraftDocumentationService {
       select: {
         quote_status: true,
         current_sales_agent_id: true,
-        available_income_proof: true,
         document_attachment: true,
         proof_of_residence_attachment: true,
         activity_photos_attachment: true,
@@ -515,7 +512,6 @@ function attachmentStorageKey(
 }
 
 function validateRequiredDocumentation(
-  quote: EditableQuote,
   groups: QuoteDocumentationAttachments,
 ): void {
   if (groups.proofOfIncome.some((attachment) => !attachment.incomeProofType)) {
@@ -534,10 +530,7 @@ function validateRequiredDocumentation(
   if (groups.activityPhotos.length === 0) {
     missing.push('foto da atividade');
   }
-  if (
-    quote.available_income_proof !== AvailableIncomeProof.NONE &&
-    groups.proofOfIncome.length === 0
-  ) {
+  if (groups.proofOfIncome.length === 0) {
     missing.push('comprovante de renda');
   }
   if (missing.length > 0) {

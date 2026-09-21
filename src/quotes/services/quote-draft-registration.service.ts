@@ -9,6 +9,8 @@ import {
   EconomicActivityCategory,
   GovernmentProgram,
   MaritalStatus,
+  isSubcategoryValidForBranch,
+  requiresProfession,
 } from '../enums/quote-registration.enum';
 import { QuoteStatus } from '../enums/quote-status.enum';
 import { QuoteRegistrationSnapshot } from '../interfaces/quote-registration-snapshot.interface';
@@ -50,6 +52,9 @@ export class QuoteDraftRegistrationService {
           gender: registration.gender,
           secondary_document: registration.secondaryDocument,
           profession: registration.profession,
+          business_activity_branch: registration.businessActivityBranch,
+          business_activity_subcategory:
+            registration.businessActivitySubcategory,
           economic_activity_categories: registration.economicActivityCategories,
           economic_activity_other: registration.economicActivityOther,
           marital_status: registration.maritalStatus,
@@ -96,7 +101,11 @@ export class QuoteDraftRegistrationService {
         isRenegotiation: registration.isRenegotiation,
         gender: registration.gender,
         secondaryDocument: registration.secondaryDocument,
-        profession: registration.profession,
+        ...(registration.profession === null
+          ? {}
+          : { profession: registration.profession }),
+        businessActivityBranch: registration.businessActivityBranch,
+        businessActivitySubcategory: registration.businessActivitySubcategory,
         economicActivityCategories: registration.economicActivityCategories,
         ...(registration.economicActivityOther === null
           ? {}
@@ -122,9 +131,14 @@ export class QuoteDraftRegistrationService {
 
 type NormalizedRegistration = Omit<
   SaveQuoteRegistrationDto,
-  'birthDate' | 'economicActivityOther' | 'spouseDocument' | 'vehicleFinanced'
+  | 'birthDate'
+  | 'profession'
+  | 'economicActivityOther'
+  | 'spouseDocument'
+  | 'vehicleFinanced'
 > & {
   birthDate: Date;
+  profession: string | null;
   economicActivityOther: string | null;
   spouseDocument: string | null;
   vehicleFinanced: boolean | null;
@@ -145,6 +159,23 @@ function normalizeRegistration(
   }
 
   const telephone = normalizePhone(dto.telephone);
+
+  if (
+    !isSubcategoryValidForBranch(
+      dto.businessActivityBranch,
+      dto.businessActivitySubcategory,
+    )
+  ) {
+    throw new BadRequestException(
+      'A subcategoria não pertence ao ramo de atividade selecionado.',
+    );
+  }
+
+  const professionRequired = requiresProfession(dto.economicActivityCategories);
+  const profession = professionRequired ? (dto.profession?.trim() ?? '') : null;
+  if (professionRequired && (!profession || profession.length < 2)) {
+    throw new BadRequestException('Informe a profissão.');
+  }
 
   const hasOtherActivity = dto.economicActivityCategories.includes(
     EconomicActivityCategory.OTHER,
@@ -192,7 +223,7 @@ function normalizeRegistration(
     email: dto.email.trim().toLowerCase(),
     telephone,
     secondaryDocument: dto.secondaryDocument.trim(),
-    profession: dto.profession.trim(),
+    profession,
     economicActivityOther,
     spouseDocument,
     vehicleFinanced: dto.ownsVehicle ? (dto.vehicleFinanced ?? null) : null,

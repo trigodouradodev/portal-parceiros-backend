@@ -39,6 +39,8 @@ import {
   PartnerAssessment,
 } from './enums/quote-partner-opinion.enum';
 import {
+  BusinessActivityBranch,
+  BusinessActivitySubcategory,
   CreditPurpose,
   EconomicActivityCategory,
   Gender,
@@ -76,6 +78,8 @@ const registration: SaveQuoteRegistrationDto = {
   gender: Gender.FEMALE,
   secondaryDocument: ' 123456789 ',
   profession: ' Comerciante ',
+  businessActivityBranch: BusinessActivityBranch.RETAIL_COMMERCE,
+  businessActivitySubcategory: BusinessActivitySubcategory.GENERAL_COMMERCE,
   economicActivityCategories: [
     EconomicActivityCategory.BUSINESS_OWNER,
     EconomicActivityCategory.OTHER,
@@ -521,7 +525,8 @@ describe('QuoteDraftRegistrationService.save', () => {
       isRenegotiation: false,
       gender: Gender.FEMALE,
       secondaryDocument: '123456789',
-      profession: 'Comerciante',
+      businessActivityBranch: BusinessActivityBranch.RETAIL_COMMERCE,
+      businessActivitySubcategory: BusinessActivitySubcategory.GENERAL_COMMERCE,
       economicActivityCategories: [
         EconomicActivityCategory.BUSINESS_OWNER,
         EconomicActivityCategory.OTHER,
@@ -553,7 +558,9 @@ describe('QuoteDraftRegistrationService.save', () => {
         is_renegotiation: false,
         gender: Gender.FEMALE,
         secondary_document: '123456789',
-        profession: 'Comerciante',
+        profession: null,
+        business_activity_branch: 'retail_commerce',
+        business_activity_subcategory: 'general_commerce',
         economic_activity_categories: registration.economicActivityCategories,
         economic_activity_other: 'Artesanato',
         marital_status: MaritalStatus.MARRIED,
@@ -594,6 +601,9 @@ describe('QuoteDraftRegistrationService.save', () => {
       QUOTE_ID,
       {
         ...registration,
+        businessActivityBranch: BusinessActivityBranch.FOOD,
+        businessActivitySubcategory:
+          BusinessActivitySubcategory.RESTAURANT_OR_SNACK_BAR,
         economicActivityCategories: [EconomicActivityCategory.CLT_EMPLOYEE],
         economicActivityOther: 'Ignorar',
         maritalStatus: MaritalStatus.SINGLE,
@@ -607,6 +617,7 @@ describe('QuoteDraftRegistrationService.save', () => {
     expect(tx.quotes.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
+          business_activity_subcategory: 'restaurant_or_snack_bar',
           economic_activity_other: null,
           spouse_document: null,
           vehicle_financed: null,
@@ -616,6 +627,27 @@ describe('QuoteDraftRegistrationService.save', () => {
     expect(result).not.toHaveProperty('economicActivityOther');
     expect(result).not.toHaveProperty('spouseDocument');
     expect(result).not.toHaveProperty('vehicleFinanced');
+    // CLT_EMPLOYEE está entre as categorias, então profissão continua exigida e presente.
+    expect(result.profession).toBe('Comerciante');
+  });
+
+  it('aceita subcategoria "Outro" em qualquer ramo de atividade', async () => {
+    const { registrationService: service } = await build();
+
+    await expect(
+      service.save(
+        QUOTE_ID,
+        {
+          ...registration,
+          businessActivityBranch: BusinessActivityBranch.FOOD,
+          businessActivitySubcategory: BusinessActivitySubcategory.OTHER,
+        },
+        actor(),
+      ),
+    ).resolves.toMatchObject({
+      businessActivityBranch: BusinessActivityBranch.FOOD,
+      businessActivitySubcategory: BusinessActivitySubcategory.OTHER,
+    });
   });
 
   it.each([
@@ -659,6 +691,23 @@ describe('QuoteDraftRegistrationService.save', () => {
     {
       name: 'veículo sem informação de financiamento',
       dto: { ...registration, vehicleFinanced: undefined },
+    },
+    {
+      name: 'CLT sem profissão',
+      dto: {
+        ...registration,
+        economicActivityCategories: [EconomicActivityCategory.CLT_EMPLOYEE],
+        profession: undefined,
+      },
+    },
+    {
+      name: 'subcategoria que não pertence ao ramo de atividade',
+      dto: {
+        ...registration,
+        businessActivityBranch: BusinessActivityBranch.FOOD,
+        businessActivitySubcategory:
+          BusinessActivitySubcategory.GENERAL_COMMERCE,
+      },
     },
   ])('recusa $name', async ({ dto }) => {
     const { registrationService: service, prisma } = await build();

@@ -12,6 +12,8 @@ export const RENEWAL_PREFILL_FIELD_WHITELIST = {
     gender: true,
     secondary_document: true,
     profession: true,
+    business_activity_branch: true,
+    business_activity_subcategory: true,
     economic_activity_categories: true,
     economic_activity_other: true,
     marital_status: true,
@@ -89,6 +91,8 @@ export function buildRenewalPrefillUpdate(
     gender: source.gender,
     secondary_document: source.secondary_document,
     profession: source.profession,
+    business_activity_branch: source.business_activity_branch,
+    business_activity_subcategory: source.business_activity_subcategory,
     economic_activity_categories:
       source.economic_activity_categories ?? Prisma.DbNull,
     economic_activity_other: source.economic_activity_other,
