@@ -21,6 +21,8 @@ import { GuarantorRelationship } from '../enums/quote-guarantor.enum';
 import {
   ActivityDuration,
   AvailableIncomeProof,
+  FamilyRelationship,
+  IncomeEntryRole,
   IncomeSource,
 } from '../enums/quote-income.enum';
 import {
@@ -48,7 +50,7 @@ import {
 import { QuoteExpenseSnapshot } from '../interfaces/quote-financial-snapshot.interface';
 import { QuoteLoanSnapshot } from '../interfaces/quote-financial-snapshot.interface';
 import { QuoteListItem, QuotesPage } from '../interfaces/quote-list.interface';
-import { QuoteAdditionalIncomeSnapshot } from '../interfaces/quote-income-snapshot.interface';
+import { QuoteIncomeEntrySnapshot } from '../interfaces/quote-income-snapshot.interface';
 
 const LIST_SELECT = {
   id: true,
@@ -105,6 +107,8 @@ const DETAIL_SELECT = {
   income_source: true,
   has_multiple_income_sources: true,
   additional_incomes: true,
+  income_model_version: true,
+  income_entries: true,
   available_income_proof: true,
   client_address: true,
   geolocation: true,
@@ -288,12 +292,8 @@ export class QuoteReadService {
         creditPurpose: row.credit_purpose as CreditPurpose | null,
       },
       income: {
-        businessDocument: row.business_document,
-        activityDuration: row.activity_duration as ActivityDuration | null,
-        declaredMonthlyIncome: Number(row.personal_income),
-        incomeSource: row.income_source as IncomeSource | null,
-        hasMultipleIncomeSources: row.has_multiple_income_sources,
-        additionalIncomes: mapAdditionalIncomes(row.additional_incomes),
+        incomeModelVersion: row.income_model_version,
+        incomes: mapIncomeEntries(row.income_entries),
         availableIncomeProof:
           row.available_income_proof as AvailableIncomeProof | null,
       },
@@ -430,14 +430,64 @@ function mapExpenses(value: unknown): QuoteExpenseSnapshot[] {
   });
 }
 
-function mapAdditionalIncomes(value: unknown): QuoteAdditionalIncomeSnapshot[] {
+function mapIncomeEntries(value: unknown): QuoteIncomeEntrySnapshot[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
     const income = asRecord(item);
+    const id = stringOrNull(income?.id);
+    const role = enumOrNull(income?.role, IncomeEntryRole);
+    const economicActivity = enumOrNull(
+      income?.economicActivity,
+      EconomicActivityCategory,
+    );
+    const businessActivityBranch = enumOrNull(
+      income?.businessActivityBranch,
+      BusinessActivityBranch,
+    );
+    const businessActivitySubcategory = enumOrNull(
+      income?.businessActivitySubcategory,
+      BusinessActivitySubcategory,
+    );
+    const activityDuration = enumOrNull(
+      income?.activityDuration,
+      ActivityDuration,
+    );
     const source = enumOrNull(income?.source, IncomeSource);
     const amount = numberOrNull(income?.amount);
-    if (!source || amount === null || amount <= 0) return [];
-    return [{ source, amount }];
+    if (
+      !id ||
+      !role ||
+      !economicActivity ||
+      !businessActivityBranch ||
+      !businessActivitySubcategory ||
+      !activityDuration ||
+      !source ||
+      amount === null ||
+      amount <= 0
+    ) {
+      return [];
+    }
+    const economicActivityOther = stringOrNull(income?.economicActivityOther);
+    const profession = stringOrNull(income?.profession);
+    const familyRelationship = enumOrNull(
+      income?.familyRelationship,
+      FamilyRelationship,
+    );
+    return [
+      {
+        id,
+        role,
+        economicActivity,
+        ...(economicActivityOther ? { economicActivityOther } : {}),
+        ...(profession ? { profession } : {}),
+        businessActivityBranch,
+        businessActivitySubcategory,
+        activityDuration,
+        source,
+        amount,
+        ...(familyRelationship ? { familyRelationship } : {}),
+      },
+    ];
   });
 }
 

@@ -85,6 +85,29 @@ function detailRow(overrides: Record<string, unknown> = {}) {
       { source: 'rent', amount: '800.00' },
       { source: 'other', amount: 250 },
     ],
+    income_model_version: 1,
+    income_entries: [
+      {
+        id: 'primary',
+        role: 'primary',
+        economicActivity: 'self_employed_or_informal',
+        businessActivityBranch: 'retail_commerce',
+        businessActivitySubcategory: 'general_commerce',
+        activityDuration: '3_to_5_years',
+        amount: 4500,
+        source: 'own_business',
+      },
+      {
+        id: 'secondary-1',
+        role: 'secondary',
+        economicActivity: 'business_owner',
+        businessActivityBranch: 'retail_commerce',
+        businessActivitySubcategory: 'general_commerce',
+        activityDuration: '1_to_3_years',
+        amount: 800,
+        source: 'rent',
+      },
+    ],
     available_income_proof: 'bank_statement',
     client_address: {
       zipCode: '01001000',
@@ -309,10 +332,10 @@ describe('QuoteReadService.findById', () => {
         economicActivityCategories: ['self_employed_or_informal'],
       },
       income: {
-        declaredMonthlyIncome: 4500,
-        additionalIncomes: [
-          { source: 'rent', amount: 800 },
-          { source: 'other', amount: 250 },
+        incomeModelVersion: 1,
+        incomes: [
+          expect.objectContaining({ id: 'primary', amount: 4500 }),
+          expect.objectContaining({ id: 'secondary-1', amount: 800 }),
         ],
       },
       address: {

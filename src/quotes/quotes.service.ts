@@ -130,6 +130,8 @@ export class QuotesService {
             personal_income: 0,
             familiar_income: 0,
             activity_income: 0,
+            income_model_version: 1,
+            income_entries: [],
             first_installment_date: simulation.first_installment_date,
             installment_numbers: simulation.installment_numbers,
             payment_pix_type: 'CPF',
