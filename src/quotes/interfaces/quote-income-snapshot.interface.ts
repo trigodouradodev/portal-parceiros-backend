@@ -2,7 +2,8 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { QuoteDraftStep } from '../enums/quote-draft-step.enum';
 import {
   ActivityDuration,
-  AvailableIncomeProof,
+  FamilyRelationship,
+  IncomeEntryRole,
   IncomeSource,
 } from '../enums/quote-income.enum';
 import { QuoteStatus } from '../enums/quote-status.enum';
@@ -12,12 +13,39 @@ import {
   EconomicActivityCategory,
 } from '../enums/quote-registration.enum';
 
-export class QuoteAdditionalIncomeSnapshot {
+export class QuoteIncomeEntrySnapshot {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ enum: IncomeEntryRole })
+  role: IncomeEntryRole;
+
+  @ApiProperty({ enum: EconomicActivityCategory })
+  economicActivity: EconomicActivityCategory;
+
+  @ApiPropertyOptional()
+  economicActivityOther?: string;
+
+  @ApiPropertyOptional()
+  profession?: string;
+
+  @ApiProperty({ enum: BusinessActivityBranch })
+  businessActivityBranch: BusinessActivityBranch;
+
+  @ApiProperty({ enum: BusinessActivitySubcategory })
+  businessActivitySubcategory: BusinessActivitySubcategory;
+
+  @ApiProperty({ enum: ActivityDuration })
+  activityDuration: ActivityDuration;
+
   @ApiProperty({ enum: IncomeSource })
   source: IncomeSource;
 
   @ApiProperty()
   amount: number;
+
+  @ApiPropertyOptional({ enum: FamilyRelationship })
+  familyRelationship?: FamilyRelationship;
 }
 
 export class QuoteIncomeSnapshot {
@@ -36,39 +64,9 @@ export class QuoteIncomeSnapshot {
   @ApiProperty()
   updatedAt: Date;
 
-  @ApiPropertyOptional()
-  businessDocument?: string;
+  @ApiProperty({ example: 1 })
+  incomeModelVersion: number;
 
-  @ApiPropertyOptional()
-  profession?: string;
-
-  @ApiProperty({ enum: EconomicActivityCategory, isArray: true })
-  economicActivityCategories: EconomicActivityCategory[];
-
-  @ApiPropertyOptional()
-  economicActivityOther?: string;
-
-  @ApiProperty({ enum: BusinessActivityBranch })
-  businessActivityBranch: BusinessActivityBranch;
-
-  @ApiProperty({ enum: BusinessActivitySubcategory })
-  businessActivitySubcategory: BusinessActivitySubcategory;
-
-  @ApiProperty({ enum: ActivityDuration })
-  activityDuration: ActivityDuration;
-
-  @ApiProperty()
-  declaredMonthlyIncome: number;
-
-  @ApiProperty({ enum: IncomeSource })
-  incomeSource: IncomeSource;
-
-  @ApiProperty()
-  hasMultipleIncomeSources: boolean;
-
-  @ApiProperty({ type: [QuoteAdditionalIncomeSnapshot] })
-  additionalIncomes: QuoteAdditionalIncomeSnapshot[];
-
-  @ApiPropertyOptional({ enum: AvailableIncomeProof })
-  availableIncomeProof?: AvailableIncomeProof;
+  @ApiProperty({ type: [QuoteIncomeEntrySnapshot] })
+  incomes: QuoteIncomeEntrySnapshot[];
 }

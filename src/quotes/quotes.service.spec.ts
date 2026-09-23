@@ -30,7 +30,7 @@ import {
 import { GuarantorRelationship } from './enums/quote-guarantor.enum';
 import {
   ActivityDuration,
-  AvailableIncomeProof,
+  IncomeEntryRole,
   IncomeSource,
 } from './enums/quote-income.enum';
 import {
@@ -90,24 +90,39 @@ const registration: SaveQuoteRegistrationDto = {
 };
 
 const income: SaveQuoteIncomeDto = {
-  profession: ' Comerciante ',
-  economicActivityCategories: [
-    EconomicActivityCategory.BUSINESS_OWNER,
-    EconomicActivityCategory.OTHER,
+  incomes: [
+    {
+      id: 'primary',
+      role: IncomeEntryRole.PRIMARY,
+      economicActivity: EconomicActivityCategory.OTHER,
+      economicActivityOther: ' Artesanato ',
+      businessActivityBranch: BusinessActivityBranch.RETAIL_COMMERCE,
+      businessActivitySubcategory: BusinessActivitySubcategory.GENERAL_COMMERCE,
+      activityDuration: ActivityDuration.THREE_TO_5_YEARS,
+      amount: 3500,
+      source: IncomeSource.OTHER,
+    },
+    {
+      id: 'secondary-1',
+      role: IncomeEntryRole.SECONDARY,
+      economicActivity: EconomicActivityCategory.BUSINESS_OWNER,
+      businessActivityBranch: BusinessActivityBranch.RETAIL_COMMERCE,
+      businessActivitySubcategory: BusinessActivitySubcategory.GENERAL_COMMERCE,
+      activityDuration: ActivityDuration.ONE_TO_3_YEARS,
+      amount: 800,
+      source: IncomeSource.RENT,
+    },
+    {
+      id: 'secondary-2',
+      role: IncomeEntryRole.SECONDARY,
+      economicActivity: EconomicActivityCategory.BUSINESS_OWNER,
+      businessActivityBranch: BusinessActivityBranch.RETAIL_COMMERCE,
+      businessActivitySubcategory: BusinessActivitySubcategory.GENERAL_COMMERCE,
+      activityDuration: ActivityDuration.ONE_TO_3_YEARS,
+      amount: 250,
+      source: IncomeSource.OTHER,
+    },
   ],
-  economicActivityOther: ' Artesanato ',
-  businessActivityBranch: BusinessActivityBranch.RETAIL_COMMERCE,
-  businessActivitySubcategory: BusinessActivitySubcategory.GENERAL_COMMERCE,
-  businessDocument: '11.222.333/0001-81',
-  activityDuration: ActivityDuration.THREE_TO_5_YEARS,
-  declaredMonthlyIncome: 3500,
-  incomeSource: IncomeSource.MIXED_INCOME,
-  hasMultipleIncomeSources: true,
-  additionalIncomes: [
-    { source: IncomeSource.RENT, amount: 800 },
-    { source: IncomeSource.OTHER, amount: 250 },
-  ],
-  availableIncomeProof: AvailableIncomeProof.BANK_STATEMENT,
 };
 
 const address: SaveQuoteAddressDto = {
@@ -233,6 +248,11 @@ interface BuildOptions {
   createError?: Error & { code?: string };
   quoteDocument?: string;
   completedSteps?: QuoteDraftStep[];
+  capacity?: {
+    personalIncome: number;
+    activityIncome: number;
+    installmentAmount: number;
+  };
 }
 
 async function build(options: BuildOptions = {}) {
@@ -274,6 +294,19 @@ async function build(options: BuildOptions = {}) {
                 : (options.quote ?? null),
           ),
       ),
+      findUniqueOrThrow: jest.fn().mockResolvedValue({
+        personal_income: new Prisma.Decimal(
+          options.capacity?.personalIncome ?? 3500,
+        ),
+        activity_income: new Prisma.Decimal(
+          options.capacity?.activityIncome ?? 1050,
+        ),
+        simulations: {
+          installment_amount: new Prisma.Decimal(
+            options.capacity?.installmentAmount ?? 815.97,
+          ),
+        },
+      }),
       create: createQuote,
     },
     quote_draft_steps: {
@@ -706,23 +739,12 @@ describe('QuoteDraftIncomeService.save', () => {
       step: QuoteDraftStep.INCOME,
       completedAt: STEP_COMPLETED_AT,
       updatedAt: STEP_UPDATED_AT,
-      businessDocument: '11222333000181',
-      economicActivityCategories: [
-        EconomicActivityCategory.BUSINESS_OWNER,
-        EconomicActivityCategory.OTHER,
+      incomeModelVersion: 1,
+      incomes: [
+        { ...income.incomes[0], economicActivityOther: 'Artesanato' },
+        income.incomes[1],
+        income.incomes[2],
       ],
-      economicActivityOther: 'Artesanato',
-      businessActivityBranch: BusinessActivityBranch.RETAIL_COMMERCE,
-      businessActivitySubcategory: BusinessActivitySubcategory.GENERAL_COMMERCE,
-      activityDuration: ActivityDuration.THREE_TO_5_YEARS,
-      declaredMonthlyIncome: 3500,
-      incomeSource: IncomeSource.MIXED_INCOME,
-      hasMultipleIncomeSources: true,
-      additionalIncomes: [
-        { source: IncomeSource.RENT, amount: 800 },
-        { source: IncomeSource.OTHER, amount: 250 },
-      ],
-      availableIncomeProof: AvailableIncomeProof.BANK_STATEMENT,
     });
 
     expect(tx.quotes.updateMany).toHaveBeenCalledWith({
@@ -732,21 +754,28 @@ describe('QuoteDraftIncomeService.save', () => {
         current_sales_agent_id: OWNER_ID,
       },
       data: {
+        income_model_version: 1,
+        income_entries: [
+          { ...income.incomes[0], economicActivityOther: 'Artesanato' },
+          income.incomes[1],
+          income.incomes[2],
+        ],
         profession: null,
-        economic_activity_categories: income.economicActivityCategories,
+        economic_activity_categories: [EconomicActivityCategory.OTHER],
         economic_activity_other: 'Artesanato',
         business_activity_branch: 'retail_commerce',
         business_activity_subcategory: 'general_commerce',
-        business_document: '11222333000181',
+        business_document: null,
         activity_duration: ActivityDuration.THREE_TO_5_YEARS,
         personal_income: 3500,
-        income_source: IncomeSource.MIXED_INCOME,
+        activity_income: 1050,
+        familiar_income: 0,
+        income_source: IncomeSource.OTHER,
         has_multiple_income_sources: true,
         additional_incomes: [
           { source: IncomeSource.RENT, amount: 800 },
           { source: IncomeSource.OTHER, amount: 250 },
         ],
-        available_income_proof: AvailableIncomeProof.BANK_STATEMENT,
         updated_at: expect.any(Date) as unknown,
       },
     });
@@ -768,16 +797,13 @@ describe('QuoteDraftIncomeService.save', () => {
     });
   });
 
-  it('aceita CNPJ ausente e limpa as rendas adicionais quando não há múltiplas fontes', async () => {
+  it('salva somente a renda principal quando não há rendas secundárias', async () => {
     const { incomeService: service, tx } = await build();
 
     const result = await service.save(
       QUOTE_ID,
       {
-        ...income,
-        businessDocument: undefined,
-        hasMultipleIncomeSources: false,
-        additionalIncomes: [{ source: IncomeSource.RENT, amount: 999 }],
+        incomes: [income.incomes[0]],
       },
       actor(),
     );
@@ -791,8 +817,7 @@ describe('QuoteDraftIncomeService.save', () => {
         }) as unknown,
       }),
     );
-    expect(result).not.toHaveProperty('businessDocument');
-    expect(result.additionalIncomes).toEqual([]);
+    expect(result.incomes).toHaveLength(1);
   });
 
   it('normaliza profissão e limpa a descrição de Outros quando não se aplica', async () => {
@@ -801,10 +826,14 @@ describe('QuoteDraftIncomeService.save', () => {
     const result = await service.save(
       QUOTE_ID,
       {
-        ...income,
-        economicActivityCategories: [EconomicActivityCategory.CLT_EMPLOYEE],
-        economicActivityOther: 'Ignorar',
-        profession: ' Recepcionista ',
+        incomes: [
+          {
+            ...income.incomes[0],
+            economicActivity: EconomicActivityCategory.CLT_EMPLOYEE,
+            economicActivityOther: 'Ignorar',
+            profession: ' Recepcionista ',
+          },
+        ],
       },
       actor(),
     );
@@ -817,8 +846,8 @@ describe('QuoteDraftIncomeService.save', () => {
         }) as unknown,
       }),
     );
-    expect(result.profession).toBe('Recepcionista');
-    expect(result).not.toHaveProperty('economicActivityOther');
+    expect(result.incomes[0].profession).toBe('Recepcionista');
+    expect(result.incomes[0]).not.toHaveProperty('economicActivityOther');
   });
 
   it('aceita subcategoria "Outro" em qualquer ramo de atividade', async () => {
@@ -828,49 +857,71 @@ describe('QuoteDraftIncomeService.save', () => {
       service.save(
         QUOTE_ID,
         {
-          ...income,
-          businessActivityBranch: BusinessActivityBranch.FOOD,
-          businessActivitySubcategory: BusinessActivitySubcategory.OTHER,
+          incomes: [
+            {
+              ...income.incomes[0],
+              businessActivityBranch: BusinessActivityBranch.FOOD,
+              businessActivitySubcategory: BusinessActivitySubcategory.OTHER,
+            },
+          ],
         },
         actor(),
       ),
     ).resolves.toMatchObject({
-      businessActivityBranch: BusinessActivityBranch.FOOD,
-      businessActivitySubcategory: BusinessActivitySubcategory.OTHER,
+      incomes: [
+        expect.objectContaining({
+          businessActivityBranch: BusinessActivityBranch.FOOD,
+          businessActivitySubcategory: BusinessActivitySubcategory.OTHER,
+        }),
+      ],
     });
   });
 
   it.each([
     {
-      name: 'CNPJ inválido',
-      dto: { ...income, businessDocument: '11111111111111' },
+      name: 'primeira renda secundária',
+      dto: {
+        incomes: [{ ...income.incomes[0], role: IncomeEntryRole.SECONDARY }],
+      },
     },
     {
-      name: 'múltiplas fontes sem renda adicional',
-      dto: { ...income, additionalIncomes: [] },
+      name: 'identificador duplicado',
+      dto: {
+        incomes: [
+          income.incomes[0],
+          { ...income.incomes[1], id: income.incomes[0].id },
+        ],
+      },
     },
     {
       name: 'subcategoria que não pertence ao ramo de atividade',
       dto: {
-        ...income,
-        businessActivityBranch: BusinessActivityBranch.FOOD,
-        businessActivitySubcategory:
-          BusinessActivitySubcategory.GENERAL_COMMERCE,
+        incomes: [
+          {
+            ...income.incomes[0],
+            businessActivityBranch: BusinessActivityBranch.FOOD,
+            businessActivitySubcategory:
+              BusinessActivitySubcategory.GENERAL_COMMERCE,
+          },
+        ],
       },
     },
     {
       name: 'atividade Outros sem descrição',
       dto: {
-        ...income,
-        economicActivityOther: undefined,
+        incomes: [{ ...income.incomes[0], economicActivityOther: undefined }],
       },
     },
     {
       name: 'CLT sem profissão',
       dto: {
-        ...income,
-        economicActivityCategories: [EconomicActivityCategory.CLT_EMPLOYEE],
-        profession: undefined,
+        incomes: [
+          {
+            ...income.incomes[0],
+            economicActivity: EconomicActivityCategory.CLT_EMPLOYEE,
+            profession: undefined,
+          },
+        ],
       },
     },
   ])('recusa $name', async ({ dto }) => {
@@ -1512,6 +1563,21 @@ describe('QuoteDraftFinancialService.save', () => {
         }) as unknown,
       }),
     );
+  });
+
+  it('recusa quando rendas não familiares menos compromissos não cobrem a parcela', async () => {
+    const { financialService: service, tx } = await build({
+      capacity: {
+        personalIncome: 1000,
+        activityIncome: 200,
+        installmentAmount: 500,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, financial, actor()),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
   });
 
   it.each([

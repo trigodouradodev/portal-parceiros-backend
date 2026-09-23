@@ -1,11 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { BrazilState } from '../../common/brazil-state.enum';
 import { QuoteDraftStep } from '../enums/quote-draft-step.enum';
-import {
-  AvailableIncomeProof,
-  ActivityDuration,
-  IncomeSource,
-} from '../enums/quote-income.enum';
+import { AvailableIncomeProof } from '../enums/quote-income.enum';
 import {
   CustomerRelationshipDuration,
   CustomerRelationshipOrigin,
@@ -31,7 +27,7 @@ import { PaymentPixType } from '../enums/quote-financial.enum';
 import { QuoteGeolocationSnapshot } from './quote-address-snapshot.interface';
 import { GuarantorRelationship } from '../enums/quote-guarantor.enum';
 import { QuoteConsultantSummary } from './quote-list.interface';
-import { QuoteAdditionalIncomeSnapshot } from './quote-income-snapshot.interface';
+import { QuoteIncomeEntrySnapshot } from './quote-income-snapshot.interface';
 
 export class QuoteRegistrationDetail {
   @ApiProperty()
@@ -90,23 +86,11 @@ export class QuoteRegistrationDetail {
 }
 
 export class QuoteIncomeDetail {
-  @ApiPropertyOptional({ nullable: true })
-  businessDocument: string | null;
-
-  @ApiPropertyOptional({ enum: ActivityDuration, nullable: true })
-  activityDuration: ActivityDuration | null;
-
   @ApiProperty()
-  declaredMonthlyIncome: number;
+  incomeModelVersion: number;
 
-  @ApiPropertyOptional({ enum: IncomeSource, nullable: true })
-  incomeSource: IncomeSource | null;
-
-  @ApiPropertyOptional({ nullable: true })
-  hasMultipleIncomeSources: boolean | null;
-
-  @ApiProperty({ type: [QuoteAdditionalIncomeSnapshot] })
-  additionalIncomes: QuoteAdditionalIncomeSnapshot[];
+  @ApiProperty({ type: [QuoteIncomeEntrySnapshot] })
+  incomes: QuoteIncomeEntrySnapshot[];
 
   @ApiPropertyOptional({ enum: AvailableIncomeProof, nullable: true })
   availableIncomeProof: AvailableIncomeProof | null;

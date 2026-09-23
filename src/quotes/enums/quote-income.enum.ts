@@ -12,7 +12,22 @@ export enum IncomeSource {
   BENEFIT = 'benefit',
   RENT = 'rent',
   MIXED_INCOME = 'mixed_income',
+  FAMILY_INCOME = 'family_income',
   OTHER = 'other',
+}
+
+export enum IncomeEntryRole {
+  PRIMARY = 'primary',
+  SECONDARY = 'secondary',
+}
+
+export enum FamilyRelationship {
+  SPOUSE = 'spouse',
+  FATHER = 'father',
+  MOTHER = 'mother',
+  CHILD = 'child',
+  SIBLING = 'sibling',
+  OTHER_RELATIVE = 'other_relative',
 }
 
 export enum AvailableIncomeProof {
