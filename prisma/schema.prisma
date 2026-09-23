@@ -1391,6 +1391,8 @@ model quotes {
   income_source                                               String?                      @db.VarChar(30)
   has_multiple_income_sources                                 Boolean?
   additional_incomes                                          Json                         @default("[]")
+  income_model_version                                        Int                          @default(0) @db.SmallInt
+  income_entries                                              Json                         @default("[]")
   available_income_proof                                      String?                      @db.VarChar(30)
   customer_relationship_duration                              String?                      @db.VarChar(30)
   customer_relationship_origin                                String?                      @db.VarChar(50)

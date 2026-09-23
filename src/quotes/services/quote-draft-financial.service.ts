@@ -66,6 +66,36 @@ export class QuoteDraftFinancialService {
         );
       }
 
+      const capacity = await tx.quotes.findUniqueOrThrow({
+        where: { id: quoteId },
+        select: {
+          personal_income: true,
+          activity_income: true,
+          simulations: { select: { installment_amount: true } },
+        },
+      });
+      const consideredIncome =
+        Number(capacity.personal_income) + Number(capacity.activity_income);
+      const committedAmount =
+        financial.expenses.reduce(
+          (total, expense) => total + expense.amount,
+          0,
+        ) +
+        financial.loans.reduce(
+          (total, loan) => total + loan.installmentAmount,
+          0,
+        );
+      const installmentAmount = Number(
+        capacity.simulations?.installment_amount ?? 0,
+      );
+      const availableForInstallment = consideredIncome - committedAmount;
+
+      if (availableForInstallment < installmentAmount) {
+        throw new BadRequestException(
+          `A parcela excede o montante disponível de R$ ${availableForInstallment.toFixed(2)}. Ajuste as rendas, despesas, empréstimos ou a simulação para continuar.`,
+        );
+      }
+
       const progress = await this.quoteDraftSteps.completeWithinTransaction(
         tx,
         quoteId,

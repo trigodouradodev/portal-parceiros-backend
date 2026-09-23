@@ -2,18 +2,23 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../../auth/permissions/permission-keys';
-import { normalizeCnpj } from '../../common/cnpj.util';
 import { PrismaService } from '../../prisma/prisma.service';
-import { SaveQuoteIncomeDto } from '../dto/save-quote-income.dto';
+import {
+  QuoteIncomeEntryDto,
+  SaveQuoteIncomeDto,
+} from '../dto/save-quote-income.dto';
 import { QuoteDraftStep } from '../enums/quote-draft-step.enum';
-import { AvailableIncomeProof } from '../enums/quote-income.enum';
+import { IncomeEntryRole, IncomeSource } from '../enums/quote-income.enum';
 import {
   EconomicActivityCategory,
   isSubcategoryValidForBranch,
   requiresProfession,
 } from '../enums/quote-registration.enum';
 import { QuoteStatus } from '../enums/quote-status.enum';
-import { QuoteIncomeSnapshot } from '../interfaces/quote-income-snapshot.interface';
+import {
+  QuoteIncomeEntrySnapshot,
+  QuoteIncomeSnapshot,
+} from '../interfaces/quote-income-snapshot.interface';
 import { QuoteDraftStepsService } from './quote-draft-steps.service';
 
 @Injectable()
@@ -28,7 +33,15 @@ export class QuoteDraftIncomeService {
     dto: SaveQuoteIncomeDto,
     actor: JwtPayload,
   ): Promise<QuoteIncomeSnapshot> {
-    const income = normalizeIncome(dto);
+    const incomes = normalizeIncomes(dto);
+    const primary = incomes[0];
+    const secondaryIncomes = incomes.slice(1);
+    const activityIncome = secondaryIncomes
+      .filter((income) => income.source !== IncomeSource.FAMILY_INCOME)
+      .reduce((total, income) => total + income.amount, 0);
+    const familiarIncome = secondaryIncomes
+      .filter((income) => income.source === IncomeSource.FAMILY_INCOME)
+      .reduce((total, income) => total + income.amount, 0);
 
     return this.prisma.$transaction(async (tx) => {
       const updatedAt = new Date();
@@ -40,19 +53,26 @@ export class QuoteDraftIncomeService {
           ...(isAdmin ? {} : { current_sales_agent_id: actor.sub }),
         },
         data: {
-          profession: income.profession,
-          economic_activity_categories: income.economicActivityCategories,
-          economic_activity_other: income.economicActivityOther,
-          business_activity_branch: income.businessActivityBranch,
-          business_activity_subcategory: income.businessActivitySubcategory,
-          business_document: income.businessDocument,
-          activity_duration: income.activityDuration,
-          personal_income: income.declaredMonthlyIncome,
-          income_source: income.incomeSource,
-          has_multiple_income_sources: income.hasMultipleIncomeSources,
-          additional_incomes:
-            income.additionalIncomes as unknown as Prisma.InputJsonValue,
-          available_income_proof: income.availableIncomeProof,
+          income_model_version: 1,
+          income_entries: incomes as unknown as Prisma.InputJsonValue,
+          profession: primary.profession ?? null,
+          economic_activity_categories: [primary.economicActivity],
+          economic_activity_other: primary.economicActivityOther ?? null,
+          business_activity_branch: primary.businessActivityBranch,
+          business_activity_subcategory: primary.businessActivitySubcategory,
+          business_document: null,
+          activity_duration: primary.activityDuration,
+          personal_income: primary.amount,
+          activity_income: activityIncome,
+          familiar_income: familiarIncome,
+          income_source: primary.source,
+          // Espelhos transitórios para consumidores da V1 anterior. Serão
+          // removidos somente na migration de limpeza pós-rollout.
+          has_multiple_income_sources: incomes.length > 1,
+          additional_incomes: secondaryIncomes.map((income) => ({
+            source: income.source,
+            amount: income.amount,
+          })) as unknown as Prisma.InputJsonValue,
           updated_at: updatedAt,
         },
       });
@@ -80,96 +100,103 @@ export class QuoteDraftIncomeService {
         step: QuoteDraftStep.INCOME,
         completedAt: progress.completed_at,
         updatedAt: progress.updated_at,
-        ...(income.businessDocument === null
-          ? {}
-          : { businessDocument: income.businessDocument }),
-        ...(income.profession === null
-          ? {}
-          : { profession: income.profession }),
-        economicActivityCategories: income.economicActivityCategories,
-        ...(income.economicActivityOther === null
-          ? {}
-          : { economicActivityOther: income.economicActivityOther }),
-        businessActivityBranch: income.businessActivityBranch,
-        businessActivitySubcategory: income.businessActivitySubcategory,
-        activityDuration: income.activityDuration,
-        declaredMonthlyIncome: income.declaredMonthlyIncome,
-        incomeSource: income.incomeSource,
-        hasMultipleIncomeSources: income.hasMultipleIncomeSources,
-        additionalIncomes: income.additionalIncomes,
-        ...(income.availableIncomeProof === null
-          ? {}
-          : { availableIncomeProof: income.availableIncomeProof }),
+        incomeModelVersion: 1,
+        incomes,
       };
     });
   }
 }
 
-type NormalizedIncome = Omit<
-  SaveQuoteIncomeDto,
-  | 'businessDocument'
-  | 'availableIncomeProof'
-  | 'profession'
-  | 'economicActivityOther'
-> & {
-  businessDocument: string | null;
-  availableIncomeProof: AvailableIncomeProof | null;
-  profession: string | null;
-  economicActivityOther: string | null;
-};
-
-function normalizeIncome(dto: SaveQuoteIncomeDto): NormalizedIncome {
-  const businessDocument = dto.businessDocument
-    ? normalizeCnpj(dto.businessDocument)
-    : null;
-
-  const professionRequired = requiresProfession(dto.economicActivityCategories);
-  const profession = professionRequired ? (dto.profession?.trim() ?? '') : null;
-  if (professionRequired && (!profession || profession.length < 2)) {
-    throw new BadRequestException('Informe a profissão.');
+function normalizeIncomes(dto: SaveQuoteIncomeDto): QuoteIncomeEntrySnapshot[] {
+  if (dto.incomes[0]?.role !== IncomeEntryRole.PRIMARY) {
+    throw new BadRequestException('A primeira renda deve ser a principal.');
   }
-
-  const hasOtherActivity = dto.economicActivityCategories.includes(
-    EconomicActivityCategory.OTHER,
-  );
-  const economicActivityOther = hasOtherActivity
-    ? (dto.economicActivityOther?.trim() ?? '')
-    : null;
   if (
-    hasOtherActivity &&
-    (!economicActivityOther || economicActivityOther.length < 2)
+    dto.incomes
+      .slice(1)
+      .some((income) => income.role !== IncomeEntryRole.SECONDARY)
   ) {
     throw new BadRequestException(
-      'Informe a categoria de atividade econômica em Outros.',
+      'Somente a primeira renda pode ser marcada como principal.',
+    );
+  }
+  if (
+    new Set(dto.incomes.map((income) => income.id)).size !== dto.incomes.length
+  ) {
+    throw new BadRequestException(
+      'Cada renda deve possuir um identificador único.',
+    );
+  }
+
+  return dto.incomes.map((income, index) =>
+    normalizeIncomeEntry(income, index),
+  );
+}
+
+function normalizeIncomeEntry(
+  income: QuoteIncomeEntryDto,
+  index: number,
+): QuoteIncomeEntrySnapshot {
+  if (
+    income.role === IncomeEntryRole.PRIMARY &&
+    income.source === IncomeSource.FAMILY_INCOME
+  ) {
+    throw new BadRequestException(
+      'Renda Familiar é permitida apenas como renda secundária.',
     );
   }
 
   if (
     !isSubcategoryValidForBranch(
-      dto.businessActivityBranch,
-      dto.businessActivitySubcategory,
+      income.businessActivityBranch,
+      income.businessActivitySubcategory,
     )
   ) {
     throw new BadRequestException(
-      'A subcategoria não pertence ao ramo de atividade selecionado.',
+      `A subcategoria da renda ${index + 1} não pertence ao ramo selecionado.`,
     );
   }
 
-  if (dto.hasMultipleIncomeSources && dto.additionalIncomes.length === 0) {
-    throw new BadRequestException('Informe ao menos uma renda adicional.');
+  const professionRequired = requiresProfession([income.economicActivity]);
+  const profession = professionRequired ? income.profession?.trim() : undefined;
+  if (professionRequired && (!profession || profession.length < 2)) {
+    throw new BadRequestException(`Informe a profissão da renda ${index + 1}.`);
+  }
+
+  const hasOtherActivity =
+    income.economicActivity === EconomicActivityCategory.OTHER;
+  const economicActivityOther = hasOtherActivity
+    ? income.economicActivityOther?.trim()
+    : undefined;
+  if (
+    hasOtherActivity &&
+    (!economicActivityOther || economicActivityOther.length < 2)
+  ) {
+    throw new BadRequestException(
+      `Informe a atividade econômica da renda ${index + 1}.`,
+    );
+  }
+
+  const isFamilyIncome = income.source === IncomeSource.FAMILY_INCOME;
+  if (isFamilyIncome && !income.familyRelationship) {
+    throw new BadRequestException(
+      `Informe o grau de parentesco da renda ${index + 1}.`,
+    );
   }
 
   return {
-    ...dto,
-    businessDocument,
-    profession,
-    economicActivityOther,
-    availableIncomeProof: dto.availableIncomeProof ?? null,
-    additionalIncomes: dto.hasMultipleIncomeSources
-      ? dto.additionalIncomes.map((additionalIncome) => ({
-          source: additionalIncome.source,
-          amount: additionalIncome.amount,
-        }))
-      : [],
+    id: income.id.trim(),
+    role: income.role,
+    economicActivity: income.economicActivity,
+    ...(economicActivityOther ? { economicActivityOther } : {}),
+    ...(profession ? { profession } : {}),
+    businessActivityBranch: income.businessActivityBranch,
+    businessActivitySubcategory: income.businessActivitySubcategory,
+    activityDuration: income.activityDuration,
+    amount: income.amount,
+    source: income.source,
+    ...(isFamilyIncome && income.familyRelationship
+      ? { familyRelationship: income.familyRelationship }
+      : {}),
   };
 }

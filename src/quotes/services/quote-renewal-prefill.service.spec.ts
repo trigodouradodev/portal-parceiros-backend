@@ -20,7 +20,7 @@ const sourceQuote = {
   profession: 'Comerciante',
   business_activity_branch: 'retail_commerce',
   business_activity_subcategory: 'general_commerce',
-  economic_activity_categories: ['commerce'],
+  economic_activity_categories: ['self_employed_or_informal'],
   economic_activity_other: null,
   marital_status: 'single',
   spouse_document: null,
@@ -35,9 +35,11 @@ const sourceQuote = {
   business_document: '11222333000181',
   activity_duration: 'more_than_5_years',
   personal_income: new Prisma.Decimal(4500),
-  income_source: 'self_employed',
+  income_source: 'own_business',
   has_multiple_income_sources: true,
   additional_incomes: [{ source: 'other', amount: 900 }],
+  income_model_version: 0,
+  income_entries: [],
   available_income_proof: 'bank_statement',
   client_address: {
     zipCode: '20000000',
@@ -167,6 +169,23 @@ describe('QuoteRenewalPrefillService', () => {
       business_activity_branch: sourceQuote.business_activity_branch,
       business_activity_subcategory: sourceQuote.business_activity_subcategory,
       personal_income: sourceQuote.personal_income,
+      income_model_version: 1,
+      income_entries: [
+        expect.objectContaining({
+          id: 'renewal-primary',
+          role: 'primary',
+          economicActivity: 'self_employed_or_informal',
+          amount: 4500,
+          source: 'own_business',
+        }),
+        expect.objectContaining({
+          id: 'renewal-secondary-1',
+          role: 'secondary',
+          economicActivity: '',
+          amount: 900,
+          source: 'other',
+        }),
+      ],
       client_address: {
         zipCode: '01001000',
         streetName: 'Rua atual da party',
@@ -185,6 +204,7 @@ describe('QuoteRenewalPrefillService', () => {
     expect(update).not.toHaveProperty('guarantor');
     expect(update).not.toHaveProperty('debts');
     expect(update).not.toHaveProperty('loans');
+    expect(update).not.toHaveProperty('business_document');
 
     expect(quoteEvents.createWithinTransaction).toHaveBeenCalledWith(tx, {
       quoteId: QUOTE_ID,

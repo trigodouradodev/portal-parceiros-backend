@@ -3,12 +3,9 @@ import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
-  ArrayUnique,
-  IsBoolean,
   IsArray,
   IsEnum,
   IsNumber,
-  IsOptional,
   IsString,
   MaxLength,
   Min,
@@ -18,7 +15,8 @@ import {
 } from 'class-validator';
 import {
   ActivityDuration,
-  AvailableIncomeProof,
+  FamilyRelationship,
+  IncomeEntryRole,
   IncomeSource,
 } from '../enums/quote-income.enum';
 import {
@@ -31,30 +29,26 @@ import {
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
-export class QuoteAdditionalIncomeDto {
-  @ApiProperty({ enum: IncomeSource })
-  @IsEnum(IncomeSource)
-  source: IncomeSource;
+export class QuoteIncomeEntryDto {
+  @ApiProperty({ example: 'income-1' })
+  @Transform(trim)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  id: string;
 
-  @ApiProperty({ example: 800, minimum: 0.01 })
-  @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0.01)
-  amount: number;
-}
+  @ApiProperty({ enum: IncomeEntryRole })
+  @IsEnum(IncomeEntryRole)
+  role: IncomeEntryRole;
 
-export class SaveQuoteIncomeDto {
-  @ApiProperty({ enum: EconomicActivityCategory, isArray: true })
-  @IsArray()
-  @ArrayMinSize(1)
-  @ArrayMaxSize(7)
-  @ArrayUnique()
-  @IsEnum(EconomicActivityCategory, { each: true })
-  economicActivityCategories: EconomicActivityCategory[];
+  @ApiProperty({ enum: EconomicActivityCategory })
+  @IsEnum(EconomicActivityCategory)
+  economicActivity: EconomicActivityCategory;
 
   @ApiPropertyOptional({ example: 'Artesanato' })
-  @ValidateIf((dto: SaveQuoteIncomeDto) =>
-    dto.economicActivityCategories?.includes(EconomicActivityCategory.OTHER),
+  @ValidateIf(
+    (dto: QuoteIncomeEntryDto) =>
+      dto.economicActivity === EconomicActivityCategory.OTHER,
   )
   @Transform(trim)
   @IsString()
@@ -62,13 +56,9 @@ export class SaveQuoteIncomeDto {
   @MaxLength(500)
   economicActivityOther?: string;
 
-  @ApiPropertyOptional({
-    example: 'Comerciante',
-    description:
-      'Exigido para CLT, Servidor Público, Aposentado/Pensionista e Desempregado.',
-  })
-  @ValidateIf((dto: SaveQuoteIncomeDto) =>
-    requiresProfession(dto.economicActivityCategories ?? []),
+  @ApiPropertyOptional({ example: 'Comerciante' })
+  @ValidateIf((dto: QuoteIncomeEntryDto) =>
+    requiresProfession([dto.economicActivity]),
   )
   @Transform(trim)
   @IsString()
@@ -76,64 +66,42 @@ export class SaveQuoteIncomeDto {
   @MaxLength(255)
   profession?: string;
 
-  @ApiProperty({
-    enum: BusinessActivityBranch,
-    description: 'Ramo de atividade do cliente.',
-  })
+  @ApiProperty({ enum: BusinessActivityBranch })
   @IsEnum(BusinessActivityBranch)
   businessActivityBranch: BusinessActivityBranch;
 
-  @ApiProperty({
-    enum: BusinessActivitySubcategory,
-    description: 'Subcategoria pertencente ao ramo de atividade selecionado.',
-  })
+  @ApiProperty({ enum: BusinessActivitySubcategory })
   @IsEnum(BusinessActivitySubcategory)
   businessActivitySubcategory: BusinessActivitySubcategory;
-
-  @ApiPropertyOptional({
-    example: '11222333000181',
-    description: 'CNPJ opcional, com ou sem máscara.',
-  })
-  @IsOptional()
-  @Transform(trim)
-  @IsString()
-  @MinLength(14)
-  @MaxLength(18)
-  businessDocument?: string;
 
   @ApiProperty({ enum: ActivityDuration })
   @IsEnum(ActivityDuration)
   activityDuration: ActivityDuration;
 
-  @ApiProperty({ example: 3500, minimum: 0 })
+  @ApiProperty({ example: 3500, minimum: 0.01 })
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  declaredMonthlyIncome: number;
+  @Min(0.01)
+  amount: number;
 
   @ApiProperty({ enum: IncomeSource })
   @IsEnum(IncomeSource)
-  incomeSource: IncomeSource;
+  source: IncomeSource;
 
-  @ApiProperty()
-  @IsBoolean()
-  hasMultipleIncomeSources: boolean;
+  @ApiPropertyOptional({ enum: FamilyRelationship })
+  @ValidateIf(
+    (dto: QuoteIncomeEntryDto) => dto.source === IncomeSource.FAMILY_INCOME,
+  )
+  @IsEnum(FamilyRelationship)
+  familyRelationship?: FamilyRelationship;
+}
 
-  @ApiProperty({ type: [QuoteAdditionalIncomeDto] })
+export class SaveQuoteIncomeDto {
+  @ApiProperty({ type: [QuoteIncomeEntryDto] })
   @IsArray()
-  @ArrayMaxSize(50)
+  @ArrayMinSize(1)
+  @ArrayMaxSize(10)
   @ValidateNested({ each: true })
-  @Type(() => QuoteAdditionalIncomeDto)
-  additionalIncomes: QuoteAdditionalIncomeDto[];
-
-  @ApiPropertyOptional({
-    enum: AvailableIncomeProof,
-    description:
-      'Legado: mantido apenas para compatibilidade com dados já salvos. O ' +
-      'comprovante de renda agora é sempre obrigatório na Documentação, ' +
-      'independentemente deste campo.',
-  })
-  @IsOptional()
-  @IsEnum(AvailableIncomeProof)
-  availableIncomeProof?: AvailableIncomeProof;
+  @Type(() => QuoteIncomeEntryDto)
+  incomes: QuoteIncomeEntryDto[];
 }
