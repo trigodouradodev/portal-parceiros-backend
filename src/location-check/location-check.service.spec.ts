@@ -328,6 +328,25 @@ describe('verify — distância e raio', () => {
     expect(result.confirmationLevel).toBeNull();
     expect(result.withinRadius).toBe(false);
   });
+
+  it('não deixa o bônus de GPS passar do teto de proximidade', async () => {
+    const { service } = await build({
+      radiusMeters: 250,
+      proximityRadiusMeters: 300,
+    });
+    // ~333 m — além dos 300 m, mesmo com bônus que levaria o raio exato a 350.
+    const result = await service.verify(
+      dto({
+        latitude: REGISTERED.latitude + 0.003,
+        accuracyMeters: 100,
+      }),
+    );
+
+    expect(result.effectiveRadiusMeters).toBe(300);
+    expect(result.proximityRadiusMeters).toBe(300);
+    expect(result.confirmationLevel).toBeNull();
+    expect(result.withinRadius).toBe(false);
+  });
 });
 
 describe('verify — resposta', () => {
@@ -346,9 +365,11 @@ describe('verify — resposta', () => {
     expect(result.matchedAddress).toBe(
       'R. das Flores, 123 - Centro, São Paulo - SP, Brasil',
     );
-    // Repassados para o caller decidir o quanto confiar no raio.
     expect(result.locationType).toBe('APPROXIMATE');
     expect(result.partialMatch).toBe(true);
+    expect(result.addressLikelyWrong).toBe(true);
+    expect(result.confirmationLevel).toBeNull();
+    expect(result.withinRadius).toBe(false);
   });
 
   it('responde 200 mesmo fora do raio — "fora" é resultado válido, não erro', async () => {
@@ -378,6 +399,8 @@ describe('verify — addressLikelyWrong (AUREA-352)', () => {
     const result = await service.verify(dto());
 
     expect(result.addressLikelyWrong).toBe(true);
+    expect(result.confirmationLevel).toBeNull();
+    expect(result.withinRadius).toBe(false);
   });
 
   it('true quando locationType não é ROOFTOP, mesmo citando a cidade certa no texto', async () => {
@@ -397,6 +420,8 @@ describe('verify — addressLikelyWrong (AUREA-352)', () => {
     const result = await service.verify(dto());
 
     expect(result.addressLikelyWrong).toBe(true);
+    expect(result.confirmationLevel).toBeNull();
+    expect(result.withinRadius).toBe(false);
   });
 
   it('true também para GEOMETRIC_CENTER e APPROXIMATE — só ROOFTOP é confiável', async () => {
@@ -406,6 +431,8 @@ describe('verify — addressLikelyWrong (AUREA-352)', () => {
       });
       const result = await service.verify(dto());
       expect(result.addressLikelyWrong).toBe(true);
+      expect(result.confirmationLevel).toBeNull();
+      expect(result.withinRadius).toBe(false);
     }
   });
 

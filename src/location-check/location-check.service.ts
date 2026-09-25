@@ -90,19 +90,31 @@ export class LocationCheckService {
     const radiusMeters =
       this.config.get<number>('geocoding.radiusMeters') ??
       DEFAULT_RADIUS_METERS;
-    const proximityRadiusMeters =
+    const configuredProximityMeters =
       this.config.get<number>('geocoding.proximityRadiusMeters') ??
       DEFAULT_PROXIMITY_RADIUS_METERS;
     const accuracyBonus = Math.min(
       Math.max(dto.accuracyMeters ?? 0, 0),
       MAX_ACCURACY_BONUS_METERS,
     );
-    const effectiveRadiusMeters = radiusMeters + accuracyBonus;
-    const confirmationLevel = this.resolveConfirmationLevel(
-      distanceMeters,
-      effectiveRadiusMeters,
+    // A faixa de proximidade é o teto. O bônus de GPS não empurra o raio
+    // exato para além dela; se o raio base já for maior, a faixa sobe junto.
+    const proximityRadiusMeters = Math.max(
+      configuredProximityMeters,
+      radiusMeters,
+    );
+    const effectiveRadiusMeters = Math.min(
+      radiusMeters + accuracyBonus,
       proximityRadiusMeters,
     );
+    const addressLikelyWrong = this.isAddressLikelyWrong(geo, address.city);
+    const confirmationLevel = addressLikelyWrong
+      ? null
+      : this.resolveConfirmationLevel(
+          distanceMeters,
+          effectiveRadiusMeters,
+          proximityRadiusMeters,
+        );
 
     return {
       withinRadius: confirmationLevel !== null,
@@ -122,7 +134,7 @@ export class LocationCheckService {
       matchedAddress: geo.formattedAddress,
       locationType: geo.locationType,
       partialMatch: geo.partialMatch,
-      addressLikelyWrong: this.isAddressLikelyWrong(geo, address.city),
+      addressLikelyWrong,
     };
   }
 
