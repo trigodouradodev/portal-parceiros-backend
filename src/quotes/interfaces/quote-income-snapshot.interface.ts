@@ -29,11 +29,11 @@ export class QuoteIncomeEntrySnapshot {
   @ApiPropertyOptional()
   profession?: string;
 
-  @ApiProperty({ enum: BusinessActivityBranch })
-  businessActivityBranch: BusinessActivityBranch;
+  @ApiPropertyOptional({ enum: BusinessActivityBranch })
+  businessActivityBranch?: BusinessActivityBranch;
 
-  @ApiProperty({ enum: BusinessActivitySubcategory })
-  businessActivitySubcategory: BusinessActivitySubcategory;
+  @ApiPropertyOptional({ enum: BusinessActivitySubcategory })
+  businessActivitySubcategory?: BusinessActivitySubcategory;
 
   @ApiProperty({ enum: ActivityDuration })
   activityDuration: ActivityDuration;

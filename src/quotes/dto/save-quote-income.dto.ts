@@ -66,13 +66,24 @@ export class QuoteIncomeEntryDto {
   @MaxLength(255)
   profession?: string;
 
-  @ApiProperty({ enum: BusinessActivityBranch })
+  @ApiPropertyOptional({
+    enum: BusinessActivityBranch,
+    description:
+      'Não exigido para CLT, Servidor Público, Aposentado/Pensionista e ' +
+      'Desempregado — quem não tem negócio/atividade autônoma em curso.',
+  })
+  @ValidateIf(
+    (dto: QuoteIncomeEntryDto) => !requiresProfession([dto.economicActivity]),
+  )
   @IsEnum(BusinessActivityBranch)
-  businessActivityBranch: BusinessActivityBranch;
+  businessActivityBranch?: BusinessActivityBranch;
 
-  @ApiProperty({ enum: BusinessActivitySubcategory })
+  @ApiPropertyOptional({ enum: BusinessActivitySubcategory })
+  @ValidateIf(
+    (dto: QuoteIncomeEntryDto) => !requiresProfession([dto.economicActivity]),
+  )
   @IsEnum(BusinessActivitySubcategory)
-  businessActivitySubcategory: BusinessActivitySubcategory;
+  businessActivitySubcategory?: BusinessActivitySubcategory;
 
   @ApiProperty({ enum: ActivityDuration })
   @IsEnum(ActivityDuration)

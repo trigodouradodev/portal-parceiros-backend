@@ -58,8 +58,9 @@ export class QuoteDraftIncomeService {
           profession: primary.profession ?? null,
           economic_activity_categories: [primary.economicActivity],
           economic_activity_other: primary.economicActivityOther ?? null,
-          business_activity_branch: primary.businessActivityBranch,
-          business_activity_subcategory: primary.businessActivitySubcategory,
+          business_activity_branch: primary.businessActivityBranch ?? null,
+          business_activity_subcategory:
+            primary.businessActivitySubcategory ?? null,
           business_document: null,
           activity_duration: primary.activityDuration,
           personal_income: primary.amount,
@@ -146,7 +147,15 @@ function normalizeIncomeEntry(
     );
   }
 
+  // Ramo/Subcategoria só fazem sentido pra quem tem negócio/atividade
+  // autônoma em curso — o complemento exato de quem precisa de Profissão
+  // (CLT, Servidor Público, Aposentado/Pensionista e Desempregado não têm
+  // "ramo" nenhum pra descrever). Confirmado com o time de crédito.
+  const professionRequired = requiresProfession([income.economicActivity]);
+  const businessActivityRequired = !professionRequired;
+
   if (
+    businessActivityRequired &&
     !isSubcategoryValidForBranch(
       income.businessActivityBranch,
       income.businessActivitySubcategory,
@@ -157,7 +166,6 @@ function normalizeIncomeEntry(
     );
   }
 
-  const professionRequired = requiresProfession([income.economicActivity]);
   const profession = professionRequired ? income.profession?.trim() : undefined;
   if (professionRequired && (!profession || profession.length < 2)) {
     throw new BadRequestException(`Informe a profissão da renda ${index + 1}.`);
@@ -190,8 +198,12 @@ function normalizeIncomeEntry(
     economicActivity: income.economicActivity,
     ...(economicActivityOther ? { economicActivityOther } : {}),
     ...(profession ? { profession } : {}),
-    businessActivityBranch: income.businessActivityBranch,
-    businessActivitySubcategory: income.businessActivitySubcategory,
+    ...(businessActivityRequired
+      ? {
+          businessActivityBranch: income.businessActivityBranch,
+          businessActivitySubcategory: income.businessActivitySubcategory,
+        }
+      : {}),
     activityDuration: income.activityDuration,
     amount: income.amount,
     source: income.source,

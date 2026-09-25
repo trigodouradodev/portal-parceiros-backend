@@ -39,6 +39,7 @@ import {
   GovernmentProgram,
   HousingStatus,
   MaritalStatus,
+  requiresProfession,
   ResidenceDuration,
 } from '../enums/quote-registration.enum';
 import { QuoteStatus } from '../enums/quote-status.enum';
@@ -454,12 +455,20 @@ function mapIncomeEntries(value: unknown): QuoteIncomeEntrySnapshot[] {
     );
     const source = enumOrNull(income?.source, IncomeSource);
     const amount = numberOrNull(income?.amount);
+    // Ramo/Subcategoria só são exigidos de quem tem negócio próprio ou é
+    // autônomo/informal — mesmo complemento de requiresProfession usado na
+    // escrita (normalizeIncomeEntry). Sem isso, uma renda de CLT/Servidor/
+    // Aposentado/Desempregado salva sem esses campos (de propósito) era
+    // descartada inteira aqui na leitura, sumindo do formulário ao reabrir
+    // a proposta.
+    const businessActivityRequired =
+      !!economicActivity && !requiresProfession([economicActivity]);
     if (
       !id ||
       !role ||
       !economicActivity ||
-      !businessActivityBranch ||
-      !businessActivitySubcategory ||
+      (businessActivityRequired &&
+        (!businessActivityBranch || !businessActivitySubcategory)) ||
       !activityDuration ||
       !source ||
       amount === null ||
@@ -480,8 +489,9 @@ function mapIncomeEntries(value: unknown): QuoteIncomeEntrySnapshot[] {
         economicActivity,
         ...(economicActivityOther ? { economicActivityOther } : {}),
         ...(profession ? { profession } : {}),
-        businessActivityBranch,
-        businessActivitySubcategory,
+        ...(businessActivityBranch && businessActivitySubcategory
+          ? { businessActivityBranch, businessActivitySubcategory }
+          : {}),
         activityDuration,
         source,
         amount,

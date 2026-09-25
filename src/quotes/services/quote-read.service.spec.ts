@@ -376,6 +376,46 @@ describe('QuoteReadService.findById', () => {
     });
   });
 
+  it('mantém renda de CLT/aposentado sem Ramo/Subcategoria ao reconstruir o wizard', async () => {
+    // Regressão: Ramo/Subcategoria só são exigidos de quem tem negócio
+    // próprio ou é autônomo/informal (ver requiresProfession). Uma renda de
+    // CLT/Servidor/Aposentado/Desempregado é salva sem esses campos de
+    // propósito — o GET não pode descartá-la ao reconstruir o formulário.
+    const { service, prisma } = build();
+    prisma.quotes.findFirst.mockResolvedValueOnce(
+      detailRow({
+        income_entries: [
+          {
+            id: 'primary',
+            role: 'primary',
+            economicActivity: 'clt_employee',
+            profession: 'Analista',
+            activityDuration: '3_to_5_years',
+            amount: 4500,
+            source: 'salary',
+          },
+        ],
+      }),
+    );
+
+    const result = await service.findById(QUOTE_ID, actor());
+
+    expect(result.income.incomes).toEqual([
+      expect.objectContaining({
+        id: 'primary',
+        economicActivity: 'clt_employee',
+        profession: 'Analista',
+        amount: 4500,
+      }),
+    ]);
+    expect(result.income.incomes[0]).not.toHaveProperty(
+      'businessActivityBranch',
+    );
+    expect(result.income.incomes[0]).not.toHaveProperty(
+      'businessActivitySubcategory',
+    );
+  });
+
   it('não permite editar uma proposta de subordinado nem fora de draft', async () => {
     const { service, prisma } = build();
     prisma.quotes.findFirst
