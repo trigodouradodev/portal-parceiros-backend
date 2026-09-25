@@ -4,6 +4,12 @@ export interface CelcoinSimulationInput {
   interestRate: number;
   installments: number;
   firstPaymentDate: string;
+  /**
+   * Prêmio do seguro prestamista a financiar junto com o crédito
+   * (`insurance_amount` na Celcoin). Omitido ou zero simula sem seguro —
+   * mesmo mecanismo que a Celcoin já usa pra financiar TAC.
+   */
+  insuranceAmount?: number;
 }
 
 /**

@@ -209,6 +209,10 @@ const simulation = {
     total_amount_owed: 6123.4,
     schedule: [],
   } as Record<string, unknown> | null,
+  insurance_premium: null as number | null,
+  cabure_quote_id: null as string | null,
+  installment_amount_with_insurance: null as number | null,
+  simulation_result_with_insurance: null as Record<string, unknown> | null,
   finance_products: { product_name: 'GIRO' },
   parties: { addresses: [] as PartyAddressFixture[] },
 };
@@ -269,7 +273,14 @@ async function build(options: BuildOptions = {}) {
       });
     },
   );
+  const queryRaw = jest.fn(
+    (strings: TemplateStringsArray): Promise<Array<{ id: string }>> => {
+      void strings;
+      return Promise.resolve([{ id: 'cabure-proposal-1' }]);
+    },
+  );
   const tx = {
+    $queryRaw: queryRaw,
     simulations: {
       findFirst: jest
         .fn()
@@ -536,6 +547,58 @@ describe('QuotesService.createDraftFromSimulation', () => {
     expect(result).not.toHaveProperty('totalAmountOwed');
     const createInput = createQuote.mock.calls[0][0];
     expect(createInput.data).not.toHaveProperty('simulation_result');
+  });
+
+  it('copia os campos de seguro e adianta a cotação em cabure_insurance_proposals', async () => {
+    const { createQuote, service, tx } = await build({
+      simulation: {
+        ...simulation,
+        insurance_premium: 189.9,
+        cabure_quote_id: 'cabure-quote-1',
+        installment_amount_with_insurance: 641.12,
+        simulation_result_with_insurance: {
+          payment_amount: 641.12,
+          total_amount_owed: 6411.2,
+        },
+      },
+    });
+
+    await service.createDraftFromSimulation(SIMULATION_ID, actor());
+
+    const createInput = createQuote.mock.calls[0][0];
+    expect(createInput.data).toMatchObject({
+      insurance_premium: 189.9,
+      cabure_quote_id: 'cabure-quote-1',
+      installment_amount_with_insurance: 641.12,
+      simulation_result_with_insurance: {
+        payment_amount: 641.12,
+        total_amount_owed: 6411.2,
+      },
+    });
+
+    const insertCall = tx.$queryRaw.mock.calls.find((call) =>
+      call[0]
+        .join(' ')
+        .includes('INSERT INTO public.cabure_insurance_proposals'),
+    );
+    expect(insertCall).toBeDefined();
+    expect(insertCall).toContain(QUOTE_ID);
+    expect(insertCall).toContain(PARTY_ID);
+    expect(insertCall).toContain('cabure-quote-1');
+    expect(insertCall).toContain(189.9);
+  });
+
+  it('não grava cabure_insurance_proposals quando a simulação não cotou seguro', async () => {
+    const { service, tx } = await build();
+
+    await service.createDraftFromSimulation(SIMULATION_ID, actor());
+
+    const insertCall = tx.$queryRaw.mock.calls.find((call) =>
+      call[0]
+        .join(' ')
+        .includes('INSERT INTO public.cabure_insurance_proposals'),
+    );
+    expect(insertCall).toBeUndefined();
   });
 });
 

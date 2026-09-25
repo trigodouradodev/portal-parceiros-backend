@@ -3,12 +3,15 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { normalizeCpf } from '../common/cpf.util';
+import { CabureService } from '../cabure/cabure.service';
+import { checkInsuranceEligibility } from '../cabure/insurance-eligibility';
 import { CelcoinSimulationService } from '../celcoin/celcoin-simulation.service';
 import { CelcoinSimulationResult } from '../celcoin/interfaces/celcoin-simulation.interface';
 import { EligibilityService } from '../eligibility/eligibility.service';
@@ -71,7 +74,28 @@ interface PreparedSimulation {
   interestRate: number;
   installmentAmount: number;
   simulationResult: CelcoinSimulationResult;
+  insurance: InsurancePreview;
 }
+
+/**
+ * Prêmio do seguro prestamista e o efeito dele na parcela, já calculado
+ * pela Celcoin (financiado, com juros — mesmo mecanismo do TAC). `null`
+ * quando o cliente não é elegível ou a Caburé/Celcoin falharam ao cotar —
+ * nunca bloqueia a simulação de crédito em si.
+ */
+interface InsurancePreview {
+  premium: number | null;
+  cabureQuoteId: string | null;
+  installmentAmount: number | null;
+  simulationResult: CelcoinSimulationResult | null;
+}
+
+const UNAVAILABLE_INSURANCE: InsurancePreview = {
+  premium: null,
+  cabureQuoteId: null,
+  installmentAmount: null,
+  simulationResult: null,
+};
 
 type FinancialSimulationInput = Pick<
   SimulateDto,
@@ -80,16 +104,19 @@ type FinancialSimulationInput = Pick<
   | 'installments'
   | 'firstInstallmentDate'
   | 'interestRate'
->;
+> & { birthDate: Date };
 
 @Injectable()
 export class SimulationsService {
+  private readonly logger = new Logger(SimulationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly quoteActivityPermissions: QuoteActivityPermissionsService,
     private readonly partiesService: PartiesService,
     private readonly celcoinSimulation: CelcoinSimulationService,
     private readonly eligibilityService: EligibilityService,
+    private readonly cabureService: CabureService,
   ) {}
 
   async listSimulations(
@@ -183,7 +210,11 @@ export class SimulationsService {
         installment_numbers,
         first_installment_date,
         installment_amount,
-        simulation_result
+        simulation_result,
+        insurance_premium,
+        cabure_quote_id,
+        installment_amount_with_insurance,
+        simulation_result_with_insurance
       )
       VALUES (
         ${user.sub}::uuid,
@@ -199,7 +230,15 @@ export class SimulationsService {
         ${prepared.installments},
         ${toSqlDate(prepared.firstInstallmentDate)}::date,
         ${prepared.installmentAmount},
-        ${JSON.stringify(prepared.simulationResult)}::jsonb
+        ${JSON.stringify(prepared.simulationResult)}::jsonb,
+        ${prepared.insurance.premium},
+        ${prepared.insurance.cabureQuoteId}::uuid,
+        ${prepared.insurance.installmentAmount},
+        ${
+          prepared.insurance.simulationResult === null
+            ? null
+            : JSON.stringify(prepared.insurance.simulationResult)
+        }::jsonb
       )
       RETURNING
         id,
@@ -264,6 +303,14 @@ export class SimulationsService {
           first_installment_date = ${toSqlDate(prepared.firstInstallmentDate)}::date,
           installment_amount = ${prepared.installmentAmount},
           simulation_result = ${JSON.stringify(prepared.simulationResult)}::jsonb,
+          insurance_premium = ${prepared.insurance.premium},
+          cabure_quote_id = ${prepared.insurance.cabureQuoteId}::uuid,
+          installment_amount_with_insurance = ${prepared.insurance.installmentAmount},
+          simulation_result_with_insurance = ${
+            prepared.insurance.simulationResult === null
+              ? null
+              : JSON.stringify(prepared.insurance.simulationResult)
+          }::jsonb,
           updated_at = NOW()
         WHERE s.id = ${id}::uuid
           AND s.user_id = ${user.sub}::uuid
@@ -322,6 +369,7 @@ export class SimulationsService {
       installments: dto.installments,
       firstInstallmentDate: dto.firstInstallmentDate,
       interestRate: dto.interestRate,
+      birthDate,
     });
 
     return {
@@ -337,6 +385,7 @@ export class SimulationsService {
       interestRate: financial.interestRate,
       installmentAmount: financial.installmentAmount,
       simulationResult: financial.simulationResult,
+      insurance: financial.insurance,
     };
   }
 
@@ -351,6 +400,7 @@ export class SimulationsService {
     firstInstallmentDate: Date;
     installmentAmount: number;
     simulationResult: CelcoinSimulationResult;
+    insurance: InsurancePreview;
   }> {
     const firstInstallmentDate = this.parseDateOnly(
       dto.firstInstallmentDate,
@@ -391,6 +441,14 @@ export class SimulationsService {
         firstPaymentDate: toSqlDate(firstInstallmentDate),
       });
 
+    const insurance = await this.prepareInsurancePreview({
+      amount: dto.amount,
+      interestRate,
+      installments: dto.installments,
+      birthDate: dto.birthDate,
+      firstInstallmentDate,
+    });
+
     return {
       product,
       amount: dto.amount,
@@ -399,7 +457,61 @@ export class SimulationsService {
       firstInstallmentDate,
       installmentAmount: simulationResult.payment_amount,
       simulationResult,
+      insurance,
     };
+  }
+
+  /**
+   * Cota o seguro prestamista na Caburé (se o cliente for elegível) e roda
+   * a Celcoin uma segunda vez com o prêmio em `insurance_amount`, pra obter
+   * a parcela real financiada com seguro — mesmo mecanismo que a Celcoin já
+   * usaria pra TAC. Nunca lança: qualquer falha (elegibilidade sem dado,
+   * Caburé fora do ar, Celcoin recusando a segunda simulação) volta como
+   * seguro indisponível, sem impedir a simulação de crédito em si.
+   */
+  private async prepareInsurancePreview(input: {
+    amount: number;
+    interestRate: number;
+    installments: number;
+    birthDate: Date;
+    firstInstallmentDate: Date;
+  }): Promise<InsurancePreview> {
+    const eligibility = checkInsuranceEligibility(
+      input.birthDate,
+      input.installments,
+      input.firstInstallmentDate,
+    );
+    if (!eligibility.eligible) {
+      return UNAVAILABLE_INSURANCE;
+    }
+
+    try {
+      const cabureQuote = await this.cabureService.quote(
+        input.amount,
+        input.installments,
+      );
+
+      const simulationResult =
+        await this.celcoinSimulation.simulateRequestedAmount({
+          requestedAmount: input.amount,
+          interestRate: input.interestRate,
+          installments: input.installments,
+          firstPaymentDate: toSqlDate(input.firstInstallmentDate),
+          insuranceAmount: cabureQuote.premium,
+        });
+
+      return {
+        premium: cabureQuote.premium,
+        cabureQuoteId: cabureQuote.id,
+        installmentAmount: simulationResult.payment_amount,
+        simulationResult,
+      };
+    } catch (error) {
+      this.logger.warn(
+        `Falha ao cotar seguro prestamista na simulação: ${String(error)}`,
+      );
+      return UNAVAILABLE_INSURANCE;
+    }
   }
 
   private async assertCanSimulate(user: JwtPayload): Promise<void> {

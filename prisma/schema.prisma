@@ -1461,6 +1461,10 @@ model quotes {
   party_id                                                    String?                      @db.Uuid
   guarantor_party_id                                          String?                      @db.Uuid
   simulation_id                                               String?                      @unique(map: "quotes_simulation_id_unique") @db.Uuid
+  insurance_premium                                           Decimal?                     @db.Decimal(15, 2)
+  cabure_quote_id                                             String?                      @db.Uuid
+  installment_amount_with_insurance                           Decimal?                     @db.Decimal(15, 2)
+  simulation_result_with_insurance                            Json?
   celcoin_integration_status                                  celcoin_integration_status[]
   contracts                                                   contracts[]
   contracts_ccbs                                              contracts_ccbs[]
@@ -2216,27 +2220,31 @@ model party_consents {
 }
 
 model simulations {
-  id                     String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  user_id                String           @db.Uuid
-  party_id               String?          @db.Uuid
-  finance_product_id     String           @db.Uuid
-  client_name            String           @db.VarChar(255)
-  document               String           @db.VarChar(14)
-  birth_date             DateTime         @db.Date
-  email                  String           @db.VarChar(255)
-  telephone              String           @db.VarChar(20)
-  finance_amount         Decimal          @db.Decimal(15, 2)
-  interest_rate          Decimal          @db.Decimal(12, 8)
-  installment_numbers    Int
-  first_installment_date DateTime         @db.Date
-  installment_amount     Decimal          @db.Decimal(15, 2)
-  simulation_result      Json?
-  created_at             DateTime         @default(now()) @db.Timestamptz(6)
-  updated_at             DateTime         @default(now()) @db.Timestamptz(6)
-  finance_products       finance_products @relation(fields: [finance_product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "simulations_finance_product_id_foreign")
-  parties                parties?         @relation(fields: [party_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "simulations_party_id_foreign")
-  trigo_users            trigo_users      @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "simulations_user_id_foreign")
-  quotes                 quotes?
+  id                                 String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id                            String           @db.Uuid
+  party_id                           String?          @db.Uuid
+  finance_product_id                 String           @db.Uuid
+  client_name                        String           @db.VarChar(255)
+  document                           String           @db.VarChar(14)
+  birth_date                         DateTime         @db.Date
+  email                              String           @db.VarChar(255)
+  telephone                          String           @db.VarChar(20)
+  finance_amount                     Decimal          @db.Decimal(15, 2)
+  interest_rate                      Decimal          @db.Decimal(12, 8)
+  installment_numbers                Int
+  first_installment_date             DateTime         @db.Date
+  installment_amount                 Decimal          @db.Decimal(15, 2)
+  simulation_result                  Json?
+  insurance_premium                  Decimal?         @db.Decimal(15, 2)
+  cabure_quote_id                    String?          @db.Uuid
+  installment_amount_with_insurance  Decimal?         @db.Decimal(15, 2)
+  simulation_result_with_insurance   Json?
+  created_at                         DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at                         DateTime         @default(now()) @db.Timestamptz(6)
+  finance_products                   finance_products @relation(fields: [finance_product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "simulations_finance_product_id_foreign")
+  parties                            parties?         @relation(fields: [party_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "simulations_party_id_foreign")
+  trigo_users                        trigo_users      @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "simulations_user_id_foreign")
+  quotes                             quotes?
 
   @@index([document], map: "simulations_document_index")
   @@index([party_id], map: "simulations_party_id_index")
