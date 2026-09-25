@@ -295,9 +295,7 @@ describe('verify — distância e raio', () => {
 
   it('limita o bônus de accuracy a 100 m', async () => {
     const { service } = await build({ radiusMeters: 100 });
-    const result = await service.verify(
-      dto({ accuracyMeters: 500 }),
-    );
+    const result = await service.verify(dto({ accuracyMeters: 500 }));
 
     expect(result.effectiveRadiusMeters).toBe(200);
   });

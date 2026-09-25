@@ -283,4 +283,3 @@ export class LocationCheckService {
     return EARTH_RADIUS_METERS * 2 * Math.asin(Math.sqrt(a));
   }
 }
-

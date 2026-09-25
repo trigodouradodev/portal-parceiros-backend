@@ -108,12 +108,7 @@ export class RegisterInteractionDto {
     description: 'Motivo informado na confirmação manual da visita.',
   })
   @IsOptional()
-  @IsIn([
-    'gps_imprecise',
-    'no_signal',
-    'wrong_address',
-    'receiving_at_address',
-  ])
+  @IsIn(['gps_imprecise', 'no_signal', 'wrong_address', 'receiving_at_address'])
   manualLocationReason?:
     | 'gps_imprecise'
     | 'no_signal'
