@@ -27,9 +27,34 @@ export class LocationCheckResult {
 
   @ApiProperty({
     example: 100,
-    description: 'Raio máximo aceito para considerar a visita válida (metros).',
+    description:
+      'Raio base configurado para confirmação exata (antes do bônus de accuracy).',
   })
   radiusMeters: number;
+
+  @ApiProperty({
+    example: 125,
+    description:
+      'Raio efetivo usado na confirmação exata (radiusMeters + bônus de accuracy).',
+  })
+  effectiveRadiusMeters: number;
+
+  @ApiProperty({
+    example: 300,
+    description:
+      'Limite da faixa intermediária ("confirmado por proximidade"), em metros.',
+  })
+  proximityRadiusMeters: number;
+
+  @ApiProperty({
+    enum: ['exact', 'proximity'],
+    nullable: true,
+    example: 'exact',
+    description:
+      'Nível da confirmação: exact dentro do raio efetivo; proximity na ' +
+      'faixa intermediária; null quando fora de ambos.',
+  })
+  confirmationLevel: 'exact' | 'proximity' | null;
 
   @ApiProperty({
     type: Coordinates,

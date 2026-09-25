@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsDateString,
   IsEnum,
+  IsIn,
   IsLatitude,
   IsLongitude,
   IsOptional,
@@ -87,4 +88,35 @@ export class RegisterInteractionDto {
   )
   @IsLongitude()
   longitude?: number;
+
+  @ApiPropertyOptional({
+    enum: ['exact', 'proximity', 'manual'],
+    description:
+      'Como a presença na visita foi confirmada: exact, proximity ou manual.',
+  })
+  @IsOptional()
+  @IsIn(['exact', 'proximity', 'manual'])
+  locationConfirmation?: 'exact' | 'proximity' | 'manual';
+
+  @ApiPropertyOptional({
+    enum: [
+      'gps_imprecise',
+      'no_signal',
+      'wrong_address',
+      'receiving_at_address',
+    ],
+    description: 'Motivo informado na confirmação manual da visita.',
+  })
+  @IsOptional()
+  @IsIn([
+    'gps_imprecise',
+    'no_signal',
+    'wrong_address',
+    'receiving_at_address',
+  ])
+  manualLocationReason?:
+    | 'gps_imprecise'
+    | 'no_signal'
+    | 'wrong_address'
+    | 'receiving_at_address';
 }

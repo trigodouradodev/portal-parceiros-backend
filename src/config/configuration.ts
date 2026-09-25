@@ -25,8 +25,10 @@ export interface JwtConfig {
 export interface GeocodingConfig {
   /** Chave da Google Maps Geocoding API. Vazia desabilita o location-check. */
   apiKey: string;
-  /** Raio máximo (metros) aceito no location-check. */
+  /** Raio máximo (metros) aceito no location-check (confirmação exata). */
   radiusMeters: number;
+  /** Faixa intermediária (metros) para confirmação por proximidade. */
+  proximityRadiusMeters: number;
 }
 
 export interface StorageConfig {
@@ -70,6 +72,10 @@ export default (): Configuration => ({
     apiKey: process.env.GOOGLE_MAPS_API_KEY ?? '',
     radiusMeters: parseInt(
       process.env.LOCATION_CHECK_RADIUS_METERS ?? '100',
+      10,
+    ),
+    proximityRadiusMeters: parseInt(
+      process.env.LOCATION_CHECK_PROXIMITY_RADIUS_METERS ?? '300',
       10,
     ),
   },

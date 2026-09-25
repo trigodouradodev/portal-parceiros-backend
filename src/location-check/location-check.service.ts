@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  UnprocessableEntityException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { mapGuarantor } from '../activities/activities.mapper';
 import { FollowUpParty } from '../follow-up/enums/follow-up.enums';
@@ -15,6 +11,13 @@ import { LocationCheckResult } from './interfaces/location-check-result.interfac
 const EARTH_RADIUS_METERS = 6_371_000;
 /** Raio default (metros) quando LOCATION_CHECK_RADIUS_METERS não está setado. */
 const DEFAULT_RADIUS_METERS = 100;
+/** Faixa intermediária default quando LOCATION_CHECK_PROXIMITY_RADIUS_METERS não está setado. */
+const DEFAULT_PROXIMITY_RADIUS_METERS = 300;
+/**
+ * Teto do bônus de accuracy no raio exato — evita que GPS indoor (accuracy
+ * de centenas de metros) transforme a checagem em "qualquer lugar".
+ */
+const MAX_ACCURACY_BONUS_METERS = 100;
 
 interface AddressForGeocoding {
   street: string;
@@ -71,11 +74,11 @@ export class LocationCheckService {
         ? this.resolveGuarantorAddress(contract.quotes?.guarantor)
         : await this.findClientAddress(contract.client_id);
 
-    const geo = await this.geocoding.geocode(this.buildAddressText(address));
+    const geo = await this.geocoding.geocode(this.buildAddressText(address), {
+      postalCode: address.zip_code,
+    });
     if (!geo) {
-      throw new UnprocessableEntityException(
-        'Não foi possível geolocalizar o endereço cadastrado.',
-      );
+      return this.unreliableResult(dto);
     }
 
     const distanceMeters = this.haversineMeters(
@@ -87,11 +90,27 @@ export class LocationCheckService {
     const radiusMeters =
       this.config.get<number>('geocoding.radiusMeters') ??
       DEFAULT_RADIUS_METERS;
+    const proximityRadiusMeters =
+      this.config.get<number>('geocoding.proximityRadiusMeters') ??
+      DEFAULT_PROXIMITY_RADIUS_METERS;
+    const accuracyBonus = Math.min(
+      Math.max(dto.accuracyMeters ?? 0, 0),
+      MAX_ACCURACY_BONUS_METERS,
+    );
+    const effectiveRadiusMeters = radiusMeters + accuracyBonus;
+    const confirmationLevel = this.resolveConfirmationLevel(
+      distanceMeters,
+      effectiveRadiusMeters,
+      proximityRadiusMeters,
+    );
 
     return {
-      withinRadius: distanceMeters <= radiusMeters,
+      withinRadius: confirmationLevel !== null,
       distanceMeters: Math.round(distanceMeters * 10) / 10,
       radiusMeters,
+      effectiveRadiusMeters,
+      proximityRadiusMeters,
+      confirmationLevel,
       registeredCoordinates: {
         latitude: geo.latitude,
         longitude: geo.longitude,
@@ -105,6 +124,19 @@ export class LocationCheckService {
       partialMatch: geo.partialMatch,
       addressLikelyWrong: this.isAddressLikelyWrong(geo, address.city),
     };
+  }
+
+  /**
+   * exact dentro do raio efetivo; proximity na faixa intermediária; null fora.
+   */
+  private resolveConfirmationLevel(
+    distanceMeters: number,
+    effectiveRadiusMeters: number,
+    proximityRadiusMeters: number,
+  ): 'exact' | 'proximity' | null {
+    if (distanceMeters <= effectiveRadiusMeters) return 'exact';
+    if (distanceMeters <= proximityRadiusMeters) return 'proximity';
+    return null;
   }
 
   /**
@@ -135,6 +167,40 @@ export class LocationCheckService {
     return value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   }
 
+  /**
+   * Sem ponto do provedor a checagem não confirma sozinha. A distância alta
+   * evita que a tolerância do cliente trate o caso como "no endereço".
+   */
+  private unreliableResult(dto: VerifyLocationDto): LocationCheckResult {
+    const radiusMeters =
+      this.config.get<number>('geocoding.radiusMeters') ??
+      DEFAULT_RADIUS_METERS;
+    const proximityRadiusMeters =
+      this.config.get<number>('geocoding.proximityRadiusMeters') ??
+      DEFAULT_PROXIMITY_RADIUS_METERS;
+
+    return {
+      withinRadius: false,
+      distanceMeters: 1_000_000,
+      radiusMeters,
+      effectiveRadiusMeters: radiusMeters,
+      proximityRadiusMeters,
+      confirmationLevel: null,
+      registeredCoordinates: {
+        latitude: dto.latitude,
+        longitude: dto.longitude,
+      },
+      providedCoordinates: {
+        latitude: dto.latitude,
+        longitude: dto.longitude,
+      },
+      matchedAddress: '',
+      locationType: 'UNAVAILABLE',
+      partialMatch: true,
+      addressLikelyWrong: true,
+    };
+  }
+
   private async findClientAddress(
     clientId: string,
   ): Promise<AddressForGeocoding> {
@@ -157,7 +223,14 @@ export class LocationCheckService {
       throw new NotFoundException('Endereço do cliente não encontrado.');
     }
 
-    return address;
+    return {
+      street: address.street,
+      number: address.number,
+      neighborhood: address.neighborhood,
+      city: address.city,
+      state: address.state,
+      zip_code: address.zip_code,
+    };
   }
 
   private resolveGuarantorAddress(
@@ -210,3 +283,4 @@ export class LocationCheckService {
     return EARTH_RADIUS_METERS * 2 * Math.asin(Math.sqrt(a));
   }
 }
+

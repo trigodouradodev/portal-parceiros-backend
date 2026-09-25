@@ -1,8 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import {
-  NotFoundException,
-  UnprocessableEntityException,
-} from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { LocationCheckService } from './location-check.service';
 import {
@@ -48,6 +45,7 @@ interface BuildOptions {
   address?: Partial<typeof ADDRESS> | null;
   geocode?: GeocodeResult | null;
   radiusMeters?: number | undefined;
+  proximityRadiusMeters?: number | undefined;
 }
 
 async function build(options: BuildOptions = {}) {
@@ -57,6 +55,7 @@ async function build(options: BuildOptions = {}) {
     address = ADDRESS,
     geocode = geocodeResult(),
     radiusMeters = 100,
+    proximityRadiusMeters = 300,
   } = options;
 
   const prisma = {
@@ -69,7 +68,14 @@ async function build(options: BuildOptions = {}) {
     },
   };
   const geocoding = { geocode: jest.fn().mockResolvedValue(geocode) };
-  const config = { get: jest.fn().mockReturnValue(radiusMeters) };
+  const config = {
+    get: jest.fn((key: string) => {
+      if (key === 'geocoding.radiusMeters') return radiusMeters;
+      if (key === 'geocoding.proximityRadiusMeters')
+        return proximityRadiusMeters;
+      return undefined;
+    }),
+  };
 
   const module: TestingModule = await Test.createTestingModule({
     providers: [
@@ -108,12 +114,15 @@ describe('verify — pré-condições', () => {
     await expect(service.verify(dto())).rejects.toThrow(NotFoundException);
   });
 
-  it('422 quando o provedor não consegue geolocalizar o endereço', async () => {
-    // Diferente de 404: o endereço existe, mas não virou coordenada.
+  it('não confirma quando o provedor não devolve ponto dentro do CEP', async () => {
     const { service } = await build({ geocode: null });
-    await expect(service.verify(dto())).rejects.toThrow(
-      UnprocessableEntityException,
-    );
+    const result = await service.verify(dto());
+
+    expect(result.withinRadius).toBe(false);
+    expect(result.addressLikelyWrong).toBe(true);
+    expect(result.confirmationLevel).toBeNull();
+    expect(result.locationType).toBe('UNAVAILABLE');
+    expect(result.matchedAddress).toBe('');
   });
 
   it('para antes de geocodificar quando falta pré-condição', async () => {
@@ -162,6 +171,18 @@ describe('verify — pré-condições', () => {
     expect(prisma.addresses.findFirst).not.toHaveBeenCalled();
     expect(geocoding.geocode).toHaveBeenCalledWith(
       'Rua do Avalista, 77, Centro, Salvador - BA, 40000-000, Brasil',
+      { postalCode: '40000-000' },
+    );
+  });
+
+  it('geocodifica o endereço do cliente em vez de ler coordenada da tabela', async () => {
+    const { service, geocoding } = await build();
+
+    await service.verify(dto());
+
+    expect(geocoding.geocode).toHaveBeenCalledWith(
+      'R. das Flores, 123, Centro, São Paulo - SP, 01001-000, Brasil',
+      { postalCode: '01001-000' },
     );
   });
 });
@@ -176,7 +197,7 @@ describe('verify — distância e raio', () => {
   });
 
   it('calcula a distância por Haversine — 0,001° de latitude ≈ 111,2 m', async () => {
-    const { service } = await build();
+    const { service } = await build({ proximityRadiusMeters: 100 });
     const result = await service.verify(
       dto({ latitude: REGISTERED.latitude + 0.001 }),
     );
@@ -215,22 +236,33 @@ describe('verify — distância e raio', () => {
     const OFFSET = { latitude: REGISTERED.latitude + 0.0009 };
 
     it('inclui a distância exatamente igual ao raio', async () => {
-      const { service } = await build({ radiusMeters: EXACT_DISTANCE });
+      const { service } = await build({
+        radiusMeters: EXACT_DISTANCE,
+        proximityRadiusMeters: EXACT_DISTANCE,
+      });
       await expect(service.verify(dto(OFFSET))).resolves.toMatchObject({
         withinRadius: true,
+        confirmationLevel: 'exact',
       });
     });
 
     it('exclui quando o raio é um fio menor que a distância', async () => {
-      const { service } = await build({ radiusMeters: 100.075 });
+      const { service } = await build({
+        radiusMeters: 100.075,
+        proximityRadiusMeters: 100.075,
+      });
       await expect(service.verify(dto(OFFSET))).resolves.toMatchObject({
         withinRadius: false,
+        confirmationLevel: null,
       });
     });
   });
 
   it('respeita o raio configurado, e não um valor fixo', async () => {
-    const { service } = await build({ radiusMeters: 15 });
+    const { service } = await build({
+      radiusMeters: 15,
+      proximityRadiusMeters: 15,
+    });
     const result = await service.verify(
       dto({ latitude: REGISTERED.latitude + 0.0005 }),
     );
@@ -244,6 +276,59 @@ describe('verify — distância e raio', () => {
     const result = await service.verify(dto());
 
     expect(result.radiusMeters).toBe(100);
+  });
+
+  it('amplia o raio exato com a accuracy do GPS (teto 100 m)', async () => {
+    const { service } = await build({ radiusMeters: 100 });
+    // ~111 m — fora de 100 m, dentro de 100+25.
+    const result = await service.verify(
+      dto({
+        latitude: REGISTERED.latitude + 0.001,
+        accuracyMeters: 25,
+      }),
+    );
+
+    expect(result.confirmationLevel).toBe('exact');
+    expect(result.withinRadius).toBe(true);
+    expect(result.effectiveRadiusMeters).toBe(125);
+  });
+
+  it('limita o bônus de accuracy a 100 m', async () => {
+    const { service } = await build({ radiusMeters: 100 });
+    const result = await service.verify(
+      dto({ accuracyMeters: 500 }),
+    );
+
+    expect(result.effectiveRadiusMeters).toBe(200);
+  });
+
+  it('confirma por proximidade na faixa intermediária', async () => {
+    const { service } = await build({
+      radiusMeters: 100,
+      proximityRadiusMeters: 300,
+    });
+    // ~222 m — fora do raio exato, dentro da proximidade.
+    const result = await service.verify(
+      dto({ latitude: REGISTERED.latitude + 0.002 }),
+    );
+
+    expect(result.confirmationLevel).toBe('proximity');
+    expect(result.withinRadius).toBe(true);
+    expect(result.distanceMeters).toBeCloseTo(222.4, 0);
+  });
+
+  it('rejeita quando passa da faixa de proximidade', async () => {
+    const { service } = await build({
+      radiusMeters: 100,
+      proximityRadiusMeters: 300,
+    });
+    // ~444 m.
+    const result = await service.verify(
+      dto({ latitude: REGISTERED.latitude + 0.004 }),
+    );
+
+    expect(result.confirmationLevel).toBeNull();
+    expect(result.withinRadius).toBe(false);
   });
 });
 
