@@ -292,10 +292,11 @@ export const BUSINESS_ACTIVITY_SUBCATEGORIES_BY_BRANCH: Record<
 };
 
 export function isSubcategoryValidForBranch(
-  branch: BusinessActivityBranch,
-  subcategory: BusinessActivitySubcategory,
+  branch: BusinessActivityBranch | undefined,
+  subcategory: BusinessActivitySubcategory | undefined,
 ): boolean {
   if (subcategory === BusinessActivitySubcategory.OTHER) return true;
+  if (!branch || !subcategory) return false;
   return (
     BUSINESS_ACTIVITY_SUBCATEGORIES_BY_BRANCH[branch]?.includes(subcategory) ??
     false

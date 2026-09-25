@@ -71,6 +71,48 @@ describe('SaveQuoteIncomeDto', () => {
     },
   );
 
+  it.each([
+    EconomicActivityCategory.CLT_EMPLOYEE,
+    EconomicActivityCategory.PUBLIC_SERVANT,
+    EconomicActivityCategory.RETIRED_OR_PENSIONER,
+    EconomicActivityCategory.UNEMPLOYED,
+  ])(
+    'não exige ramo/subcategoria quando a atividade econômica é %s',
+    async (category) => {
+      const { businessActivityBranch, businessActivitySubcategory, ...rest } =
+        primary;
+      void businessActivityBranch;
+      void businessActivitySubcategory;
+      await expect(
+        errors({
+          incomes: [
+            {
+              ...rest,
+              economicActivity: category,
+              profession: 'Recepcionista',
+            },
+          ],
+        }),
+      ).resolves.toHaveLength(0);
+    },
+  );
+
+  it.each([
+    EconomicActivityCategory.BUSINESS_OWNER,
+    EconomicActivityCategory.SELF_EMPLOYED_OR_INFORMAL,
+  ])(
+    'ainda exige ramo/subcategoria quando a atividade é %s',
+    async (category) => {
+      const { businessActivityBranch, businessActivitySubcategory, ...rest } =
+        primary;
+      void businessActivityBranch;
+      void businessActivitySubcategory;
+      await expect(
+        errors({ incomes: [{ ...rest, economicActivity: category }] }),
+      ).resolves.not.toHaveLength(0);
+    },
+  );
+
   it('exige a descrição quando a atividade econômica é outra', async () => {
     const entry = {
       ...primary,
