@@ -148,5 +148,6 @@ export class RegisterInteractionDto {
     description:
       'Motivo da confirmação manual. Obrigatório quando locationConfirmation=manual e proibido nos outros casos.',
   })
+  @IsOptional()
   manualLocationReason?: (typeof MANUAL_LOCATION_REASONS)[number];
 }

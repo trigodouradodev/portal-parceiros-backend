@@ -14,7 +14,10 @@ const validInteraction = {
 };
 
 async function errors(input: Record<string, unknown>) {
-  return validate(plainToInstance(RegisterInteractionDto, input));
+  return validate(plainToInstance(RegisterInteractionDto, input), {
+    whitelist: true,
+    forbidNonWhitelisted: true,
+  });
 }
 
 describe('RegisterInteractionDto — confirmação da visita', () => {
