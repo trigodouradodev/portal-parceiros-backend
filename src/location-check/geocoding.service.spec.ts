@@ -148,6 +148,20 @@ describe('geocode — requisição', () => {
     expect(url.searchParams.get('region')).toBe('br');
     expect(url.searchParams.get('components')).toBe('country:BR');
   });
+
+  it('restringe a consulta ao CEP quando ele tem 8 dígitos', async () => {
+    const service = await build();
+    mockFetchOnce(googlePayload());
+
+    await service.geocode('Rua Manoel de Barros, 665', {
+      postalCode: '63031-130',
+    });
+
+    const [url] = (global.fetch as jest.Mock).mock.calls[0] as [URL];
+    expect(url.searchParams.get('components')).toBe(
+      'country:BR|postal_code:63031130',
+    );
+  });
 });
 
 describe('geocode — resposta bem-sucedida', () => {

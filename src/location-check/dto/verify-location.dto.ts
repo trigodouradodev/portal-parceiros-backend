@@ -4,6 +4,7 @@ import {
   IsInt,
   IsLatitude,
   IsLongitude,
+  IsNumber,
   IsOptional,
   IsUUID,
   Min,
@@ -50,4 +51,15 @@ export class VerifyLocationDto {
   })
   @IsLongitude()
   longitude: number;
+
+  @ApiPropertyOptional({
+    example: 25,
+    description:
+      'Margem de erro (metros) reportada pelo GPS do dispositivo. Quando ' +
+      'presente, amplia o raio exato até um teto configurado.',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  accuracyMeters?: number;
 }
