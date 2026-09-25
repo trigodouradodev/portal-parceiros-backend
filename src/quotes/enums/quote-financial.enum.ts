@@ -31,6 +31,7 @@ export enum LoanCategory {
   OVERDRAFT = 'overdraft',
   SAVINGS_GROUP_OR_CONSORTIUM = 'savings_group_or_consortium',
   LOAN_SHARK = 'loan_shark',
+  MICROCREDIT = 'microcredit',
   OTHER = 'other',
 }
 
