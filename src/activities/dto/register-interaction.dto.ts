@@ -22,10 +22,13 @@ import {
 
 const LOCATION_CONFIRMATIONS = ['exact', 'proximity', 'manual'] as const;
 const MANUAL_LOCATION_REASONS = [
-  'gps_imprecise',
-  'no_signal',
-  'wrong_address',
-  'receiving_at_address',
+  'at_address_pin_wrong',
+  'client_came_to_me',
+  'visited_other_address',
+  'registered_address_wrong',
+  'device_unavailable',
+  'permission_unavailable',
+  'other',
 ] as const;
 
 @ValidatorConstraint({ name: 'visitLocationConfirmation', async: false })
