@@ -75,6 +75,11 @@ export class QuotesService {
             first_installment_date: true,
             installment_amount: true,
             simulation_result: true,
+            insurance_premium: true,
+            cabure_quote_id: true,
+            installment_amount_with_insurance: true,
+            simulation_result_with_insurance: true,
+            insurance_product_code: true,
             finance_products: { select: { product_name: true } },
             parties: {
               select: {
@@ -158,9 +163,49 @@ export class QuotesService {
               : {
                   simulation_result: simulation.simulation_result,
                 }),
+            insurance_premium: simulation.insurance_premium,
+            cabure_quote_id: simulation.cabure_quote_id,
+            installment_amount_with_insurance:
+              simulation.installment_amount_with_insurance,
+            ...(simulation.simulation_result_with_insurance === null
+              ? {}
+              : {
+                  simulation_result_with_insurance:
+                    simulation.simulation_result_with_insurance,
+                }),
+            insurance_product_code: simulation.insurance_product_code,
           },
           select: { id: true, created_at: true },
         });
+
+        // Adianta pra agora a gravação que hoje só acontece dentro de
+        // buildInsuranceOffer (trigo-api) na primeira vez que o cliente vê
+        // a proposta — reaproveitando o prêmio e a cotação já obtidos na
+        // simulação, sem cotar a Caburé de novo. `getCabureInsuranceProposal`
+        // do trigo-api encontra essa linha e usa o prêmio direto, sem
+        // precisar de nenhuma mudança lá para o caminho feliz.
+        if (simulation.cabure_quote_id && simulation.party_id) {
+          await tx.$queryRaw`
+            INSERT INTO public.cabure_insurance_proposals (
+              quote_id,
+              party_id,
+              cabure_quote_id,
+              premium,
+              product_code,
+              status
+            )
+            VALUES (
+              ${quote.id}::uuid,
+              ${simulation.party_id}::uuid,
+              ${simulation.cabure_quote_id}::uuid,
+              ${simulation.insurance_premium},
+              ${simulation.insurance_product_code},
+              'quoted'
+            )
+            ON CONFLICT (quote_id) DO NOTHING
+            RETURNING id
+          `;
+        }
 
         await this.quoteEvents.createWithinTransaction(tx, {
           quoteId: quote.id,

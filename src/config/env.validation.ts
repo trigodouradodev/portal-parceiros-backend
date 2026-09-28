@@ -28,6 +28,9 @@ export const envValidationSchema = Joi.object({
   // Raio máximo (metros) aceito no location-check. Geocoding raramente atinge
   // 100m em endereço BR; ajuste conforme a precisão observada.
   LOCATION_CHECK_RADIUS_METERS: Joi.number().positive().default(100),
+  // Faixa intermediária (cenário "quase lá"): libera a visita com selo de
+  // proximidade quando a distância passa do raio exato mas fica abaixo deste.
+  LOCATION_CHECK_PROXIMITY_RADIUS_METERS: Joi.number().positive().default(300),
 
   // Credenciais seguem a provider chain padrão da AWS. Apenas a região é
   // configuração de infraestrutura; o bucket fica em system_configs.

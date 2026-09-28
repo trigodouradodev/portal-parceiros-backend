@@ -43,7 +43,7 @@ export class CelcoinSimulationService {
           requested_amount: input.requestedAmount,
           interest_rate: input.interestRate,
           finance_fee: 0,
-          insurance_amount: 0,
+          insurance_amount: input.insuranceAmount ?? 0,
           iof_type: 'PERSON',
           num_payments: input.installments,
           first_payment_date: input.firstPaymentDate,

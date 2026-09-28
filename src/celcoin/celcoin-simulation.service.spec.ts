@@ -102,6 +102,21 @@ describe('CelcoinSimulationService', () => {
     });
   });
 
+  it('envia insurance_amount quando o seguro é financiado junto', async () => {
+    const { service } = build();
+    mockResponse(result);
+
+    await service.simulateRequestedAmount({ ...input, insuranceAmount: 189.9 });
+
+    const [, request] = (global.fetch as jest.Mock).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(JSON.parse(request.body as string)).toEqual(
+      expect.objectContaining({ insurance_amount: 189.9 }),
+    );
+  });
+
   it('usa payment_amount sem depender dos valores do schedule', async () => {
     const { service } = build();
     mockResponse({

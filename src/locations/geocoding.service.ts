@@ -8,6 +8,11 @@ import { ConfigService } from '@nestjs/config';
 import { BrazilState } from '../common/brazil-state.enum';
 import { ReverseGeocodedAddress } from './interfaces/reverse-geocoded-address.interface';
 
+/** Restrição opcional da consulta. O CEP, quando tem 8 dígitos, vira filtro. */
+export interface GeocodeOptions {
+  postalCode?: string | null;
+}
+
 /** Coordenada + endereço normalizado retornados pelo provedor. */
 export interface GeocodeResult {
   latitude: number;
@@ -58,12 +63,19 @@ export class GeocodingService {
     return this.getApiKey().length > 0;
   }
 
-  /** Converte um endereço textual em coordenadas. */
-  async geocode(address: string): Promise<GeocodeResult | null> {
+  /**
+   * Converte um endereço textual em coordenadas. O CEP informado vira filtro
+   * rígido (`postal_code`); no texto livre o Google pode ignorá-lo e casar
+   * outra rua do mesmo município.
+   */
+  async geocode(
+    address: string,
+    options?: GeocodeOptions,
+  ): Promise<GeocodeResult | null> {
     const url = this.createUrl();
     url.searchParams.set('address', address);
     url.searchParams.set('region', 'br');
-    url.searchParams.set('components', 'country:BR');
+    url.searchParams.set('components', componentsFilter(options?.postalCode));
 
     const payload = await this.request(url);
     const best = this.firstResult(payload);
@@ -181,6 +193,13 @@ export class GeocodingService {
   private getApiKey(): string {
     return this.config.get<string>('geocoding.apiKey') ?? '';
   }
+}
+
+/** CEP de 8 dígitos restringe o resultado; caso contrário só o país. */
+function componentsFilter(postalCode?: string | null): string {
+  const digits = (postalCode ?? '').replace(/\D/g, '');
+  if (digits.length !== 8) return 'country:BR';
+  return `country:BR|postal_code:${digits}`;
 }
 
 function mostSpecificResult(

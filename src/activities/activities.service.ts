@@ -699,12 +699,14 @@ export class ActivitiesService {
       const rows = await tx.$queryRaw<InteractionRow[]>`
         INSERT INTO activity_interactions
           (task_id, installment_id, contract_id, task_type, channel, recipient_type,
-           recipient_contact_id, result, promise_date, observation, user_id)
+           recipient_contact_id, result, promise_date, observation, user_id,
+           location_confirmation, manual_location_reason)
         VALUES
           (${taskId}::uuid, ${task.installment_id}::uuid, ${task.contract_id}::uuid,
            ${task.task_type}, ${dto.channel}, ${dto.recipientType},
            ${dto.recipientContactId ?? null}::uuid, ${dto.result}, ${promiseDate}::date,
-           ${dto.observation ?? null}, ${userId}::uuid)
+           ${dto.observation ?? null}, ${userId}::uuid,
+           ${dto.locationConfirmation ?? null}, ${dto.manualLocationReason ?? null})
         RETURNING id, task_id, installment_id, contract_id, task_type, channel, recipient_type,
                   recipient_contact_id, result, promise_date, observation, user_id, created_at
       `;

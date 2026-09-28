@@ -2,12 +2,14 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
+import { CabureService } from '../cabure/cabure.service';
 import { CelcoinSimulationService } from '../celcoin/celcoin-simulation.service';
 import { CelcoinSimulationResult } from '../celcoin/interfaces/celcoin-simulation.interface';
 import { EligibilityService } from '../eligibility/eligibility.service';
@@ -109,6 +111,7 @@ function buildService(options?: {
   editableState?: 'available' | 'converted' | 'missing';
   celcoinResult?: CelcoinSimulationResult;
   eligible?: boolean;
+  cabureQuote?: { id: string; premium: number } | Error;
 }) {
   const queryRaw = jest.fn((strings: TemplateStringsArray) => {
     const sql = strings.join(' ');
@@ -172,6 +175,19 @@ function buildService(options?: {
   const eligibilityService = {
     evaluate: evaluateEligibility,
   } as unknown as EligibilityService;
+  // Por padrão a Caburé "falha" (mesmo princípio de resiliência do domínio:
+  // testes que não são sobre seguro não devem precisar mockar isso) — só os
+  // testes de seguro passam `cabureQuote` explicitamente.
+  const quote = jest.fn().mockImplementation(() => {
+    if (options?.cabureQuote instanceof Error) {
+      return Promise.reject(options.cabureQuote);
+    }
+    if (options?.cabureQuote) {
+      return Promise.resolve(options.cabureQuote);
+    }
+    return Promise.reject(new Error('Caburé indisponível (padrão de teste)'));
+  });
+  const cabureService = { quote } as unknown as CabureService;
 
   return {
     service: new SimulationsService(
@@ -180,6 +196,7 @@ function buildService(options?: {
       partiesService,
       celcoinSimulation,
       eligibilityService,
+      cabureService,
     ),
     queryRaw,
     quoteActivityPermissions,
@@ -188,8 +205,17 @@ function buildService(options?: {
     resolveForSimulation,
     simulateRequestedAmount,
     evaluateEligibility,
+    cabureQuote: quote,
   };
 }
+
+beforeEach(() => {
+  jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
+});
 
 describe('SimulationsService.simulate', () => {
   it('avalia a elegibilidade e cria uma simulação quando não recebe UUID', async () => {
@@ -295,6 +321,82 @@ describe('SimulationsService.simulate — criação', () => {
       },
       expect.anything(),
     );
+  });
+
+  it('cota o seguro na Caburé e roda a Celcoin de novo com insurance_amount', async () => {
+    const cabureQuote = {
+      id: 'cabure-quote-1',
+      premium: 189.9,
+      productCode: 'credito-pessoal-21',
+    };
+    const insuranceResult: CelcoinSimulationResult = {
+      payment_amount: 641.12,
+      total_amount_owed: 6411.2,
+    };
+    const {
+      service,
+      queryRaw,
+      simulateRequestedAmount,
+      cabureQuote: quoteMock,
+    } = buildService({ cabureQuote });
+    simulateRequestedAmount
+      .mockResolvedValueOnce(celcoinResult)
+      .mockResolvedValueOnce(insuranceResult);
+
+    await service.simulate(actor, dto());
+
+    expect(quoteMock).toHaveBeenCalledWith(5000, 10);
+    expect(simulateRequestedAmount).toHaveBeenCalledTimes(2);
+    expect(simulateRequestedAmount).toHaveBeenNthCalledWith(2, {
+      requestedAmount: 5000,
+      interestRate: 0.0339,
+      installments: 10,
+      firstPaymentDate: futureDueDate(),
+      insuranceAmount: 189.9,
+    });
+
+    const insertCall = queryRaw.mock.calls[1];
+    const insertSql = insertCall[0].join(' ');
+    expect(insertSql).toContain('insurance_premium');
+    expect(insertSql).toContain('installment_amount_with_insurance');
+    expect(insertSql).toContain('simulation_result_with_insurance');
+    expect(insertCall).toContain(189.9);
+    expect(insertCall).toContain('cabure-quote-1');
+    expect(insertCall).toContain(641.12);
+    expect(insertCall).toContain(JSON.stringify(insuranceResult));
+    expect(insertSql).toContain('insurance_product_code');
+    expect(insertCall).toContain('credito-pessoal-21');
+  });
+
+  it('mantém a simulação de crédito quando a Caburé falha ao cotar o seguro', async () => {
+    const { service, queryRaw, simulateRequestedAmount } = buildService({
+      cabureQuote: new Error('Caburé fora do ar'),
+    });
+
+    const result = await service.simulate(actor, dto());
+
+    expect(result.eligible).toBe(true);
+    expect(simulateRequestedAmount).toHaveBeenCalledTimes(1);
+    const insertCall = queryRaw.mock.calls[1];
+    expect(insertCall).toContain(null);
+  });
+
+  it('não cota seguro quando o cliente não é elegível pela idade', async () => {
+    const {
+      service,
+      cabureQuote: quoteMock,
+      simulateRequestedAmount,
+    } = buildService();
+
+    // 100 anos hoje: reprovado tanto na elegibilidade de crédito (18-120)
+    // quanto, mais especificamente, na de seguro (18-70 no fim da vigência)
+    // — usamos uma idade dentro da faixa de crédito (ex.: 75) pra isolar
+    // que é a regra do SEGURO que está barrando, não a de crédito.
+    const birthYear = new Date().getUTCFullYear() - 75;
+    await service.simulate(actor, dto({ birthDate: `${birthYear}-01-01` }));
+
+    expect(quoteMock).not.toHaveBeenCalled();
+    expect(simulateRequestedAmount).toHaveBeenCalledTimes(1);
   });
 
   it('bloqueia quando a fila de cobrança impede simular', async () => {
@@ -498,6 +600,9 @@ describe('SimulationsService.listSimulations', () => {
     const eligibilityService = {
       evaluate: jest.fn(),
     } as unknown as EligibilityService;
+    const cabureService = {
+      quote: jest.fn(),
+    } as unknown as CabureService;
     return {
       service: new SimulationsService(
         prisma,
@@ -505,6 +610,7 @@ describe('SimulationsService.listSimulations', () => {
         partiesService,
         celcoinSimulation,
         eligibilityService,
+        cabureService,
       ),
       queryRaw,
     };
