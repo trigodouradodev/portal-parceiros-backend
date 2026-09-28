@@ -36,9 +36,21 @@ describe('RegisterInteractionDto — confirmação da visita', () => {
       errors({
         ...validInteraction,
         locationConfirmation: 'manual',
-        manualLocationReason: 'gps_imprecise',
+        manualLocationReason: 'at_address_pin_wrong',
       }),
     ).resolves.toHaveLength(0);
+  });
+
+  it('recusa motivo que não existe mais', async () => {
+    const result = await errors({
+      ...validInteraction,
+      locationConfirmation: 'manual',
+      manualLocationReason: 'gps_imprecise',
+    });
+
+    expect(result.map((error) => error.property)).toContain(
+      'locationConfirmation',
+    );
   });
 
   it('recusa confirmação manual sem motivo', async () => {
@@ -56,7 +68,7 @@ describe('RegisterInteractionDto — confirmação da visita', () => {
     const result = await errors({
       ...validInteraction,
       locationConfirmation: 'exact',
-      manualLocationReason: 'no_signal',
+      manualLocationReason: 'device_unavailable',
     });
 
     expect(result.map((error) => error.property)).toContain(
@@ -67,7 +79,7 @@ describe('RegisterInteractionDto — confirmação da visita', () => {
   it('recusa motivo sem o tipo da confirmação', async () => {
     const result = await errors({
       ...validInteraction,
-      manualLocationReason: 'wrong_address',
+      manualLocationReason: 'registered_address_wrong',
     });
 
     expect(result.map((error) => error.property)).toContain(
