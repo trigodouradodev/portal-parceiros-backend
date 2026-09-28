@@ -7,6 +7,9 @@ export class PartyLookupData {
   @ApiProperty({ example: '52998224725' })
   document: string;
 
+  @ApiProperty({ example: '1990-05-20', format: 'date', nullable: true })
+  birthDate: string | null;
+
   @ApiProperty({ example: 'maria@email.com', nullable: true })
   email: string | null;
 

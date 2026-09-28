@@ -29,6 +29,7 @@ describe('PartiesService.findDataByCpf', () => {
           tax_id: '529.982.247-25',
           email: 'maria@email.com',
           phone: '+5511987654321',
+          birth_date: '1990-05-20',
         },
       ],
     ]);
@@ -36,6 +37,7 @@ describe('PartiesService.findDataByCpf', () => {
     await expect(service.findDataByCpf('529.982.247-25')).resolves.toEqual({
       name: 'Maria Souza',
       document: '52998224725',
+      birthDate: '1990-05-20',
       email: 'maria@email.com',
       telephone: '+5511987654321',
     });
@@ -74,6 +76,7 @@ describe('PartiesService.findFormDataByCpf', () => {
           tax_id: '529.982.247-25',
           email: 'maria@email.com',
           phone: '+5511987654321',
+          birth_date: '1990-05-20',
           address_street: 'Praça da Sé',
           address_number: '100',
           address_complement: null,
@@ -88,6 +91,7 @@ describe('PartiesService.findFormDataByCpf', () => {
     await expect(service.findFormDataByCpf('529.982.247-25')).resolves.toEqual({
       name: 'Maria Souza',
       document: '52998224725',
+      birthDate: '1990-05-20',
       email: 'maria@email.com',
       telephone: '+5511987654321',
       address: {
@@ -122,6 +126,7 @@ describe('PartiesService.findFormDataByCpf', () => {
           tax_id: '52998224725',
           email: null,
           phone: null,
+          birth_date: null,
           address_street: null,
           address_number: null,
           address_complement: null,
@@ -136,6 +141,7 @@ describe('PartiesService.findFormDataByCpf', () => {
     await expect(service.findFormDataByCpf('52998224725')).resolves.toEqual({
       name: 'Maria Souza',
       document: '52998224725',
+      birthDate: null,
       email: null,
       telephone: null,
       address: null,
@@ -168,6 +174,7 @@ describe('PartiesService.resolveForSimulation', () => {
           tax_id: '52998224725',
           email: null,
           phone: null,
+          birth_date: '1985-02-10',
         },
       ],
     ]);
@@ -177,6 +184,7 @@ describe('PartiesService.resolveForSimulation', () => {
         {
           name: 'Nome digitado',
           document: '52998224725',
+          birthDate: new Date('1990-05-20T00:00:00.000Z'),
           email: 'novo@email.com',
           telephone: '11987654321',
         },
@@ -187,6 +195,47 @@ describe('PartiesService.resolveForSimulation', () => {
     expect(queryRaw).toHaveBeenCalledTimes(1);
     const [lookupStrings] = queryRaw.mock.calls[0] as [TemplateStringsArray];
     expect(lookupStrings.join(' ')).toContain('FROM public.parties');
+  });
+
+  it('preenche a data de nascimento ausente sem sobrescrever outros dados', async () => {
+    const { service, prisma, queryRaw } = buildService([
+      [
+        {
+          id: PARTY_ID,
+          name: 'Nome canônico',
+          tax_id: '52998224725',
+          email: null,
+          phone: null,
+          birth_date: null,
+        },
+      ],
+      [{ id: PARTY_ID }],
+    ]);
+
+    await expect(
+      service.resolveForSimulation(
+        {
+          name: 'Nome digitado',
+          document: '52998224725',
+          birthDate: new Date('1990-05-20T00:00:00.000Z'),
+          email: 'novo@email.com',
+          telephone: '11987654321',
+        },
+        prisma as unknown as Prisma.TransactionClient,
+      ),
+    ).resolves.toBe(PARTY_ID);
+
+    expect(queryRaw).toHaveBeenCalledTimes(2);
+    const updateCall = queryRaw.mock.calls[1] as [
+      TemplateStringsArray,
+      string,
+      string,
+    ];
+    const updateSql = updateCall[0].join(' ');
+    expect(updateSql).toContain('UPDATE public.clients');
+    expect(updateSql).toContain('AND birth_date IS NULL');
+    expect(updateCall).toContain('1990-05-20');
+    expect(updateCall).toContain(PARTY_ID);
   });
 
   it('cria a identidade pelo caminho transitório de clients', async () => {
@@ -200,6 +249,7 @@ describe('PartiesService.resolveForSimulation', () => {
         {
           name: ' Maria Souza ',
           document: '529.982.247-25',
+          birthDate: new Date('1990-05-20T00:00:00.000Z'),
           email: ' MARIA@EMAIL.COM ',
           telephone: '(11) 98765-4321',
         },
@@ -209,12 +259,14 @@ describe('PartiesService.resolveForSimulation', () => {
 
     const [insertStrings] = queryRaw.mock.calls[1] as [TemplateStringsArray];
     expect(insertStrings.join(' ')).toContain('INSERT INTO public.clients');
+    expect(insertStrings.join(' ')).toContain('birth_date');
     expect(queryRaw.mock.calls[1]).toEqual(
       expect.arrayContaining([
         'Maria Souza',
         '52998224725',
         'maria@email.com',
         '+5511987654321',
+        '1990-05-20',
       ]),
     );
   });
