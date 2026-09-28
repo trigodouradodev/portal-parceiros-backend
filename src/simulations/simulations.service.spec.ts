@@ -324,7 +324,11 @@ describe('SimulationsService.simulate — criação', () => {
   });
 
   it('cota o seguro na Caburé e roda a Celcoin de novo com insurance_amount', async () => {
-    const cabureQuote = { id: 'cabure-quote-1', premium: 189.9 };
+    const cabureQuote = {
+      id: 'cabure-quote-1',
+      premium: 189.9,
+      productCode: 'credito-pessoal-21',
+    };
     const insuranceResult: CelcoinSimulationResult = {
       payment_amount: 641.12,
       total_amount_owed: 6411.2,
@@ -360,6 +364,8 @@ describe('SimulationsService.simulate — criação', () => {
     expect(insertCall).toContain('cabure-quote-1');
     expect(insertCall).toContain(641.12);
     expect(insertCall).toContain(JSON.stringify(insuranceResult));
+    expect(insertSql).toContain('insurance_product_code');
+    expect(insertCall).toContain('credito-pessoal-21');
   });
 
   it('mantém a simulação de crédito quando a Caburé falha ao cotar o seguro', async () => {

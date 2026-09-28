@@ -87,14 +87,18 @@ export class CabureService {
     }
 
     const payload = await this.readJson(response);
-    if (!isCabureQuote(payload)) {
+    if (!isCabureQuoteResponse(payload)) {
       this.logger.error('Cotação Caburé retornou um contrato inválido.');
       throw new ServiceUnavailableException(
         'Serviço de seguro retornou uma resposta inválida.',
       );
     }
 
-    return payload;
+    // productCode não vem no corpo da resposta da Caburé — anexamos aqui
+    // o valor que foi de fato usado na requisição, pra quem persistir a
+    // cotação nunca precisar resolver o produto de novo a partir da
+    // própria config local (ver comentário em cabure-quote.interface.ts).
+    return { ...payload, productCode };
   }
 
   private async readJson(response: Response): Promise<unknown> {
@@ -111,7 +115,9 @@ export class CabureService {
   }
 }
 
-function isCabureQuote(value: unknown): value is CabureQuote {
+function isCabureQuoteResponse(
+  value: unknown,
+): value is Omit<CabureQuote, 'productCode'> {
   if (!value || typeof value !== 'object') return false;
   const result = value as Record<string, unknown>;
   return (

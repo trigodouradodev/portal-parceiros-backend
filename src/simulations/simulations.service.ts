@@ -86,6 +86,7 @@ interface PreparedSimulation {
 interface InsurancePreview {
   premium: number | null;
   cabureQuoteId: string | null;
+  productCode: string | null;
   installmentAmount: number | null;
   simulationResult: CelcoinSimulationResult | null;
 }
@@ -93,6 +94,7 @@ interface InsurancePreview {
 const UNAVAILABLE_INSURANCE: InsurancePreview = {
   premium: null,
   cabureQuoteId: null,
+  productCode: null,
   installmentAmount: null,
   simulationResult: null,
 };
@@ -214,7 +216,8 @@ export class SimulationsService {
         insurance_premium,
         cabure_quote_id,
         installment_amount_with_insurance,
-        simulation_result_with_insurance
+        simulation_result_with_insurance,
+        insurance_product_code
       )
       VALUES (
         ${user.sub}::uuid,
@@ -238,7 +241,8 @@ export class SimulationsService {
           prepared.insurance.simulationResult === null
             ? null
             : JSON.stringify(prepared.insurance.simulationResult)
-        }::jsonb
+        }::jsonb,
+        ${prepared.insurance.productCode}
       )
       RETURNING
         id,
@@ -311,6 +315,7 @@ export class SimulationsService {
               ? null
               : JSON.stringify(prepared.insurance.simulationResult)
           }::jsonb,
+          insurance_product_code = ${prepared.insurance.productCode},
           updated_at = NOW()
         WHERE s.id = ${id}::uuid
           AND s.user_id = ${user.sub}::uuid
@@ -503,6 +508,7 @@ export class SimulationsService {
       return {
         premium: cabureQuote.premium,
         cabureQuoteId: cabureQuote.id,
+        productCode: cabureQuote.productCode,
         installmentAmount: simulationResult.payment_amount,
         simulationResult,
       };

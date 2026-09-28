@@ -213,6 +213,7 @@ const simulation = {
   cabure_quote_id: null as string | null,
   installment_amount_with_insurance: null as number | null,
   simulation_result_with_insurance: null as Record<string, unknown> | null,
+  insurance_product_code: null as string | null,
   finance_products: { product_name: 'GIRO' },
   parties: { addresses: [] as PartyAddressFixture[] },
 };
@@ -560,6 +561,7 @@ describe('QuotesService.createDraftFromSimulation', () => {
           payment_amount: 641.12,
           total_amount_owed: 6411.2,
         },
+        insurance_product_code: 'credito-pessoal-21',
       },
     });
 
@@ -574,6 +576,7 @@ describe('QuotesService.createDraftFromSimulation', () => {
         payment_amount: 641.12,
         total_amount_owed: 6411.2,
       },
+      insurance_product_code: 'credito-pessoal-21',
     });
 
     const insertCall = tx.$queryRaw.mock.calls.find((call) =>
@@ -586,6 +589,7 @@ describe('QuotesService.createDraftFromSimulation', () => {
     expect(insertCall).toContain(PARTY_ID);
     expect(insertCall).toContain('cabure-quote-1');
     expect(insertCall).toContain(189.9);
+    expect(insertCall).toContain('credito-pessoal-21');
   });
 
   it('não grava cabure_insurance_proposals quando a simulação não cotou seguro', async () => {

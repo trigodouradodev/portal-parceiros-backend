@@ -79,6 +79,7 @@ export class QuotesService {
             cabure_quote_id: true,
             installment_amount_with_insurance: true,
             simulation_result_with_insurance: true,
+            insurance_product_code: true,
             finance_products: { select: { product_name: true } },
             parties: {
               select: {
@@ -172,6 +173,7 @@ export class QuotesService {
                   simulation_result_with_insurance:
                     simulation.simulation_result_with_insurance,
                 }),
+            insurance_product_code: simulation.insurance_product_code,
           },
           select: { id: true, created_at: true },
         });
@@ -189,6 +191,7 @@ export class QuotesService {
               party_id,
               cabure_quote_id,
               premium,
+              product_code,
               status
             )
             VALUES (
@@ -196,6 +199,7 @@ export class QuotesService {
               ${simulation.party_id}::uuid,
               ${simulation.cabure_quote_id}::uuid,
               ${simulation.insurance_premium},
+              ${simulation.insurance_product_code},
               'quoted'
             )
             ON CONFLICT (quote_id) DO NOTHING

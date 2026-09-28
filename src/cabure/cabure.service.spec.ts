@@ -48,13 +48,14 @@ afterEach(() => {
 });
 
 describe('CabureService.quote', () => {
-  it('cota o seguro com productCode, valor e prazo, e devolve id + premium', async () => {
+  it('cota o seguro com productCode, valor e prazo, e devolve id + premium + productCode', async () => {
     const { service } = build();
     mockResponse({ id: 'quote-1', premium: 189.9 });
 
     await expect(service.quote(5000, 10)).resolves.toEqual({
       id: 'quote-1',
       premium: 189.9,
+      productCode: 'credito-pessoal-21',
     });
 
     const [url, request] = (global.fetch as jest.Mock).mock.calls[0] as [
@@ -80,6 +81,7 @@ describe('CabureService.quote', () => {
     await expect(service.quote(5000, 10)).resolves.toEqual({
       id: 'quote-1',
       premium: 189.9,
+      productCode: 'credito-pessoal-21',
     });
 
     expect(getAccessToken).toHaveBeenCalledWith(true);
