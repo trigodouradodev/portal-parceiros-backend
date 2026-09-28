@@ -316,6 +316,7 @@ describe('SimulationsService.simulate — criação', () => {
       {
         name: 'Maria Souza',
         document: '52998224725',
+        birthDate: new Date('1990-05-20T00:00:00.000Z'),
         email: 'maria@email.com',
         telephone: '11987654321',
       },
@@ -516,7 +517,10 @@ describe('SimulationsService.simulate — atualização', () => {
       firstPaymentDate: futureDueDate(),
     });
     expect(resolveForSimulation).toHaveBeenCalledWith(
-      expect.objectContaining({ document: '52998224725' }),
+      expect.objectContaining({
+        document: '52998224725',
+        birthDate: new Date('1990-05-20T00:00:00.000Z'),
+      }),
       expect.anything(),
     );
   });

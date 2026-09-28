@@ -41,6 +41,7 @@ describe('EligibilityService', () => {
     const party = {
       name: 'Maria canônica',
       document: '52998224725',
+      birthDate: '1985-02-10',
       email: 'maria@email.com',
       telephone: '+5511987654321',
     };

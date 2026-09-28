@@ -35,7 +35,8 @@ Each successful simulation resolves the customer identity through
 `PartiesModule` and stores the resulting `party_id`. Name, CPF, birth date,
 e-mail and telephone remain in `simulations` as the historical snapshot entered
 at simulation time; they are not replaced by later changes to the canonical
-party.
+party. The validated birth date also fills the canonical identity when it is
+missing, but never overwrites an existing canonical value.
 
 The module must not own quote lifecycle transitions or interactions such as
 partner submission and client review. Those belong to the quote and quote-event
