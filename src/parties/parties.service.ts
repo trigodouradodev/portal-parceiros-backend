@@ -11,6 +11,7 @@ interface PartyRow {
   tax_id: string;
   email: string | null;
   phone: string | null;
+  birth_date: string | null;
 }
 
 interface PartyIdentityInput {
@@ -18,6 +19,7 @@ interface PartyIdentityInput {
   document: string;
   email: string;
   telephone: string;
+  birthDate: Date;
 }
 
 interface PartyFormRow extends PartyRow {
@@ -45,6 +47,7 @@ export class PartiesService {
     return {
       name: party.name,
       document,
+      birthDate: party.birth_date,
       email: party.email,
       telephone: party.phone,
     };
@@ -59,6 +62,7 @@ export class PartiesService {
         p.tax_id,
         p.email,
         p.phone,
+        p.birth_date::text AS birth_date,
         a.street AS address_street,
         a.number AS address_number,
         a.complement AS address_complement,
@@ -91,6 +95,7 @@ export class PartiesService {
     return {
       name: party.name,
       document,
+      birthDate: party.birth_date,
       email: party.email,
       telephone: party.phone,
       address: party.address_street
@@ -121,7 +126,10 @@ export class PartiesService {
   ): Promise<string> {
     const document = normalizeCpf(input.document);
     const existing = await this.findRecordByCpf(document, tx);
-    if (existing) return existing.id;
+    if (existing) {
+      await this.fillMissingBirthDate(existing, input.birthDate, tx);
+      return existing.id;
+    }
 
     const [inserted] = await tx.$queryRaw<{ id: string }[]>`
       INSERT INTO public.clients (
@@ -129,14 +137,16 @@ export class PartiesService {
         tax_id,
         tax_id_type,
         email,
-        phone
+        phone,
+        birth_date
       )
       VALUES (
         ${input.name.trim()},
         ${document},
         'cpf',
         ${input.email.trim().toLowerCase()},
-        ${formatPartyPhone(input.telephone)}
+        ${formatPartyPhone(input.telephone)},
+        ${toSqlDate(input.birthDate)}::date
       )
       ON CONFLICT (tax_id) DO NOTHING
       RETURNING id
@@ -151,7 +161,26 @@ export class PartiesService {
       );
     }
 
+    await this.fillMissingBirthDate(raceWinner, input.birthDate, tx);
     return raceWinner.id;
+  }
+
+  private async fillMissingBirthDate(
+    party: PartyRow,
+    birthDate: Date,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    if (party.birth_date) return;
+
+    await tx.$queryRaw<{ id: string }[]>`
+      UPDATE public.clients
+      SET
+        birth_date = ${toSqlDate(birthDate)}::date,
+        updated_at = NOW()
+      WHERE id = ${party.id}::uuid
+        AND birth_date IS NULL
+      RETURNING id
+    `;
   }
 
   private async findRecordByCpf(
@@ -164,7 +193,8 @@ export class PartiesService {
         name,
         tax_id,
         email,
-        phone
+        phone,
+        birth_date::text AS birth_date
       FROM public.parties
       WHERE regexp_replace(tax_id, '\\D', '', 'g') = ${document}
       ORDER BY created_at ASC, id ASC
@@ -184,4 +214,8 @@ function formatPartyPhone(value: string): string {
   }
 
   return value;
+}
+
+function toSqlDate(value: Date): string {
+  return value.toISOString().slice(0, 10);
 }

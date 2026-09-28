@@ -189,6 +189,7 @@ export class SimulationsService {
         {
           name: prepared.name,
           document: prepared.document,
+          birthDate: prepared.birthDate,
           email: prepared.email,
           telephone: prepared.telephone,
         },
@@ -283,6 +284,7 @@ export class SimulationsService {
         {
           name: prepared.name,
           document: prepared.document,
+          birthDate: prepared.birthDate,
           email: prepared.email,
           telephone: prepared.telephone,
         },

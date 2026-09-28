@@ -276,6 +276,7 @@ model clients {
   tax_id             String            @unique(map: "clients_tax_id_unique") @db.VarChar(255)
   email              String?           @db.VarChar(255)
   phone              String?           @db.VarChar(255)
+  birth_date         DateTime?         @db.Date
   created_at         DateTime          @default(now()) @db.Timestamptz(6)
   updated_at         DateTime          @default(now()) @db.Timestamptz(6)
   contact_preference String?           @db.VarChar(255)
@@ -2174,6 +2175,7 @@ model parties {
   tax_id                                          String                       @unique @db.VarChar(255)
   email                                           String?                      @db.VarChar(255)
   phone                                           String?                      @db.VarChar(255)
+  birth_date                                      DateTime?                    @db.Date
   created_at                                      DateTime                     @default(now()) @db.Timestamptz(6)
   updated_at                                      DateTime                     @default(now()) @db.Timestamptz(6)
   contact_preference                              String?                      @db.VarChar(255)
