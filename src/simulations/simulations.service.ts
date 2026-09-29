@@ -51,6 +51,8 @@ interface SimulationRow {
   installment_numbers: number;
   first_installment_date: Date;
   installment_amount: Prisma.Decimal | number | string;
+  insurance_premium: Prisma.Decimal | number | string | null;
+  installment_amount_with_insurance: Prisma.Decimal | number | string | null;
   created_at: Date;
   status?: string;
 }
@@ -140,6 +142,8 @@ export class SimulationsService {
         s.installment_numbers,
         s.first_installment_date,
         s.installment_amount,
+        s.insurance_premium,
+        s.installment_amount_with_insurance,
         s.created_at,
         CASE
           WHEN EXISTS (
@@ -256,6 +260,8 @@ export class SimulationsService {
         installment_numbers,
         first_installment_date,
         installment_amount,
+        insurance_premium,
+        installment_amount_with_insurance,
         created_at,
         ${SimulationStatus.AVAILABLE} AS status
       `;
@@ -336,6 +342,8 @@ export class SimulationsService {
           installment_numbers,
           first_installment_date,
           installment_amount,
+          insurance_premium,
+          installment_amount_with_insurance,
           created_at,
           ${SimulationStatus.AVAILABLE} AS status
       `;
@@ -632,6 +640,16 @@ export class SimulationsService {
       installments: Number(row.installment_numbers),
       firstInstallmentDate: toSqlDate(firstInstallmentDate),
       installmentAmount: toNum(row.installment_amount),
+      ...(row.insurance_premium == null
+        ? {}
+        : { insurancePremium: toNum(row.insurance_premium) }),
+      ...(row.installment_amount_with_insurance == null
+        ? {}
+        : {
+            installmentAmountWithInsurance: toNum(
+              row.installment_amount_with_insurance,
+            ),
+          }),
     };
   }
 
