@@ -61,6 +61,7 @@ const LIST_SELECT = {
   document: true,
   finance_product_id: true,
   finance_amount: true,
+  installment_numbers: true,
   current_sales_agent_id: true,
   created_at: true,
   updated_at: true,
@@ -72,6 +73,12 @@ const LIST_SELECT = {
     select: { step: true },
     orderBy: [{ completed_at: 'asc' as const }, { step: 'asc' as const }],
   },
+  // Mesma lógica de installmentAmount do detalhe (ver toListItem): a lista
+  // também precisa mostrar a parcela — sem ela não dá pra indicar "seguro
+  // incluso" nem o valor real que o cliente vai pagar.
+  simulations: { select: { installment_amount: true } },
+  insurance_premium: true,
+  installment_amount_with_insurance: true,
 } satisfies Prisma.quotesSelect;
 
 const DETAIL_SELECT = {
@@ -81,7 +88,6 @@ const DETAIL_SELECT = {
   email: true,
   telephone: true,
   interest_rate: true,
-  installment_numbers: true,
   first_installment_date: true,
   simulation_result: true,
   is_renegotiation: true,
@@ -130,7 +136,6 @@ const DETAIL_SELECT = {
   proof_of_residence_attachment: true,
   activity_photos_attachment: true,
   proof_of_income_attachment: true,
-  simulations: { select: { installment_amount: true } },
 } satisfies Prisma.quotesSelect;
 
 type QuoteListRow = Prisma.quotesGetPayload<{ select: typeof LIST_SELECT }>;
@@ -234,6 +239,15 @@ export class QuoteReadService {
       productId: row.finance_product_id,
       productName: row.finance_products.product_name,
       financeAmount: Number(row.finance_amount),
+      installmentNumbers: row.installment_numbers,
+      installmentAmount:
+        row.simulations == null
+          ? null
+          : numberOrNull(row.simulations.installment_amount),
+      insurancePremium: numberOrNull(row.insurance_premium),
+      installmentAmountWithInsurance: numberOrNull(
+        row.installment_amount_with_insurance,
+      ),
       consultant: {
         id: row.current_sales_agent_id,
         name: row.trigo_users_quotes_current_sales_agent_idTotrigo_users
@@ -266,6 +280,10 @@ export class QuoteReadService {
           ? numberOrNull(simulationResult?.payment_amount)
           : Number(row.simulations.installment_amount),
       totalAmountOwed: numberOrNull(simulationResult?.total_amount_owed),
+      insurancePremium: numberOrNull(row.insurance_premium),
+      installmentAmountWithInsurance: numberOrNull(
+        row.installment_amount_with_insurance,
+      ),
       registration: {
         isRenegotiation: row.is_renegotiation,
         gender: row.gender as Gender | null,
