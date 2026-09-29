@@ -97,6 +97,8 @@ function simulationRow(overrides: Record<string, unknown> = {}) {
     first_installment_date: new Date(`${futureDueDate()}T00:00:00.000Z`),
     installment_amount: celcoinResult.payment_amount,
     simulation_result: celcoinResult,
+    insurance_premium: null as number | null,
+    installment_amount_with_insurance: null as number | null,
     created_at: new Date('2026-08-26T12:00:00.000Z'),
     status: SimulationStatus.AVAILABLE,
     ...overrides,
@@ -339,13 +341,24 @@ describe('SimulationsService.simulate — criação', () => {
       queryRaw,
       simulateRequestedAmount,
       cabureQuote: quoteMock,
-    } = buildService({ cabureQuote });
+    } = buildService({
+      cabureQuote,
+      inserted: simulationRow({
+        id: 'sim-1',
+        insurance_premium: 189.9,
+        installment_amount_with_insurance: 641.12,
+      }),
+    });
     simulateRequestedAmount
       .mockResolvedValueOnce(celcoinResult)
       .mockResolvedValueOnce(insuranceResult);
 
-    await service.simulate(actor, dto());
+    const result = await service.simulate(actor, dto());
 
+    expect(result.simulation).toMatchObject({
+      insurancePremium: 189.9,
+      installmentAmountWithInsurance: 641.12,
+    });
     expect(quoteMock).toHaveBeenCalledWith(5000, 10);
     expect(simulateRequestedAmount).toHaveBeenCalledTimes(2);
     expect(simulateRequestedAmount).toHaveBeenNthCalledWith(2, {
@@ -394,8 +407,15 @@ describe('SimulationsService.simulate — criação', () => {
     // — usamos uma idade dentro da faixa de crédito (ex.: 75) pra isolar
     // que é a regra do SEGURO que está barrando, não a de crédito.
     const birthYear = new Date().getUTCFullYear() - 75;
-    await service.simulate(actor, dto({ birthDate: `${birthYear}-01-01` }));
+    const result = await service.simulate(
+      actor,
+      dto({ birthDate: `${birthYear}-01-01` }),
+    );
 
+    expect(result.simulation).not.toHaveProperty('insurancePremium');
+    expect(result.simulation).not.toHaveProperty(
+      'installmentAmountWithInsurance',
+    );
     expect(quoteMock).not.toHaveBeenCalled();
     expect(simulateRequestedAmount).toHaveBeenCalledTimes(1);
   });

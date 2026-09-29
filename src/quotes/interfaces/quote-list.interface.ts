@@ -34,6 +34,29 @@ export class QuoteListItem {
   @ApiProperty()
   financeAmount: number;
 
+  @ApiProperty()
+  installmentNumbers: number;
+
+  @ApiPropertyOptional({ nullable: true })
+  installmentAmount: number | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Prêmio do seguro prestamista cotado na Caburé. Nulo quando o ' +
+      'cliente não foi elegível ou a cotação falhou na simulação.',
+  })
+  insurancePremium: number | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Parcela COM seguro, já financiada com juros pela Celcoin — ' +
+      'installmentAmount é sempre o valor SEM seguro. Nulo junto com ' +
+      'insurancePremium.',
+  })
+  installmentAmountWithInsurance: number | null;
+
   @ApiProperty({ type: QuoteConsultantSummary })
   consultant: QuoteConsultantSummary;
 

@@ -44,4 +44,24 @@ export class SimulationSnapshot {
 
   @ApiProperty({ example: 1560.32 })
   installmentAmount: number;
+
+  @ApiProperty({
+    required: false,
+    example: 500,
+    description:
+      'Prêmio do seguro prestamista cotado na Caburé. Ausente quando o ' +
+      'cliente não é elegível ou a cotação falhou nesta simulação.',
+  })
+  insurancePremium?: number;
+
+  @ApiProperty({
+    required: false,
+    example: 742.56,
+    description:
+      'Parcela COM seguro, já financiada com juros pela Celcoin (mesmo ' +
+      'mecanismo da TAC) — installmentAmount já é o valor SEM seguro; ' +
+      'este campo é o valor alternativo a exibir quando o seguro está ' +
+      'incluso. Ausente quando insurancePremium também está ausente.',
+  })
+  installmentAmountWithInsurance?: number;
 }

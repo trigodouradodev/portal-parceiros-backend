@@ -32,6 +32,12 @@ function listRow(overrides: Record<string, unknown> = {}) {
     document: '52998224725',
     finance_product_id: '55555555-5555-4555-8555-555555555555',
     finance_amount: '5000.00',
+    installment_numbers: 10,
+    simulations: { installment_amount: '815.97' } as {
+      installment_amount: string;
+    } | null,
+    insurance_premium: null as number | null,
+    installment_amount_with_insurance: null as number | null,
     current_sales_agent_id: OWNER_ID,
     created_at: createdAt,
     updated_at: updatedAt,
@@ -58,6 +64,8 @@ function detailRow(overrides: Record<string, unknown> = {}) {
     installment_numbers: 10,
     first_installment_date: new Date('2026-09-10T00:00:00.000Z'),
     simulation_result: { payment_amount: 815.97, total_amount_owed: 8159.7 },
+    insurance_premium: null as number | null,
+    installment_amount_with_insurance: null as number | null,
     is_renegotiation: false,
     gender: 'female',
     secondary_document: '123456789',
@@ -250,6 +258,28 @@ describe('QuoteReadService.list', () => {
       consultant: { id: OWNER_ID, name: 'Consultor Áurea' },
       completedSteps: [QuoteDraftStep.REGISTRATION],
       canEdit: true,
+      installmentNumbers: 10,
+      installmentAmount: 815.97,
+      insurancePremium: null,
+      installmentAmountWithInsurance: null,
+    });
+  });
+
+  it('devolve os valores do seguro prestamista na listagem quando a quote cotou seguro', async () => {
+    const { service, prisma } = build();
+    prisma.quotes.count.mockResolvedValueOnce(1);
+    prisma.quotes.findMany.mockResolvedValueOnce([
+      listRow({
+        insurance_premium: '189.90',
+        installment_amount_with_insurance: '641.12',
+      }),
+    ]);
+
+    const result = await service.list(actor(), { page: 1, limit: 30 });
+
+    expect(result.items[0]).toMatchObject({
+      insurancePremium: 189.9,
+      installmentAmountWithInsurance: 641.12,
     });
   });
 
@@ -373,6 +403,25 @@ describe('QuoteReadService.findById', () => {
           }),
         ],
       },
+      insurancePremium: null,
+      installmentAmountWithInsurance: null,
+    });
+  });
+
+  it('devolve os valores do seguro prestamista quando a quote cotou seguro', async () => {
+    const { service, prisma } = build();
+    prisma.quotes.findFirst.mockResolvedValueOnce(
+      detailRow({
+        insurance_premium: '189.90',
+        installment_amount_with_insurance: '641.12',
+      }),
+    );
+
+    const result = await service.findById(QUOTE_ID, actor());
+
+    expect(result).toMatchObject({
+      insurancePremium: 189.9,
+      installmentAmountWithInsurance: 641.12,
     });
   });
 
