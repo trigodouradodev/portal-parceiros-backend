@@ -33,6 +33,10 @@ function listRow(overrides: Record<string, unknown> = {}) {
     finance_product_id: '55555555-5555-4555-8555-555555555555',
     finance_amount: '5000.00',
     installment_numbers: 10,
+    simulation_result: {
+      installment_amount: 815.97,
+      total_amount_owed: 8159.7,
+    },
     simulations: { installment_amount: '815.97' } as {
       installment_amount: string;
     } | null,
@@ -63,7 +67,10 @@ function detailRow(overrides: Record<string, unknown> = {}) {
     interest_rate: '0.115',
     installment_numbers: 10,
     first_installment_date: new Date('2026-09-10T00:00:00.000Z'),
-    simulation_result: { payment_amount: 815.97, total_amount_owed: 8159.7 },
+    simulation_result: {
+      installment_amount: 815.97,
+      total_amount_owed: 8159.7,
+    },
     insurance_premium: null as number | null,
     installment_amount_with_insurance: null as number | null,
     is_renegotiation: false,
@@ -283,6 +290,25 @@ describe('QuoteReadService.list', () => {
     });
   });
 
+  it('usa o snapshot da quote na listagem quando não há simulação vinculada', async () => {
+    const { service, prisma } = build();
+    prisma.quotes.count.mockResolvedValueOnce(1);
+    prisma.quotes.findMany.mockResolvedValueOnce([
+      listRow({
+        simulation_id: null,
+        simulations: null,
+        simulation_result: {
+          installment_amount: 712.34,
+          total_amount_owed: 7123.4,
+        },
+      }),
+    ]);
+
+    const result = await service.list(actor(), { page: 1, limit: 30 });
+
+    expect(result.items[0].installmentAmount).toBe(712.34);
+  });
+
   it('busca textual somente pelo nome quando não há dígitos', async () => {
     const { service, prisma } = build();
 
@@ -406,6 +432,25 @@ describe('QuoteReadService.findById', () => {
       insurancePremium: null,
       installmentAmountWithInsurance: null,
     });
+  });
+
+  it('aceita payment_amount legado no snapshot de quote sem simulação vinculada', async () => {
+    const { service, prisma } = build();
+    prisma.quotes.findFirst.mockResolvedValueOnce(
+      detailRow({
+        simulation_id: null,
+        simulations: null,
+        simulation_result: {
+          payment_amount: 701.23,
+          total_amount_owed: 7012.3,
+        },
+      }),
+    );
+
+    const result = await service.findById(QUOTE_ID, actor());
+
+    expect(result.installmentAmount).toBe(701.23);
+    expect(result.totalAmountOwed).toBe(7012.3);
   });
 
   it('devolve os valores do seguro prestamista quando a quote cotou seguro', async () => {

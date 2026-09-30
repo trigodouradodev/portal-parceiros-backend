@@ -257,6 +257,7 @@ interface BuildOptions {
     personalIncome: number;
     activityIncome: number;
     installmentAmount: number;
+    useQuoteSnapshot?: boolean;
   };
 }
 
@@ -313,11 +314,18 @@ async function build(options: BuildOptions = {}) {
         activity_income: new Prisma.Decimal(
           options.capacity?.activityIncome ?? 1050,
         ),
-        simulations: {
-          installment_amount: new Prisma.Decimal(
-            options.capacity?.installmentAmount ?? 815.97,
-          ),
-        },
+        simulation_result: options.capacity?.useQuoteSnapshot
+          ? {
+              installment_amount: options.capacity?.installmentAmount ?? 815.97,
+            }
+          : null,
+        simulations: options.capacity?.useQuoteSnapshot
+          ? null
+          : {
+              installment_amount: new Prisma.Decimal(
+                options.capacity?.installmentAmount ?? 815.97,
+              ),
+            },
       }),
       create: createQuote,
     },
@@ -1647,6 +1655,22 @@ describe('QuoteDraftFinancialService.save', () => {
         personalIncome: 1000,
         activityIncome: 200,
         installmentAmount: 500,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, financial, actor()),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('valida capacidade pelo snapshot da quote quando não há simulação vinculada', async () => {
+    const { financialService: service, tx } = await build({
+      capacity: {
+        personalIncome: 1000,
+        activityIncome: 200,
+        installmentAmount: 500,
+        useQuoteSnapshot: true,
       },
     });
 
