@@ -438,7 +438,13 @@ describe('QuotesService.createDraftFromSimulation', () => {
       interest_rate: 0.0339,
       installment_numbers: 10,
       first_installment_date: simulation.first_installment_date,
-      simulation_result: simulation.simulation_result,
+      // Normalizado pro contrato do Backoffice (installment_amount, não
+      // payment_amount) — o blob bruto da Celcoin é descartado.
+      simulation_result: {
+        installment_amount: 612.34,
+        total_amount_owed: 6123.4,
+        created_at: expect.any(Date),
+      },
       debts: [],
       loans: [],
     });
@@ -572,9 +578,12 @@ describe('QuotesService.createDraftFromSimulation', () => {
       insurance_premium: 189.9,
       cabure_quote_id: 'cabure-quote-1',
       installment_amount_with_insurance: 641.12,
+      // Mesma normalização do simulation_result "puro" — o blob bruto da
+      // Celcoin (com o prêmio já financiado) também é descartado aqui.
       simulation_result_with_insurance: {
-        payment_amount: 641.12,
+        installment_amount: 641.12,
         total_amount_owed: 6411.2,
+        created_at: expect.any(Date),
       },
       insurance_product_code: 'credito-pessoal-21',
     });

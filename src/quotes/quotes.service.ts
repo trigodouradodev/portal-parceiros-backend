@@ -158,10 +158,28 @@ export class QuotesService {
             birth_date: simulation.birth_date,
             party_id: simulation.party_id,
             simulation_id: simulation.id,
+            // `simulations.simulation_result` guarda a resposta BRUTA da
+            // Celcoin (dezenas de campos, inclusive `payment_amount`) — é
+            // formato de auditoria, não o contrato que `quotes` usa.
+            // `quotes.simulation_result` pertence ao Backoffice
+            // (trigo-connector), que só entende o formato mínimo abaixo
+            // (`installment_amount`, não `payment_amount`). Copiar o blob
+            // bruto pra cá já quebrou uma tela real do Backoffice (parcela
+            // sem juros) — normaliza no momento em que a quote nasce.
             ...(simulation.simulation_result === null
               ? {}
               : {
-                  simulation_result: simulation.simulation_result,
+                  simulation_result: {
+                    installment_amount: extractSimulationNumber(
+                      simulation.simulation_result,
+                      'payment_amount',
+                    ),
+                    total_amount_owed: extractSimulationNumber(
+                      simulation.simulation_result,
+                      'total_amount_owed',
+                    ),
+                    created_at: new Date(),
+                  },
                 }),
             insurance_premium: simulation.insurance_premium,
             cabure_quote_id: simulation.cabure_quote_id,
@@ -170,8 +188,17 @@ export class QuotesService {
             ...(simulation.simulation_result_with_insurance === null
               ? {}
               : {
-                  simulation_result_with_insurance:
-                    simulation.simulation_result_with_insurance,
+                  simulation_result_with_insurance: {
+                    installment_amount: extractSimulationNumber(
+                      simulation.simulation_result_with_insurance,
+                      'payment_amount',
+                    ),
+                    total_amount_owed: extractSimulationNumber(
+                      simulation.simulation_result_with_insurance,
+                      'total_amount_owed',
+                    ),
+                    created_at: new Date(),
+                  },
                 }),
             insurance_product_code: simulation.insurance_product_code,
           },

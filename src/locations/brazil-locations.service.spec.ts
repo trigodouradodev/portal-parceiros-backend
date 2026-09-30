@@ -1,4 +1,4 @@
-import { ServiceUnavailableException } from '@nestjs/common';
+import { Logger, ServiceUnavailableException } from '@nestjs/common';
 import { BrazilState } from '../common/brazil-state.enum';
 import { BrazilLocationsService } from './brazil-locations.service';
 
@@ -20,10 +20,12 @@ describe('BrazilLocationsService', () => {
     service = new BrazilLocationsService();
     fetchMock = jest.fn();
     global.fetch = fetchMock;
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
     global.fetch = originalFetch;
+    jest.restoreAllMocks();
   });
 
   it('agrupa cidades por estado e mantém o resultado em cache', async () => {
