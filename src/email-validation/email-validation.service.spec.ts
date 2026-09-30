@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { EmailValidationService } from './email-validation.service';
 import { SystemConfigsService } from '../system-configs/system-configs.service';
 
@@ -23,10 +24,12 @@ describe('EmailValidationService', () => {
     );
     fetchMock = jest.fn();
     global.fetch = fetchMock;
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
     global.fetch = originalFetch;
+    jest.restoreAllMocks();
   });
 
   it('aceita um e-mail válido segundo a ZeroBounce', async () => {

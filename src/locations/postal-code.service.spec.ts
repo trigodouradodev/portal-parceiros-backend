@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -24,10 +25,12 @@ describe('PostalCodeService', () => {
     service = new PostalCodeService();
     fetchMock = jest.fn();
     global.fetch = fetchMock;
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
     global.fetch = originalFetch;
+    jest.restoreAllMocks();
   });
 
   it('normaliza o CEP e mapeia a resposta do ViaCEP', async () => {
