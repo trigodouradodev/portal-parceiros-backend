@@ -12,6 +12,7 @@ import {
 import { QuoteStatus } from '../enums/quote-status.enum';
 import { QuoteFinancialSnapshot } from '../interfaces/quote-financial-snapshot.interface';
 import { normalizePaymentPixCode } from '../utils/payment-pix.util';
+import { resolveQuoteInstallmentAmount } from '../utils/quote-simulation.util';
 import { QuoteDraftStepsService } from './quote-draft-steps.service';
 
 @Injectable()
@@ -71,6 +72,7 @@ export class QuoteDraftFinancialService {
         select: {
           personal_income: true,
           activity_income: true,
+          simulation_result: true,
           simulations: { select: { installment_amount: true } },
         },
       });
@@ -85,9 +87,11 @@ export class QuoteDraftFinancialService {
           (total, loan) => total + loan.installmentAmount,
           0,
         );
-      const installmentAmount = Number(
-        capacity.simulations?.installment_amount ?? 0,
-      );
+      const installmentAmount =
+        resolveQuoteInstallmentAmount({
+          simulationResult: capacity.simulation_result,
+          linkedInstallmentAmount: capacity.simulations?.installment_amount,
+        }) ?? 0;
       const availableForInstallment = consideredIncome - committedAmount;
 
       if (availableForInstallment < installmentAmount) {

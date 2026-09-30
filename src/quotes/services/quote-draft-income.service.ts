@@ -73,7 +73,7 @@ export class QuoteDraftIncomeService {
           additional_incomes: secondaryIncomes.map((income) => ({
             source: income.source,
             amount: income.amount,
-          })) as unknown as Prisma.InputJsonValue,
+          })),
           updated_at: updatedAt,
         },
       });
