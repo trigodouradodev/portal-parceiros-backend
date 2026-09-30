@@ -117,7 +117,7 @@ export function buildRenewalPrefillUpdate(
     additional_incomes:
       source.additional_incomes as unknown as Prisma.InputJsonValue,
     income_model_version: 1,
-    income_entries: incomeEntries as Prisma.InputJsonValue,
+    income_entries: incomeEntries,
     available_income_proof: source.available_income_proof,
 
     // Não inclui geolocation.

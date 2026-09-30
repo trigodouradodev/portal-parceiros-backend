@@ -52,6 +52,7 @@ import { QuoteExpenseSnapshot } from '../interfaces/quote-financial-snapshot.int
 import { QuoteLoanSnapshot } from '../interfaces/quote-financial-snapshot.interface';
 import { QuoteListItem, QuotesPage } from '../interfaces/quote-list.interface';
 import { QuoteIncomeEntrySnapshot } from '../interfaces/quote-income-snapshot.interface';
+import { resolveQuoteInstallmentAmount } from '../utils/quote-simulation.util';
 
 const LIST_SELECT = {
   id: true,
@@ -62,6 +63,7 @@ const LIST_SELECT = {
   finance_product_id: true,
   finance_amount: true,
   installment_numbers: true,
+  simulation_result: true,
   current_sales_agent_id: true,
   created_at: true,
   updated_at: true,
@@ -89,7 +91,6 @@ const DETAIL_SELECT = {
   telephone: true,
   interest_rate: true,
   first_installment_date: true,
-  simulation_result: true,
   is_renegotiation: true,
   gender: true,
   secondary_document: true,
@@ -240,10 +241,10 @@ export class QuoteReadService {
       productName: row.finance_products.product_name,
       financeAmount: Number(row.finance_amount),
       installmentNumbers: row.installment_numbers,
-      installmentAmount:
-        row.simulations == null
-          ? null
-          : numberOrNull(row.simulations.installment_amount),
+      installmentAmount: resolveQuoteInstallmentAmount({
+        simulationResult: row.simulation_result,
+        linkedInstallmentAmount: row.simulations?.installment_amount,
+      }),
       insurancePremium: numberOrNull(row.insurance_premium),
       installmentAmountWithInsurance: numberOrNull(
         row.installment_amount_with_insurance,
@@ -275,10 +276,10 @@ export class QuoteReadService {
         row.interest_rate === null ? null : Number(row.interest_rate),
       installmentNumbers: row.installment_numbers,
       firstInstallmentDate: toDateOnly(row.first_installment_date) ?? '',
-      installmentAmount:
-        row.simulations === null
-          ? numberOrNull(simulationResult?.payment_amount)
-          : Number(row.simulations.installment_amount),
+      installmentAmount: resolveQuoteInstallmentAmount({
+        simulationResult: row.simulation_result,
+        linkedInstallmentAmount: row.simulations?.installment_amount,
+      }),
       totalAmountOwed: numberOrNull(simulationResult?.total_amount_owed),
       insurancePremium: numberOrNull(row.insurance_premium),
       installmentAmountWithInsurance: numberOrNull(
