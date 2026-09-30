@@ -451,7 +451,7 @@ describe('QuotesService.createDraftFromSimulation', () => {
       simulation_result: {
         installment_amount: 612.34,
         total_amount_owed: 6123.4,
-        created_at: expect.any(Date),
+        created_at: expect.any(Date) as unknown,
       },
       debts: [],
       loans: [],
@@ -591,7 +591,7 @@ describe('QuotesService.createDraftFromSimulation', () => {
       simulation_result_with_insurance: {
         installment_amount: 641.12,
         total_amount_owed: 6411.2,
-        created_at: expect.any(Date),
+        created_at: expect.any(Date) as unknown,
       },
       insurance_product_code: 'credito-pessoal-21',
     });
