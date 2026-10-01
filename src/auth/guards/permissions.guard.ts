@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import {
+  EXPLICIT_PERMISSIONS_KEY,
   PERMISSIONS_KEY,
   PERMISSIONS_MODE_KEY,
   PermissionMode,
@@ -22,13 +23,28 @@ export class PermissionsGuard implements CanActivate {
       PERMISSIONS_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const explicitRequired =
+      this.reflector.getAllAndOverride<PermissionKey[]>(
+        EXPLICIT_PERMISSIONS_KEY,
+        [context.getHandler(), context.getClass()],
+      ) ?? [];
 
-    if (!required || required.length === 0) {
+    if ((!required || required.length === 0) && explicitRequired.length === 0) {
       return true;
     }
 
     const request = context.switchToHttp().getRequest<{ user?: JwtPayload }>();
     const userPermissions = new Set(request.user?.permissions ?? []);
+
+    if (
+      explicitRequired.some((permission) => !userPermissions.has(permission))
+    ) {
+      throw new ForbiddenException('Permissão insuficiente');
+    }
+
+    if (!required || required.length === 0) {
+      return true;
+    }
 
     // ROLE_ADMIN tem visão global: passa em qualquer rota com permissões.
     if (userPermissions.has(PermissionKey.ROLE_ADMIN)) {

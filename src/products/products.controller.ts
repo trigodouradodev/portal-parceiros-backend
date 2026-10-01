@@ -28,6 +28,7 @@ export class ProductsController {
   @RequirePermissions(
     PermissionKey.CONTRACT_VIEW,
     PermissionKey.CONTRACT_VIEW_ALL,
+    PermissionKey.QUOTE_CREATE,
   )
   @Get()
   getProducts(@CurrentUser('sub') userId: string) {

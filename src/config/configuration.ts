@@ -25,8 +25,14 @@ export interface JwtConfig {
 export interface GeocodingConfig {
   /** Chave da Google Maps Geocoding API. Vazia desabilita o location-check. */
   apiKey: string;
-  /** Raio máximo (metros) aceito no location-check. */
+  /** Raio máximo (metros) aceito no location-check (confirmação exata). */
   radiusMeters: number;
+  /** Faixa intermediária (metros) para confirmação por proximidade. */
+  proximityRadiusMeters: number;
+}
+
+export interface StorageConfig {
+  awsRegion: string;
 }
 
 export interface Configuration {
@@ -34,6 +40,7 @@ export interface Configuration {
   database: DatabaseConfig;
   jwt: JwtConfig;
   geocoding: GeocodingConfig;
+  storage: StorageConfig;
 }
 
 export default (): Configuration => ({
@@ -67,5 +74,12 @@ export default (): Configuration => ({
       process.env.LOCATION_CHECK_RADIUS_METERS ?? '100',
       10,
     ),
+    proximityRadiusMeters: parseInt(
+      process.env.LOCATION_CHECK_PROXIMITY_RADIUS_METERS ?? '300',
+      10,
+    ),
+  },
+  storage: {
+    awsRegion: process.env.AWS_REGION ?? 'sa-east-1',
   },
 });

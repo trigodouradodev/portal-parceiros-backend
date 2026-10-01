@@ -2,7 +2,9 @@ import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PermissionsGuard } from './permissions.guard';
 import {
+  EXPLICIT_PERMISSIONS_KEY,
   PERMISSIONS_KEY,
+  PERMISSIONS_MODE_KEY,
   PermissionMode,
 } from '../decorators/require-permissions.decorator';
 import { PermissionKey } from '../permissions/permission-keys';
@@ -10,6 +12,7 @@ import { JwtPayload } from '../interfaces/jwt-payload.interface';
 
 interface GuardOptions {
   required?: PermissionKey[];
+  explicitRequired?: PermissionKey[];
   mode?: PermissionMode;
   permissions?: string[];
   /** false simula requisição sem `request.user` populado. */
@@ -17,12 +20,21 @@ interface GuardOptions {
 }
 
 function run(options: GuardOptions = {}): boolean {
-  const { required, mode, permissions = [], authenticated = true } = options;
+  const {
+    required,
+    explicitRequired,
+    mode,
+    permissions = [],
+    authenticated = true,
+  } = options;
 
   const reflector = {
-    getAllAndOverride: jest.fn((key: string) =>
-      key === PERMISSIONS_KEY ? required : mode,
-    ),
+    getAllAndOverride: jest.fn((key: string) => {
+      if (key === PERMISSIONS_KEY) return required;
+      if (key === EXPLICIT_PERMISSIONS_KEY) return explicitRequired;
+      if (key === PERMISSIONS_MODE_KEY) return mode;
+      return undefined;
+    }),
   } as unknown as Reflector;
 
   const user: JwtPayload = {
@@ -69,6 +81,26 @@ describe('bypass de ROLE_ADMIN', () => {
         required: [PermissionKey.QUOTE_CREATE, PermissionKey.QUOTE_APPROVER],
         mode: 'ALL',
         permissions: [PermissionKey.ROLE_ADMIN],
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('permissões explícitas de rollout', () => {
+  it('não concede bypass ao admin sem a permissão explícita', () => {
+    expect(() =>
+      run({
+        explicitRequired: [PermissionKey.QUOTE_NEW_ORIGINATION_FLOW],
+        permissions: [PermissionKey.ROLE_ADMIN],
+      }),
+    ).toThrow(ForbiddenException);
+  });
+
+  it('libera quando a permissão explícita está presente', () => {
+    expect(
+      run({
+        explicitRequired: [PermissionKey.QUOTE_NEW_ORIGINATION_FLOW],
+        permissions: [PermissionKey.QUOTE_NEW_ORIGINATION_FLOW],
       }),
     ).toBe(true);
   });

@@ -1,0 +1,1882 @@
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
+import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
+import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
+import { PermissionKey } from '../auth/permissions/permission-keys';
+import { BrazilState } from '../common/brazil-state.enum';
+import { PrismaService } from '../prisma/prisma.service';
+import { QuoteEventType } from '../quote-events/enums/quote-event-type.enum';
+import { QuoteEventsService } from '../quote-events/quote-events.service';
+import { SaveQuoteAddressDto } from './dto/save-quote-address.dto';
+import { SaveQuoteFinancialDto } from './dto/save-quote-financial.dto';
+import { SaveQuoteGuarantorDto } from './dto/save-quote-guarantor.dto';
+import { SaveQuoteIncomeDto } from './dto/save-quote-income.dto';
+import { SaveQuotePartnerOpinionDto } from './dto/save-quote-partner-opinion.dto';
+import { SaveQuoteRegistrationDto } from './dto/save-quote-registration.dto';
+import { QuoteDraftStep } from './enums/quote-draft-step.enum';
+import {
+  ExpenseCategory,
+  LoanCategory,
+  LoanFrequency,
+  LoanInstitution,
+  PaymentPixType,
+} from './enums/quote-financial.enum';
+import { GuarantorRelationship } from './enums/quote-guarantor.enum';
+import {
+  ActivityDuration,
+  IncomeEntryRole,
+  IncomeSource,
+} from './enums/quote-income.enum';
+import {
+  CustomerRelationshipDuration,
+  CustomerRelationshipOrigin,
+  PartnerAssessment,
+} from './enums/quote-partner-opinion.enum';
+import {
+  BusinessActivityBranch,
+  BusinessActivitySubcategory,
+  CreditPurpose,
+  EconomicActivityCategory,
+  Gender,
+  GovernmentProgram,
+  HousingStatus,
+  MaritalStatus,
+  ResidenceDuration,
+} from './enums/quote-registration.enum';
+import { QuoteStatus } from './enums/quote-status.enum';
+import { QuotesService } from './quotes.service';
+import { QuoteDraftAddressService } from './services/quote-draft-address.service';
+import { QuoteDraftFinancialService } from './services/quote-draft-financial.service';
+import { QuoteDraftGuarantorService } from './services/quote-draft-guarantor.service';
+import { QuoteDraftIncomeService } from './services/quote-draft-income.service';
+import { QuoteDraftPartnerOpinionService } from './services/quote-draft-partner-opinion.service';
+import { QuoteDraftRegistrationService } from './services/quote-draft-registration.service';
+import { QuoteDraftStepsService } from './services/quote-draft-steps.service';
+
+const QUOTE_ID = '11111111-1111-4111-8111-111111111111';
+const OWNER_ID = '22222222-2222-4222-8222-222222222222';
+const OTHER_ID = '33333333-3333-4333-8333-333333333333';
+const SIMULATION_ID = '44444444-4444-4444-8444-444444444444';
+const PRODUCT_ID = '55555555-5555-4555-8555-555555555555';
+const PARTY_ID = '66666666-6666-4666-8666-666666666666';
+const STEP_COMPLETED_AT = new Date('2026-09-02T13:00:00.000Z');
+const STEP_UPDATED_AT = new Date('2026-09-02T14:00:00.000Z');
+
+const registration: SaveQuoteRegistrationDto = {
+  name: ' Maria Souza ',
+  document: '00820787264',
+  birthDate: '1990-05-20',
+  email: ' MARIA@EMAIL.COM ',
+  telephone: '(11) 98765-4321',
+  isRenegotiation: false,
+  gender: Gender.FEMALE,
+  secondaryDocument: ' 123456789 ',
+  maritalStatus: MaritalStatus.MARRIED,
+  spouseDocument: '390.533.447-05',
+  childrenCount: 2,
+  householdMembers: 4,
+  housingStatus: HousingStatus.OWNED_PAID_OFF,
+  residenceDuration: ResidenceDuration.MORE_THAN_5_YEARS,
+  governmentPrograms: [GovernmentProgram.NONE],
+  ownsVehicle: true,
+  vehicleFinanced: false,
+  creditPurpose: CreditPurpose.BUSINESS_WORKING_CAPITAL,
+};
+
+const income: SaveQuoteIncomeDto = {
+  incomes: [
+    {
+      id: 'primary',
+      role: IncomeEntryRole.PRIMARY,
+      economicActivity: EconomicActivityCategory.OTHER,
+      economicActivityOther: ' Artesanato ',
+      businessActivityBranch: BusinessActivityBranch.RETAIL_COMMERCE,
+      businessActivitySubcategory: BusinessActivitySubcategory.GENERAL_COMMERCE,
+      activityDuration: ActivityDuration.THREE_TO_5_YEARS,
+      amount: 3500,
+      source: IncomeSource.OTHER,
+    },
+    {
+      id: 'secondary-1',
+      role: IncomeEntryRole.SECONDARY,
+      economicActivity: EconomicActivityCategory.BUSINESS_OWNER,
+      businessActivityBranch: BusinessActivityBranch.RETAIL_COMMERCE,
+      businessActivitySubcategory: BusinessActivitySubcategory.GENERAL_COMMERCE,
+      activityDuration: ActivityDuration.ONE_TO_3_YEARS,
+      amount: 800,
+      source: IncomeSource.RENT,
+    },
+    {
+      id: 'secondary-2',
+      role: IncomeEntryRole.SECONDARY,
+      economicActivity: EconomicActivityCategory.BUSINESS_OWNER,
+      businessActivityBranch: BusinessActivityBranch.RETAIL_COMMERCE,
+      businessActivitySubcategory: BusinessActivitySubcategory.GENERAL_COMMERCE,
+      activityDuration: ActivityDuration.ONE_TO_3_YEARS,
+      amount: 250,
+      source: IncomeSource.OTHER,
+    },
+  ],
+};
+
+const address: SaveQuoteAddressDto = {
+  zipCode: '01001-000',
+  streetName: ' Praça da Sé ',
+  streetNumber: ' 100 ',
+  streetComplement: ' Apto 12 ',
+  streetDistrict: ' Sé ',
+  city: ' São Paulo ',
+  state: BrazilState.SP,
+  referencePoint: ' Próximo à estação Sé ',
+  geolocation: {
+    latitude: -23.55052,
+    longitude: -46.633308,
+    precision: ' 15m ',
+  },
+};
+
+const partnerOpinion: SaveQuotePartnerOpinionDto = {
+  relationshipDuration: CustomerRelationshipDuration.ONE_TO_3_YEARS,
+  relationshipOrigin: CustomerRelationshipOrigin.AUREA_CUSTOMER_REFERRAL,
+  referrerDocument: '390.533.447-05',
+  assessment: PartnerAssessment.STRONGLY_RECOMMEND,
+  hasInformalDebtSigns: false,
+  hasFinancialUrgencySigns: false,
+  opinion: ' Cliente conhecido e com atividade estável. ',
+};
+
+const guarantor: SaveQuoteGuarantorDto = {
+  name: ' João Souza ',
+  document: '390.533.447-05',
+  birthDate: '1988-03-15',
+  email: ' JOAO@EMAIL.COM ',
+  telephone: '(11) 98765-4321',
+  address: {
+    zipCode: '01001-000',
+    streetName: ' Praça da Sé ',
+    streetNumber: ' 100 ',
+    streetComplement: ' Apto 12 ',
+    streetDistrict: ' Sé ',
+    city: ' São Paulo ',
+    state: BrazilState.SP,
+  },
+  relationship: GuarantorRelationship.SIBLING,
+};
+
+const financial: SaveQuoteFinancialDto = {
+  expenses: [
+    {
+      category: ExpenseCategory.HOUSING_OR_RENT,
+      amount: 850,
+      description: ' Aluguel da residência ',
+    },
+  ],
+  loans: [
+    {
+      installmentAmount: 420.5,
+      frequency: LoanFrequency.MONTHLY,
+      institution: LoanInstitution.NUBANK,
+      category: LoanCategory.CREDIT_CARD,
+      description: ' Parcelamento do cartão ',
+    },
+  ],
+  paymentPixType: PaymentPixType.CPF,
+  paymentPixCode: '529.982.247-25',
+};
+
+const simulation = {
+  id: SIMULATION_ID,
+  party_id: PARTY_ID,
+  finance_product_id: PRODUCT_ID,
+  client_name: 'Maria Souza',
+  document: '52998224725',
+  birth_date: new Date('1990-05-20T00:00:00.000Z'),
+  email: 'maria@email.com',
+  telephone: '11987654321',
+  finance_amount: 5000,
+  interest_rate: 0.0339,
+  installment_numbers: 10,
+  first_installment_date: new Date('2026-09-10T00:00:00.000Z'),
+  installment_amount: 612.34,
+  simulation_result: {
+    payment_amount: 612.34,
+    total_amount_owed: 6123.4,
+    schedule: [],
+  } as Record<string, unknown> | null,
+  insurance_premium: null as number | null,
+  cabure_quote_id: null as string | null,
+  installment_amount_with_insurance: null as number | null,
+  simulation_result_with_insurance: null as Record<string, unknown> | null,
+  insurance_product_code: null as string | null,
+  finance_products: { product_name: 'GIRO' },
+  parties: { addresses: [] as PartyAddressFixture[] },
+};
+
+interface PartyAddressFixture {
+  street: string;
+  number: string;
+  complement: string | null;
+  neighborhood: string;
+  city: string;
+  state: string | null;
+  zip_code: string;
+  landmark: string | null;
+}
+
+function actor(
+  sub = OWNER_ID,
+  permissions: string[] = [PermissionKey.QUOTE_CREATE],
+): JwtPayload {
+  return {
+    sub,
+    email: 'parceiro@trigo.test',
+    role: 'consultant',
+    permissions,
+  };
+}
+
+interface BuildOptions {
+  updateCount?: number;
+  quote?: {
+    quote_status: string;
+    current_sales_agent_id: string;
+  } | null;
+  simulation?: typeof simulation | null;
+  existingDraft?: { id: string } | null;
+  canCreateQuote?: boolean;
+  createError?: Error & { code?: string };
+  quoteDocument?: string;
+  completedSteps?: QuoteDraftStep[];
+  capacity?: {
+    personalIncome: number;
+    activityIncome: number;
+    installmentAmount: number;
+    useQuoteSnapshot?: boolean;
+  };
+}
+
+async function build(options: BuildOptions = {}) {
+  const createQuote = jest.fn(
+    (input: {
+      data: Record<string, unknown>;
+      select: Record<string, boolean>;
+    }): Promise<{ id: string; created_at: Date }> => {
+      void input;
+      if (options.createError) return Promise.reject(options.createError);
+      return Promise.resolve({
+        id: QUOTE_ID,
+        created_at: new Date('2026-09-02T12:00:00.000Z'),
+      });
+    },
+  );
+  const queryRaw = jest.fn(
+    (strings: TemplateStringsArray): Promise<Array<{ id: string }>> => {
+      void strings;
+      return Promise.resolve([{ id: 'cabure-proposal-1' }]);
+    },
+  );
+  const tx = {
+    $queryRaw: queryRaw,
+    simulations: {
+      findFirst: jest
+        .fn()
+        .mockResolvedValue(
+          options.simulation === undefined ? simulation : options.simulation,
+        ),
+    },
+    quotes: {
+      updateMany: jest
+        .fn()
+        .mockResolvedValue({ count: options.updateCount ?? 1 }),
+      findUnique: jest.fn(
+        (args: {
+          where: Record<string, unknown>;
+          select?: Record<string, boolean>;
+        }) =>
+          Promise.resolve(
+            'simulation_id' in args.where
+              ? (options.existingDraft ?? null)
+              : args.select?.document
+                ? { document: options.quoteDocument ?? simulation.document }
+                : (options.quote ?? null),
+          ),
+      ),
+      findUniqueOrThrow: jest.fn().mockResolvedValue({
+        personal_income: new Prisma.Decimal(
+          options.capacity?.personalIncome ?? 3500,
+        ),
+        activity_income: new Prisma.Decimal(
+          options.capacity?.activityIncome ?? 1050,
+        ),
+        simulation_result: options.capacity?.useQuoteSnapshot
+          ? {
+              installment_amount: options.capacity?.installmentAmount ?? 815.97,
+            }
+          : null,
+        simulations: options.capacity?.useQuoteSnapshot
+          ? null
+          : {
+              installment_amount: new Prisma.Decimal(
+                options.capacity?.installmentAmount ?? 815.97,
+              ),
+            },
+      }),
+      create: createQuote,
+    },
+    quote_draft_steps: {
+      upsert: jest.fn().mockResolvedValue({
+        completed_at: STEP_COMPLETED_AT,
+        updated_at: STEP_UPDATED_AT,
+      }),
+      findMany: jest
+        .fn()
+        .mockResolvedValue(
+          (options.completedSteps ?? Object.values(QuoteDraftStep)).map(
+            (step) => ({ step }),
+          ),
+        ),
+    },
+  };
+  const quoteEvents = {
+    createWithinTransaction: jest.fn().mockResolvedValue({ id: 'event-1' }),
+  };
+  const prisma = {
+    $transaction: jest.fn((callback: (client: typeof tx) => Promise<unknown>) =>
+      callback(tx),
+    ),
+  };
+  const quoteActivityPermissions = {
+    getPermissions: jest.fn().mockResolvedValue({
+      canSimulateQuote: true,
+      canCreateQuote: options.canCreateQuote ?? true,
+    }),
+  };
+  const module: TestingModule = await Test.createTestingModule({
+    providers: [
+      QuotesService,
+      QuoteDraftAddressService,
+      QuoteDraftFinancialService,
+      QuoteDraftGuarantorService,
+      QuoteDraftIncomeService,
+      QuoteDraftPartnerOpinionService,
+      QuoteDraftRegistrationService,
+      QuoteDraftStepsService,
+      { provide: PrismaService, useValue: prisma },
+      { provide: QuoteEventsService, useValue: quoteEvents },
+      {
+        provide: QuoteActivityPermissionsService,
+        useValue: quoteActivityPermissions,
+      },
+    ],
+  }).compile();
+
+  return {
+    service: module.get(QuotesService),
+    addressService: module.get(QuoteDraftAddressService),
+    financialService: module.get(QuoteDraftFinancialService),
+    guarantorService: module.get(QuoteDraftGuarantorService),
+    incomeService: module.get(QuoteDraftIncomeService),
+    partnerOpinionService: module.get(QuoteDraftPartnerOpinionService),
+    registrationService: module.get(QuoteDraftRegistrationService),
+    prisma,
+    quoteEvents,
+    quoteActivityPermissions,
+    createQuote,
+    tx,
+  };
+}
+
+describe('QuotesService.createDraftFromSimulation', () => {
+  it('cria o draft com o snapshot da simulação e registra o evento', async () => {
+    const { service, tx, quoteEvents, quoteActivityPermissions, createQuote } =
+      await build();
+
+    await expect(
+      service.createDraftFromSimulation(SIMULATION_ID, actor()),
+    ).resolves.toEqual({
+      id: QUOTE_ID,
+      simulationId: SIMULATION_ID,
+      status: QuoteStatus.DRAFT,
+      createdAt: '2026-09-02T12:00:00.000Z',
+      name: 'Maria Souza',
+      document: '52998224725',
+      birthDate: '1990-05-20',
+      email: 'maria@email.com',
+      telephone: '11987654321',
+      productId: PRODUCT_ID,
+      productName: 'GIRO',
+      interestRate: 0.0339,
+      financeAmount: 5000,
+      installmentNumbers: 10,
+      firstInstallmentDate: '2026-09-10',
+      installmentAmount: 612.34,
+      totalAmountOwed: 6123.4,
+    });
+
+    expect(quoteActivityPermissions.getPermissions).toHaveBeenCalledWith({
+      userId: OWNER_ID,
+      permissions: [PermissionKey.QUOTE_CREATE],
+    });
+    expect(tx.simulations.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: SIMULATION_ID, user_id: OWNER_ID },
+      }),
+    );
+    expect(createQuote).toHaveBeenCalledTimes(1);
+    const createInput = createQuote.mock.calls[0][0];
+    expect(createInput.data).toMatchObject({
+      simulation_id: SIMULATION_ID,
+      party_id: PARTY_ID,
+      current_sales_agent_id: OWNER_ID,
+      created_by: OWNER_ID,
+      quote_status: QuoteStatus.DRAFT,
+      document: '52998224725',
+      client_name: 'Maria Souza',
+      birth_date: simulation.birth_date,
+      email: 'maria@email.com',
+      telephone: '11987654321',
+      finance_product_id: PRODUCT_ID,
+      finance_amount: 5000,
+      interest_rate: 0.0339,
+      installment_numbers: 10,
+      first_installment_date: simulation.first_installment_date,
+      // Normalizado pro contrato do Backoffice (installment_amount, não
+      // payment_amount) — o blob bruto da Celcoin é descartado.
+      simulation_result: {
+        installment_amount: 612.34,
+        total_amount_owed: 6123.4,
+        created_at: expect.any(Date) as unknown,
+      },
+      debts: [],
+      loans: [],
+    });
+    expect(createInput.data.client_address).toEqual(expect.any(Object));
+    expect(createInput.select).toEqual({ id: true, created_at: true });
+    expect(quoteEvents.createWithinTransaction).toHaveBeenCalledWith(tx, {
+      quoteId: QUOTE_ID,
+      actorUserId: OWNER_ID,
+      type: QuoteEventType.DRAFT_CREATED,
+      metadata: { simulationId: SIMULATION_ID },
+    });
+  });
+
+  it('reaproveita o endereço primário da party no draft e na resposta', async () => {
+    const partyAddress: PartyAddressFixture = {
+      street: 'Praça da Sé',
+      number: '100',
+      complement: null,
+      neighborhood: 'Sé',
+      city: 'São Paulo',
+      state: 'sp',
+      zip_code: '01001-000',
+      landmark: 'Próximo à estação Sé',
+    };
+    const { service, createQuote } = await build({
+      simulation: {
+        ...simulation,
+        parties: { addresses: [partyAddress] },
+      },
+    });
+
+    const result = await service.createDraftFromSimulation(
+      SIMULATION_ID,
+      actor(),
+    );
+    const expectedAddress = {
+      zipCode: '01001000',
+      streetName: 'Praça da Sé',
+      streetNumber: '100',
+      streetComplement: '',
+      streetDistrict: 'Sé',
+      city: 'São Paulo',
+      state: BrazilState.SP,
+      referencePoint: 'Próximo à estação Sé',
+    };
+
+    expect(result.address).toEqual(expectedAddress);
+    expect(createQuote.mock.calls[0][0].data.client_address).toEqual(
+      expectedAddress,
+    );
+  });
+
+  it('bloqueia a criação quando ações de cobrança impedem propostas', async () => {
+    const { service, prisma } = await build({ canCreateQuote: false });
+
+    await expect(
+      service.createDraftFromSimulation(SIMULATION_ID, actor()),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('não revela simulação inexistente ou pertencente a outro parceiro', async () => {
+    const { service, tx, quoteEvents } = await build({ simulation: null });
+
+    await expect(
+      service.createDraftFromSimulation(SIMULATION_ID, actor()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(tx.quotes.create).not.toHaveBeenCalled();
+    expect(quoteEvents.createWithinTransaction).not.toHaveBeenCalled();
+  });
+
+  it('recusa simulação que já originou uma proposta', async () => {
+    const { service, tx, quoteEvents } = await build({
+      existingDraft: { id: QUOTE_ID },
+    });
+
+    await expect(
+      service.createDraftFromSimulation(SIMULATION_ID, actor()),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.quotes.create).not.toHaveBeenCalled();
+    expect(quoteEvents.createWithinTransaction).not.toHaveBeenCalled();
+  });
+
+  it('converte corrida na constraint única em conflito', async () => {
+    const { service, quoteEvents } = await build({
+      createError: Object.assign(new Error('Unique constraint'), {
+        code: 'P2002',
+      }),
+    });
+
+    await expect(
+      service.createDraftFromSimulation(SIMULATION_ID, actor()),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(quoteEvents.createWithinTransaction).not.toHaveBeenCalled();
+  });
+
+  it('permite converter simulação legada sem payload Celcoin', async () => {
+    const { service, createQuote } = await build({
+      simulation: { ...simulation, simulation_result: null },
+    });
+
+    const result = await service.createDraftFromSimulation(
+      SIMULATION_ID,
+      actor(),
+    );
+
+    expect(result).not.toHaveProperty('totalAmountOwed');
+    const createInput = createQuote.mock.calls[0][0];
+    expect(createInput.data).not.toHaveProperty('simulation_result');
+  });
+
+  it('copia os campos de seguro e adianta a cotação em cabure_insurance_proposals', async () => {
+    const { createQuote, service, tx } = await build({
+      simulation: {
+        ...simulation,
+        insurance_premium: 189.9,
+        cabure_quote_id: 'cabure-quote-1',
+        installment_amount_with_insurance: 641.12,
+        simulation_result_with_insurance: {
+          payment_amount: 641.12,
+          total_amount_owed: 6411.2,
+        },
+        insurance_product_code: 'credito-pessoal-21',
+      },
+    });
+
+    await service.createDraftFromSimulation(SIMULATION_ID, actor());
+
+    const createInput = createQuote.mock.calls[0][0];
+    expect(createInput.data).toMatchObject({
+      insurance_premium: 189.9,
+      cabure_quote_id: 'cabure-quote-1',
+      installment_amount_with_insurance: 641.12,
+      // Mesma normalização do simulation_result "puro" — o blob bruto da
+      // Celcoin (com o prêmio já financiado) também é descartado aqui.
+      simulation_result_with_insurance: {
+        installment_amount: 641.12,
+        total_amount_owed: 6411.2,
+        created_at: expect.any(Date) as unknown,
+      },
+      insurance_product_code: 'credito-pessoal-21',
+    });
+
+    const insertCall = tx.$queryRaw.mock.calls.find((call) =>
+      call[0]
+        .join(' ')
+        .includes('INSERT INTO public.cabure_insurance_proposals'),
+    );
+    expect(insertCall).toBeDefined();
+    expect(insertCall).toContain(QUOTE_ID);
+    expect(insertCall).toContain(PARTY_ID);
+    expect(insertCall).toContain('cabure-quote-1');
+    expect(insertCall).toContain(189.9);
+    expect(insertCall).toContain('credito-pessoal-21');
+  });
+
+  it('não grava cabure_insurance_proposals quando a simulação não cotou seguro', async () => {
+    const { service, tx } = await build();
+
+    await service.createDraftFromSimulation(SIMULATION_ID, actor());
+
+    const insertCall = tx.$queryRaw.mock.calls.find((call) =>
+      call[0]
+        .join(' ')
+        .includes('INSERT INTO public.cabure_insurance_proposals'),
+    );
+    expect(insertCall).toBeUndefined();
+  });
+});
+
+describe('QuoteDraftRegistrationService.save', () => {
+  it('salva o Cadastro e conclui a etapa na mesma transação', async () => {
+    const { registrationService: service, tx } = await build();
+
+    await expect(
+      service.save(QUOTE_ID, registration, actor()),
+    ).resolves.toEqual({
+      id: QUOTE_ID,
+      status: QuoteStatus.DRAFT,
+      step: QuoteDraftStep.REGISTRATION,
+      completedAt: STEP_COMPLETED_AT,
+      updatedAt: STEP_UPDATED_AT,
+      name: 'Maria Souza',
+      birthDate: '1990-05-20',
+      email: 'maria@email.com',
+      telephone: '11987654321',
+      isRenegotiation: false,
+      gender: Gender.FEMALE,
+      secondaryDocument: '123456789',
+      maritalStatus: MaritalStatus.MARRIED,
+      spouseDocument: '39053344705',
+      childrenCount: 2,
+      householdMembers: 4,
+      housingStatus: HousingStatus.OWNED_PAID_OFF,
+      residenceDuration: ResidenceDuration.MORE_THAN_5_YEARS,
+      governmentPrograms: [GovernmentProgram.NONE],
+      ownsVehicle: true,
+      vehicleFinanced: false,
+      creditPurpose: CreditPurpose.BUSINESS_WORKING_CAPITAL,
+    });
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: QUOTE_ID,
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OWNER_ID,
+      },
+      data: {
+        client_name: 'Maria Souza',
+        birth_date: new Date('1990-05-20T00:00:00.000Z'),
+        email: 'maria@email.com',
+        telephone: '11987654321',
+        is_renegotiation: false,
+        gender: Gender.FEMALE,
+        secondary_document: '123456789',
+        marital_status: MaritalStatus.MARRIED,
+        spouse_document: '39053344705',
+        children_count: 2,
+        household_members: 4,
+        housing_status: HousingStatus.OWNED_PAID_OFF,
+        residence_duration: ResidenceDuration.MORE_THAN_5_YEARS,
+        government_programs: [GovernmentProgram.NONE],
+        owns_vehicle: true,
+        vehicle_financed: false,
+        credit_purpose: CreditPurpose.BUSINESS_WORKING_CAPITAL,
+        updated_at: expect.any(Date) as unknown,
+      },
+    });
+    expect(tx.simulations.findFirst).not.toHaveBeenCalled();
+    expect(tx.quote_draft_steps.upsert).toHaveBeenCalledWith({
+      where: {
+        quote_id_step: {
+          quote_id: QUOTE_ID,
+          step: QuoteDraftStep.REGISTRATION,
+        },
+      },
+      create: {
+        quote_id: QUOTE_ID,
+        step: QuoteDraftStep.REGISTRATION,
+        completed_at: expect.any(Date) as unknown,
+        updated_at: expect.any(Date) as unknown,
+      },
+      update: { updated_at: expect.any(Date) as unknown },
+      select: { completed_at: true, updated_at: true },
+    });
+  });
+
+  it('limpa os campos condicionais do Cadastro quando eles não se aplicam', async () => {
+    const { registrationService: service, tx } = await build();
+    const result = await service.save(
+      QUOTE_ID,
+      {
+        ...registration,
+        maritalStatus: MaritalStatus.SINGLE,
+        spouseDocument: '39053344705',
+        ownsVehicle: false,
+        vehicleFinanced: true,
+      },
+      actor(),
+    );
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          spouse_document: null,
+          vehicle_financed: null,
+        }) as unknown,
+      }),
+    );
+    expect(result).not.toHaveProperty('spouseDocument');
+    expect(result).not.toHaveProperty('vehicleFinanced');
+  });
+
+  it.each([
+    {
+      name: 'nome inválido',
+      dto: { ...registration, name: '  ' },
+    },
+    {
+      name: 'data de nascimento inexistente',
+      dto: { ...registration, birthDate: '1990-02-30' },
+    },
+    {
+      name: 'tomador menor de idade',
+      dto: {
+        ...registration,
+        birthDate: new Date().toISOString().slice(0, 10),
+      },
+    },
+    {
+      name: 'telefone inválido',
+      dto: { ...registration, telephone: '12345' },
+    },
+    {
+      name: 'CPF inválido do cônjuge',
+      dto: { ...registration, spouseDocument: '11111111111' },
+    },
+    {
+      name: 'Nenhum combinado com outro programa',
+      dto: {
+        ...registration,
+        governmentPrograms: [GovernmentProgram.NONE, GovernmentProgram.BPC],
+      },
+    },
+    {
+      name: 'veículo sem informação de financiamento',
+      dto: { ...registration, vehicleFinanced: undefined },
+    },
+  ])('recusa $name', async ({ dto }) => {
+    const { registrationService: service, prisma } = await build();
+
+    await expect(service.save(QUOTE_ID, dto, actor())).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('recusa edição por outro parceiro', async () => {
+    const { registrationService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OTHER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, registration, actor()),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('recusa edição depois que a proposta sai de draft', async () => {
+    const { registrationService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.CLIENT_REVIEW,
+        current_sales_agent_id: OWNER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, registration, actor()),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('retorna not found quando a proposta não existe', async () => {
+    const { registrationService, tx } = await build({
+      updateCount: 0,
+      quote: null,
+    });
+
+    await expect(
+      registrationService.save(QUOTE_ID, registration, actor()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('QuoteDraftIncomeService.save', () => {
+  it('salva as rendas principal e adicionais separadamente e conclui a etapa', async () => {
+    const { incomeService: service, tx } = await build();
+
+    await expect(service.save(QUOTE_ID, income, actor())).resolves.toEqual({
+      id: QUOTE_ID,
+      status: QuoteStatus.DRAFT,
+      step: QuoteDraftStep.INCOME,
+      completedAt: STEP_COMPLETED_AT,
+      updatedAt: STEP_UPDATED_AT,
+      incomeModelVersion: 1,
+      incomes: [
+        { ...income.incomes[0], economicActivityOther: 'Artesanato' },
+        income.incomes[1],
+        income.incomes[2],
+      ],
+    });
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: QUOTE_ID,
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OWNER_ID,
+      },
+      data: {
+        income_model_version: 1,
+        income_entries: [
+          { ...income.incomes[0], economicActivityOther: 'Artesanato' },
+          income.incomes[1],
+          income.incomes[2],
+        ],
+        profession: null,
+        economic_activity_categories: [EconomicActivityCategory.OTHER],
+        economic_activity_other: 'Artesanato',
+        business_activity_branch: 'retail_commerce',
+        business_activity_subcategory: 'general_commerce',
+        business_document: null,
+        activity_duration: ActivityDuration.THREE_TO_5_YEARS,
+        personal_income: 3500,
+        activity_income: 1050,
+        familiar_income: 0,
+        income_source: IncomeSource.OTHER,
+        has_multiple_income_sources: true,
+        additional_incomes: [
+          { source: IncomeSource.RENT, amount: 800 },
+          { source: IncomeSource.OTHER, amount: 250 },
+        ],
+        updated_at: expect.any(Date) as unknown,
+      },
+    });
+    expect(tx.quote_draft_steps.upsert).toHaveBeenCalledWith({
+      where: {
+        quote_id_step: {
+          quote_id: QUOTE_ID,
+          step: QuoteDraftStep.INCOME,
+        },
+      },
+      create: {
+        quote_id: QUOTE_ID,
+        step: QuoteDraftStep.INCOME,
+        completed_at: expect.any(Date) as unknown,
+        updated_at: expect.any(Date) as unknown,
+      },
+      update: { updated_at: expect.any(Date) as unknown },
+      select: { completed_at: true, updated_at: true },
+    });
+  });
+
+  it('salva somente a renda principal quando não há rendas secundárias', async () => {
+    const { incomeService: service, tx } = await build();
+
+    const result = await service.save(
+      QUOTE_ID,
+      {
+        incomes: [income.incomes[0]],
+      },
+      actor(),
+    );
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          business_document: null,
+          personal_income: 3500,
+          additional_incomes: [],
+        }) as unknown,
+      }),
+    );
+    expect(result.incomes).toHaveLength(1);
+  });
+
+  it('normaliza profissão e limpa a descrição de Outros quando não se aplica', async () => {
+    const { incomeService: service, tx } = await build();
+
+    const result = await service.save(
+      QUOTE_ID,
+      {
+        incomes: [
+          {
+            ...income.incomes[0],
+            economicActivity: EconomicActivityCategory.CLT_EMPLOYEE,
+            economicActivityOther: 'Ignorar',
+            profession: ' Recepcionista ',
+          },
+        ],
+      },
+      actor(),
+    );
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          profession: 'Recepcionista',
+          economic_activity_other: null,
+        }) as unknown,
+      }),
+    );
+    expect(result.incomes[0].profession).toBe('Recepcionista');
+    expect(result.incomes[0]).not.toHaveProperty('economicActivityOther');
+  });
+
+  it('aceita subcategoria "Outro" em qualquer ramo de atividade', async () => {
+    const { incomeService: service } = await build();
+
+    await expect(
+      service.save(
+        QUOTE_ID,
+        {
+          incomes: [
+            {
+              ...income.incomes[0],
+              businessActivityBranch: BusinessActivityBranch.FOOD,
+              businessActivitySubcategory: BusinessActivitySubcategory.OTHER,
+            },
+          ],
+        },
+        actor(),
+      ),
+    ).resolves.toMatchObject({
+      incomes: [
+        expect.objectContaining({
+          businessActivityBranch: BusinessActivityBranch.FOOD,
+          businessActivitySubcategory: BusinessActivitySubcategory.OTHER,
+        }),
+      ],
+    });
+  });
+
+  it.each([
+    {
+      name: 'primeira renda secundária',
+      dto: {
+        incomes: [{ ...income.incomes[0], role: IncomeEntryRole.SECONDARY }],
+      },
+    },
+    {
+      name: 'identificador duplicado',
+      dto: {
+        incomes: [
+          income.incomes[0],
+          { ...income.incomes[1], id: income.incomes[0].id },
+        ],
+      },
+    },
+    {
+      name: 'subcategoria que não pertence ao ramo de atividade',
+      dto: {
+        incomes: [
+          {
+            ...income.incomes[0],
+            businessActivityBranch: BusinessActivityBranch.FOOD,
+            businessActivitySubcategory:
+              BusinessActivitySubcategory.GENERAL_COMMERCE,
+          },
+        ],
+      },
+    },
+    {
+      name: 'atividade Outros sem descrição',
+      dto: {
+        incomes: [{ ...income.incomes[0], economicActivityOther: undefined }],
+      },
+    },
+    {
+      name: 'CLT sem profissão',
+      dto: {
+        incomes: [
+          {
+            ...income.incomes[0],
+            economicActivity: EconomicActivityCategory.CLT_EMPLOYEE,
+            profession: undefined,
+          },
+        ],
+      },
+    },
+  ])('recusa $name', async ({ dto }) => {
+    const { incomeService: service, prisma } = await build();
+
+    await expect(service.save(QUOTE_ID, dto, actor())).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('recusa edição por outro parceiro', async () => {
+    const { incomeService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OTHER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, income, actor()),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('recusa edição depois que a proposta sai de draft', async () => {
+    const { incomeService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.CLIENT_REVIEW,
+        current_sales_agent_id: OWNER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, income, actor()),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('retorna not found quando a proposta não existe', async () => {
+    const { incomeService: service, tx } = await build({
+      updateCount: 0,
+      quote: null,
+    });
+
+    await expect(
+      service.save(QUOTE_ID, income, actor()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('QuoteDraftAddressService.save', () => {
+  it('salva endereço e geolocalização no formato legado e conclui a etapa', async () => {
+    const { addressService: service, tx, quoteEvents } = await build();
+
+    await expect(service.save(QUOTE_ID, address, actor())).resolves.toEqual({
+      id: QUOTE_ID,
+      status: QuoteStatus.DRAFT,
+      step: QuoteDraftStep.ADDRESS,
+      completedAt: STEP_COMPLETED_AT,
+      updatedAt: STEP_UPDATED_AT,
+      zipCode: '01001000',
+      streetName: 'Praça da Sé',
+      streetNumber: '100',
+      streetComplement: 'Apto 12',
+      streetDistrict: 'Sé',
+      city: 'São Paulo',
+      state: BrazilState.SP,
+      referencePoint: 'Próximo à estação Sé',
+      geolocation: {
+        latitude: -23.55052,
+        longitude: -46.633308,
+        precision: '15m',
+      },
+    });
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: QUOTE_ID,
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OWNER_ID,
+      },
+      data: {
+        client_address: {
+          zipCode: '01001000',
+          streetName: 'Praça da Sé',
+          streetNumber: '100',
+          streetComplement: 'Apto 12',
+          streetDistrict: 'Sé',
+          city: 'São Paulo',
+          state: BrazilState.SP,
+          referencePoint: 'Próximo à estação Sé',
+        },
+        geolocation: {
+          latitude: -23.55052,
+          longitude: -46.633308,
+          precision: '15m',
+        },
+        updated_at: expect.any(Date) as unknown,
+      },
+    });
+    expect(tx.quote_draft_steps.upsert).toHaveBeenCalledWith({
+      where: {
+        quote_id_step: {
+          quote_id: QUOTE_ID,
+          step: QuoteDraftStep.ADDRESS,
+        },
+      },
+      create: {
+        quote_id: QUOTE_ID,
+        step: QuoteDraftStep.ADDRESS,
+        completed_at: expect.any(Date) as unknown,
+        updated_at: expect.any(Date) as unknown,
+      },
+      update: { updated_at: expect.any(Date) as unknown },
+      select: { completed_at: true, updated_at: true },
+    });
+    expect(quoteEvents.createWithinTransaction).not.toHaveBeenCalled();
+  });
+
+  it('aceita complemento e geolocalização ausentes e limpa valores anteriores', async () => {
+    const { addressService: service, tx } = await build();
+
+    const result = await service.save(
+      QUOTE_ID,
+      {
+        ...address,
+        streetComplement: undefined,
+        geolocation: undefined,
+      },
+      actor(),
+    );
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          client_address: expect.objectContaining({
+            streetComplement: '',
+          }) as unknown,
+          geolocation: Prisma.DbNull,
+        }) as unknown,
+      }),
+    );
+    expect(result.streetComplement).toBe('');
+    expect(result).not.toHaveProperty('geolocation');
+  });
+
+  it('recusa edição por outro parceiro', async () => {
+    const { addressService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OTHER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, address, actor()),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('recusa edição depois que a proposta sai de draft', async () => {
+    const { addressService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.CLIENT_REVIEW,
+        current_sales_agent_id: OWNER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, address, actor()),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('retorna not found quando a proposta não existe', async () => {
+    const { addressService: service, tx } = await build({
+      updateCount: 0,
+      quote: null,
+    });
+
+    await expect(
+      service.save(QUOTE_ID, address, actor()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('QuoteDraftPartnerOpinionService.save', () => {
+  it('salva o parecer e conclui a etapa na mesma transação', async () => {
+    const { partnerOpinionService: service, tx, quoteEvents } = await build();
+
+    await expect(
+      service.save(QUOTE_ID, partnerOpinion, actor()),
+    ).resolves.toEqual({
+      id: QUOTE_ID,
+      status: QuoteStatus.DRAFT,
+      step: QuoteDraftStep.PARTNER_OPINION,
+      completedAt: STEP_COMPLETED_AT,
+      updatedAt: STEP_UPDATED_AT,
+      relationshipDuration: CustomerRelationshipDuration.ONE_TO_3_YEARS,
+      relationshipOrigin: CustomerRelationshipOrigin.AUREA_CUSTOMER_REFERRAL,
+      referrerDocument: '39053344705',
+      assessment: PartnerAssessment.STRONGLY_RECOMMEND,
+      hasInformalDebtSigns: false,
+      hasFinancialUrgencySigns: false,
+      opinion: 'Cliente conhecido e com atividade estável.',
+    });
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: QUOTE_ID,
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OWNER_ID,
+      },
+      data: {
+        customer_relationship_duration:
+          CustomerRelationshipDuration.ONE_TO_3_YEARS,
+        customer_relationship_origin:
+          CustomerRelationshipOrigin.AUREA_CUSTOMER_REFERRAL,
+        customer_relationship_other: null,
+        referrer_document: '39053344705',
+        partner_assessment: PartnerAssessment.STRONGLY_RECOMMEND,
+        informal_debt_signs: false,
+        financial_urgency_signs: false,
+        observations: 'Cliente conhecido e com atividade estável.',
+        updated_at: expect.any(Date) as unknown,
+      },
+    });
+    expect(tx.quote_draft_steps.upsert).toHaveBeenCalledWith({
+      where: {
+        quote_id_step: {
+          quote_id: QUOTE_ID,
+          step: QuoteDraftStep.PARTNER_OPINION,
+        },
+      },
+      create: {
+        quote_id: QUOTE_ID,
+        step: QuoteDraftStep.PARTNER_OPINION,
+        completed_at: expect.any(Date) as unknown,
+        updated_at: expect.any(Date) as unknown,
+      },
+      update: { updated_at: expect.any(Date) as unknown },
+      select: { completed_at: true, updated_at: true },
+    });
+    expect(quoteEvents.createWithinTransaction).not.toHaveBeenCalled();
+  });
+
+  it('limpa campos condicionais que não se aplicam à origem escolhida', async () => {
+    const { partnerOpinionService: service, tx } = await build();
+
+    const result = await service.save(
+      QUOTE_ID,
+      {
+        ...partnerOpinion,
+        relationshipOrigin: CustomerRelationshipOrigin.IN_PERSON_PROSPECTING,
+        relationshipOriginOther: 'Ignorar',
+        referrerDocument: '39053344705',
+      },
+      actor(),
+    );
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          customer_relationship_other: null,
+          referrer_document: null,
+        }) as unknown,
+      }),
+    );
+    expect(result).not.toHaveProperty('relationshipOriginOther');
+    expect(result).not.toHaveProperty('referrerDocument');
+  });
+
+  it.each([
+    {
+      name: 'origem Outros sem descrição',
+      dto: {
+        ...partnerOpinion,
+        relationshipOrigin: CustomerRelationshipOrigin.OTHER,
+        relationshipOriginOther: undefined,
+      },
+    },
+    {
+      name: 'indicação Áurea sem CPF',
+      dto: { ...partnerOpinion, referrerDocument: undefined },
+    },
+    {
+      name: 'indicação Áurea com CPF inválido',
+      dto: { ...partnerOpinion, referrerDocument: '11111111111' },
+    },
+  ])('recusa $name', async ({ dto }) => {
+    const { partnerOpinionService: service, prisma } = await build();
+
+    await expect(service.save(QUOTE_ID, dto, actor())).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('recusa edição por outro parceiro', async () => {
+    const { partnerOpinionService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OTHER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, partnerOpinion, actor()),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('recusa edição depois que a proposta sai de draft', async () => {
+    const { partnerOpinionService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.CLIENT_REVIEW,
+        current_sales_agent_id: OWNER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, partnerOpinion, actor()),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('retorna not found quando a proposta não existe', async () => {
+    const { partnerOpinionService: service, tx } = await build({
+      updateCount: 0,
+      quote: null,
+    });
+
+    await expect(
+      service.save(QUOTE_ID, partnerOpinion, actor()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('QuoteDraftGuarantorService.save', () => {
+  it('salva o avalista no formato consumido pelo connector e conclui a etapa', async () => {
+    const { guarantorService: service, tx, quoteEvents } = await build();
+
+    await expect(service.save(QUOTE_ID, guarantor, actor())).resolves.toEqual({
+      id: QUOTE_ID,
+      status: QuoteStatus.DRAFT,
+      step: QuoteDraftStep.GUARANTOR,
+      completedAt: STEP_COMPLETED_AT,
+      updatedAt: STEP_UPDATED_AT,
+      name: 'João Souza',
+      document: '39053344705',
+      birthDate: '1988-03-15',
+      email: 'joao@email.com',
+      telephone: '+5511987654321',
+      address: {
+        zipCode: '01001000',
+        streetName: 'Praça da Sé',
+        streetNumber: '100',
+        streetComplement: 'Apto 12',
+        streetDistrict: 'Sé',
+        city: 'São Paulo',
+        state: BrazilState.SP,
+      },
+      relationship: GuarantorRelationship.SIBLING,
+    });
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: QUOTE_ID,
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OWNER_ID,
+      },
+      data: {
+        guarantor: {
+          name: 'João Souza',
+          document: '39053344705',
+          birthDate: '1988-03-15',
+          email: 'joao@email.com',
+          telephone: '+5511987654321',
+          address: {
+            zipCode: '01001000',
+            streetName: 'Praça da Sé',
+            streetNumber: '100',
+            streetComplement: 'Apto 12',
+            streetDistrict: 'Sé',
+            city: 'São Paulo',
+            state: BrazilState.SP,
+          },
+          relationship: GuarantorRelationship.SIBLING,
+        },
+        updated_at: expect.any(Date) as unknown,
+      },
+    });
+    expect(tx.quotes.findUnique).toHaveBeenCalledWith({
+      where: { id: QUOTE_ID },
+      select: { document: true },
+    });
+    expect(tx.quote_draft_steps.upsert).toHaveBeenCalledWith({
+      where: {
+        quote_id_step: {
+          quote_id: QUOTE_ID,
+          step: QuoteDraftStep.GUARANTOR,
+        },
+      },
+      create: {
+        quote_id: QUOTE_ID,
+        step: QuoteDraftStep.GUARANTOR,
+        completed_at: expect.any(Date) as unknown,
+        updated_at: expect.any(Date) as unknown,
+      },
+      update: { updated_at: expect.any(Date) as unknown },
+      select: { completed_at: true, updated_at: true },
+    });
+    expect(quoteEvents.createWithinTransaction).not.toHaveBeenCalled();
+  });
+
+  it('aceita telefone com +55 e limpa complemento ausente', async () => {
+    const { guarantorService: service, tx } = await build();
+
+    const result = await service.save(
+      QUOTE_ID,
+      {
+        ...guarantor,
+        telephone: '+55 11 98765-4321',
+        address: { ...guarantor.address, streetComplement: undefined },
+      },
+      actor(),
+    );
+
+    expect(result.telephone).toBe('+5511987654321');
+    expect(result.address.streetComplement).toBe('');
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          guarantor: expect.objectContaining({
+            telephone: '+5511987654321',
+            address: expect.objectContaining({
+              streetComplement: '',
+            }) as unknown,
+          }) as unknown,
+        }) as unknown,
+      }),
+    );
+  });
+
+  it.each([
+    {
+      name: 'CPF inválido',
+      dto: { ...guarantor, document: '11111111111' },
+    },
+    {
+      name: 'data inexistente',
+      dto: { ...guarantor, birthDate: '1988-02-30' },
+    },
+    {
+      name: 'avalista menor de idade',
+      dto: { ...guarantor, birthDate: new Date().toISOString().slice(0, 10) },
+    },
+    {
+      name: 'telefone inválido',
+      dto: { ...guarantor, telephone: '12345' },
+    },
+  ])('recusa $name antes de abrir a transação', async ({ dto }) => {
+    const { guarantorService: service, prisma } = await build();
+
+    await expect(service.save(QUOTE_ID, dto, actor())).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('recusa o próprio tomador como avalista e não conclui a etapa', async () => {
+    const { guarantorService: service, tx } = await build({
+      quoteDocument: '390.533.447-05',
+    });
+
+    await expect(
+      service.save(QUOTE_ID, guarantor, actor()),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('recusa edição por outro parceiro', async () => {
+    const { guarantorService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OTHER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, guarantor, actor()),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('recusa edição depois que a proposta sai de draft', async () => {
+    const { guarantorService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.CLIENT_REVIEW,
+        current_sales_agent_id: OWNER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, guarantor, actor()),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('retorna not found quando a proposta não existe', async () => {
+    const { guarantorService: service, tx } = await build({
+      updateCount: 0,
+      quote: null,
+    });
+
+    await expect(
+      service.save(QUOTE_ID, guarantor, actor()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('QuoteDraftFinancialService.save', () => {
+  it('salva despesas e empréstimos no formato legado e conclui a etapa', async () => {
+    const { financialService: service, tx, quoteEvents } = await build();
+
+    await expect(service.save(QUOTE_ID, financial, actor())).resolves.toEqual({
+      id: QUOTE_ID,
+      status: QuoteStatus.DRAFT,
+      step: QuoteDraftStep.FINANCIAL,
+      completedAt: STEP_COMPLETED_AT,
+      updatedAt: STEP_UPDATED_AT,
+      expenses: [
+        {
+          category: ExpenseCategory.HOUSING_OR_RENT,
+          amount: 850,
+          description: 'Aluguel da residência',
+        },
+      ],
+      loans: [
+        {
+          installmentAmount: 420.5,
+          frequency: LoanFrequency.MONTHLY,
+          institution: LoanInstitution.NUBANK,
+          category: LoanCategory.CREDIT_CARD,
+          description: 'Parcelamento do cartão',
+        },
+      ],
+      paymentPixType: PaymentPixType.CPF,
+      paymentPixCode: '52998224725',
+    });
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: QUOTE_ID,
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OWNER_ID,
+      },
+      data: {
+        debts: [
+          {
+            category: ExpenseCategory.HOUSING_OR_RENT,
+            amount: 850,
+            observations: 'Aluguel da residência',
+          },
+        ],
+        loans: [
+          {
+            category: LoanCategory.CREDIT_CARD,
+            amount: 420.5,
+            observations: 'Parcelamento do cartão',
+            frequency: LoanFrequency.MONTHLY,
+            institution: LoanInstitution.NUBANK,
+          },
+        ],
+        payment_pix_type: PaymentPixType.CPF,
+        payment_pix_code: '52998224725',
+        updated_at: expect.any(Date) as unknown,
+      },
+    });
+    expect(tx.quote_draft_steps.upsert).toHaveBeenCalledWith({
+      where: {
+        quote_id_step: {
+          quote_id: QUOTE_ID,
+          step: QuoteDraftStep.FINANCIAL,
+        },
+      },
+      create: {
+        quote_id: QUOTE_ID,
+        step: QuoteDraftStep.FINANCIAL,
+        completed_at: expect.any(Date) as unknown,
+        updated_at: expect.any(Date) as unknown,
+      },
+      update: { updated_at: expect.any(Date) as unknown },
+      select: { completed_at: true, updated_at: true },
+    });
+    expect(quoteEvents.createWithinTransaction).not.toHaveBeenCalled();
+  });
+
+  it('aceita listas vazias e substitui os valores anteriores', async () => {
+    const { financialService: service, tx } = await build();
+
+    await expect(
+      service.save(
+        QUOTE_ID,
+        {
+          expenses: [],
+          loans: [],
+          paymentPixType: PaymentPixType.EMAIL,
+          paymentPixCode: ' cliente@exemplo.com ',
+        },
+        actor(),
+      ),
+    ).resolves.toMatchObject({
+      expenses: [],
+      loans: [],
+      paymentPixType: PaymentPixType.EMAIL,
+      paymentPixCode: 'cliente@exemplo.com',
+    });
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          debts: [],
+          loans: [],
+          payment_pix_type: PaymentPixType.EMAIL,
+          payment_pix_code: 'cliente@exemplo.com',
+        }) as unknown,
+      }),
+    );
+  });
+
+  it('recusa quando rendas não familiares menos compromissos não cobrem a parcela', async () => {
+    const { financialService: service, tx } = await build({
+      capacity: {
+        personalIncome: 1000,
+        activityIncome: 200,
+        installmentAmount: 500,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, financial, actor()),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('valida capacidade pelo snapshot da quote quando não há simulação vinculada', async () => {
+    const { financialService: service, tx } = await build({
+      capacity: {
+        personalIncome: 1000,
+        activityIncome: 200,
+        installmentAmount: 500,
+        useQuoteSnapshot: true,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, financial, actor()),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      name: 'despesa Outros sem descrição',
+      dto: {
+        ...financial,
+        expenses: [{ category: ExpenseCategory.OTHER, amount: 100 }],
+      },
+    },
+    {
+      name: 'categoria Outros sem descrição',
+      dto: {
+        ...financial,
+        loans: [
+          {
+            ...financial.loans[0],
+            category: LoanCategory.OTHER,
+            description: undefined,
+          },
+        ],
+      },
+    },
+    {
+      name: 'instituição Outros sem descrição',
+      dto: {
+        ...financial,
+        loans: [
+          {
+            ...financial.loans[0],
+            institution: LoanInstitution.OTHER,
+            description: undefined,
+          },
+        ],
+      },
+    },
+    {
+      name: 'chave PIX CPF inválida',
+      dto: {
+        ...financial,
+        paymentPixCode: '111.111.111-11',
+      },
+    },
+  ])('recusa $name antes de abrir a transação', async ({ dto }) => {
+    const { financialService: service, prisma } = await build();
+
+    await expect(service.save(QUOTE_ID, dto, actor())).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('recusa edição por outro parceiro', async () => {
+    const { financialService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OTHER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, financial, actor()),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('recusa edição depois que a proposta sai de draft', async () => {
+    const { financialService: service, tx } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.CLIENT_REVIEW,
+        current_sales_agent_id: OWNER_ID,
+      },
+    });
+
+    await expect(
+      service.save(QUOTE_ID, financial, actor()),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+
+  it('retorna not found quando a proposta não existe', async () => {
+    const { financialService: service, tx } = await build({
+      updateCount: 0,
+      quote: null,
+    });
+
+    await expect(
+      service.save(QUOTE_ID, financial, actor()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('QuotesService.submitDraftForClientReview', () => {
+  it('muda o draft do parceiro para client_review e registra o evento', async () => {
+    const { service, quoteEvents, tx } = await build();
+
+    await expect(
+      service.submitDraftForClientReview(QUOTE_ID, actor()),
+    ).resolves.toEqual({
+      id: QUOTE_ID,
+      status: QuoteStatus.CLIENT_REVIEW,
+      updatedAt: expect.any(Date) as unknown,
+    });
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: QUOTE_ID,
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OWNER_ID,
+      },
+      data: {
+        quote_status: QuoteStatus.CLIENT_REVIEW,
+        updated_at: expect.any(Date) as unknown,
+      },
+    });
+    expect(quoteEvents.createWithinTransaction).toHaveBeenCalledWith(tx, {
+      quoteId: QUOTE_ID,
+      actorUserId: OWNER_ID,
+      type: QuoteEventType.DRAFT_SUBMITTED,
+      metadata: {
+        previousStatus: QuoteStatus.DRAFT,
+        newStatus: QuoteStatus.CLIENT_REVIEW,
+      },
+    });
+  });
+
+  it('permite que ROLE_ADMIN finalize qualquer draft', async () => {
+    const { service, tx } = await build();
+
+    await service.submitDraftForClientReview(
+      QUOTE_ID,
+      actor(OTHER_ID, [PermissionKey.ROLE_ADMIN]),
+    );
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: QUOTE_ID,
+          quote_status: QuoteStatus.DRAFT,
+        },
+      }),
+    );
+  });
+
+  it('recusa submissão enquanto houver etapa pendente', async () => {
+    const completedSteps = Object.values(QuoteDraftStep).filter(
+      (step) => step !== QuoteDraftStep.DOCUMENTATION,
+    );
+    const { service, quoteEvents } = await build({ completedSteps });
+
+    await expect(
+      service.submitDraftForClientReview(QUOTE_ID, actor()),
+    ).rejects.toMatchObject({
+      response: {
+        message: 'Complete todas as etapas antes de enviar a proposta.',
+        missingSteps: [QuoteDraftStep.DOCUMENTATION],
+      },
+    });
+    expect(quoteEvents.createWithinTransaction).not.toHaveBeenCalled();
+  });
+
+  it('recusa proposta pertencente a outro parceiro', async () => {
+    const { service, quoteEvents } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OTHER_ID,
+      },
+    });
+
+    await expect(
+      service.submitDraftForClientReview(QUOTE_ID, actor()),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(quoteEvents.createWithinTransaction).not.toHaveBeenCalled();
+  });
+
+  it('recusa uma nova submissão quando a proposta já saiu de draft', async () => {
+    const { service, quoteEvents } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.CLIENT_REVIEW,
+        current_sales_agent_id: OWNER_ID,
+      },
+    });
+
+    await expect(
+      service.submitDraftForClientReview(QUOTE_ID, actor()),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(quoteEvents.createWithinTransaction).not.toHaveBeenCalled();
+  });
+
+  it('retorna not found quando a proposta não existe', async () => {
+    const { service } = await build({ updateCount: 0, quote: null });
+
+    await expect(
+      service.submitDraftForClientReview(QUOTE_ID, actor()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
