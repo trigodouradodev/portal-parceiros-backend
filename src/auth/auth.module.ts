@@ -1,3 +1,4 @@
+import { SystemConfigsModule } from '../system-configs/system-configs.module';
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
@@ -13,6 +14,7 @@ import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 
 @Module({
   imports: [
+    SystemConfigsModule,
     UsersModule,
     ActivitiesModule,
     PassportModule,
