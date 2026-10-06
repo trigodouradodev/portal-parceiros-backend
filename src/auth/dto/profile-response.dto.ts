@@ -1,6 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class ProfileResponseDto {
+  @ApiProperty({
+    example: 2000,
+    description:
+      'Valor solicitado em reais acima do qual o comprovante de renda é obrigatório.',
+  })
+  quoteIncomeProofRequiredAbove: number;
+
   @ApiProperty({ format: 'uuid' })
   id: string;
 

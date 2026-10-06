@@ -53,6 +53,7 @@ interface QuoteAttachmentRecord {
 }
 
 interface EditableQuote {
+  finance_amount: Prisma.Decimal;
   quote_status: string;
   current_sales_agent_id: string;
   document_attachment: unknown;
@@ -173,7 +174,11 @@ export class QuoteDraftDocumentationService {
       }),
     );
 
-    return groups;
+    const incomeProofThreshold = await this.getIncomeProofThreshold();
+    return {
+      ...groups,
+      incomeProofRequired: Number(quote.finance_amount) > incomeProofThreshold,
+    };
   }
 
   async remove(
@@ -234,7 +239,10 @@ export class QuoteDraftDocumentationService {
     return this.runSerializableTransaction(async (tx) => {
       const quote = await this.findEditableQuote(quoteId, actor, tx);
       const groups = toGroups(quote);
-      validateRequiredDocumentation(groups);
+      validateRequiredDocumentation(
+        groups,
+        Number(quote.finance_amount) > (await this.getIncomeProofThreshold()),
+      );
 
       const updatedAt = new Date();
       await tx.quotes.update({
@@ -267,6 +275,7 @@ export class QuoteDraftDocumentationService {
     const quote = await client.quotes.findUnique({
       where: { id: quoteId },
       select: {
+        finance_amount: true,
         quote_status: true,
         current_sales_agent_id: true,
         document_attachment: true,
@@ -289,6 +298,32 @@ export class QuoteDraftDocumentationService {
       );
     }
     return quote;
+  }
+
+  private getIncomeProofThreshold(): Promise<number> {
+    return this.systemConfigs.getQuoteIncomeProofRequiredAbove();
+  }
+
+  async validateForSubmission(
+    quoteId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    const quote = await tx.quotes.findUniqueOrThrow({
+      where: { id: quoteId },
+      select: {
+        finance_amount: true,
+        document_attachment: true,
+        proof_of_residence_attachment: true,
+        activity_photos_attachment: true,
+        proof_of_income_attachment: true,
+        quote_status: true,
+        current_sales_agent_id: true,
+      },
+    });
+    validateRequiredDocumentation(
+      toGroups(quote),
+      Number(quote.finance_amount) > (await this.getIncomeProofThreshold()),
+    );
   }
 
   private async getBucket(): Promise<string> {
@@ -374,11 +409,11 @@ function validateFile(
   }
 
   const detectedMimeType = detectMimeType(file.buffer);
-  const allowed = allowedMimeTypes(dto.attachmentType);
+  const allowed = allowedMimeTypes(dto.attachmentType, dto.incomeProofType);
   if (!detectedMimeType || !allowed.includes(detectedMimeType)) {
     if (dto.attachmentType === QuoteAttachmentType.PROOF_OF_INCOME) {
       throw new BadRequestException(
-        'Comprovantes de renda devem estar em formato PDF.',
+        'Para esse tipo de comprovante, envie o arquivo em PDF. Só o holerite pode ser enviado como foto.',
       );
     }
     throw new BadRequestException(
@@ -391,11 +426,17 @@ function validateFile(
   return { ...file, detectedMimeType };
 }
 
-function allowedMimeTypes(type: QuoteAttachmentType): string[] {
+function allowedMimeTypes(
+  type: QuoteAttachmentType,
+  incomeProofType?: IncomeProofType,
+): string[] {
   if (type === QuoteAttachmentType.ACTIVITY_PHOTO) {
     return ['image/jpeg', 'image/png'];
   }
-  if (type === QuoteAttachmentType.PROOF_OF_INCOME) {
+  if (
+    type === QuoteAttachmentType.PROOF_OF_INCOME &&
+    incomeProofType !== IncomeProofType.PAYSLIP
+  ) {
     return ['application/pdf'];
   }
   return ['application/pdf', 'image/jpeg', 'image/png'];
@@ -513,8 +554,15 @@ function attachmentStorageKey(
 
 function validateRequiredDocumentation(
   groups: QuoteDocumentationAttachments,
+  incomeProofRequired: boolean,
 ): void {
-  if (groups.proofOfIncome.some((attachment) => !attachment.incomeProofType)) {
+  if (
+    groups.proofOfIncome.some(
+      (attachment) =>
+        !attachment.incomeProofType ||
+        !Object.values(IncomeProofType).includes(attachment.incomeProofType),
+    )
+  ) {
     throw new BadRequestException(
       'Classifique todos os comprovantes de renda antes de concluir.',
     );
@@ -527,10 +575,7 @@ function validateRequiredDocumentation(
   if (groups.proofOfResidence.length === 0) {
     missing.push('comprovante de residência');
   }
-  if (groups.activityPhotos.length === 0) {
-    missing.push('foto da atividade');
-  }
-  if (groups.proofOfIncome.length === 0) {
+  if (incomeProofRequired && groups.proofOfIncome.length === 0) {
     missing.push('comprovante de renda');
   }
   if (missing.length > 0) {
