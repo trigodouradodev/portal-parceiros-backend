@@ -3,6 +3,7 @@ import { Type } from 'class-transformer';
 import {
   IsDateString,
   IsEmail,
+  IsDivisibleBy,
   IsInt,
   IsNumber,
   IsOptional,
@@ -54,11 +55,18 @@ export class SimulateDto {
   @IsUUID()
   productId: string;
 
-  @ApiProperty({ example: 5000, minimum: 500, maximum: 30000 })
+  @ApiProperty({
+    type: 'integer',
+    example: 5000,
+    minimum: 500,
+    maximum: 30000,
+    multipleOf: 100,
+  })
   @Type(() => Number)
-  @IsNumber()
+  @IsInt()
   @Min(500)
   @Max(30000)
+  @IsDivisibleBy(100, { message: 'Informe um valor múltiplo de R$ 100' })
   amount: number;
 
   @ApiProperty({ example: 10, minimum: 2 })

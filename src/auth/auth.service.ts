@@ -1,3 +1,4 @@
+import { SystemConfigsService } from '../system-configs/system-configs.service';
 import {
   BadRequestException,
   ForbiddenException,
@@ -28,6 +29,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly quoteActivityPermissions: QuoteActivityPermissionsService,
+    private readonly systemConfigs: SystemConfigsService,
   ) {}
 
   async login(dto: LoginDto) {
@@ -158,16 +160,20 @@ export class AuthService {
   }
 
   private async toProfile(user: trigo_users, permissions: string[]) {
-    const activityPermissions =
-      await this.quoteActivityPermissions.getPermissions({
-        userId: user.id,
-        permissions,
-      });
+    const [activityPermissions, quoteIncomeProofRequiredAbove] =
+      await Promise.all([
+        this.quoteActivityPermissions.getPermissions({
+          userId: user.id,
+          permissions,
+        }),
+        this.systemConfigs.getQuoteIncomeProofRequiredAbove(),
+      ]);
 
     return {
       ...this.toPublicUser(user),
       permissions,
       ...activityPermissions,
+      quoteIncomeProofRequiredAbove,
     };
   }
 }

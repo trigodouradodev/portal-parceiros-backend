@@ -1,3 +1,4 @@
+import { SystemConfigsService } from '../system-configs/system-configs.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
@@ -40,6 +41,7 @@ function user(overrides: Partial<trigo_users> = {}): trigo_users {
 interface BuildOptions {
   found?: trigo_users | null;
   permissions?: string[];
+  quoteIncomeProofRequiredAbove?: number;
   quoteActivityPermissions?: {
     canSimulateQuote: boolean;
     canCreateQuote: boolean;
@@ -48,6 +50,7 @@ interface BuildOptions {
 
 async function build(options: BuildOptions = {}) {
   const {
+    quoteIncomeProofRequiredAbove = 2000,
     found = user(),
     // QUOTE_ACTIVITY_GATES é exigido pro login (ver testes dedicados abaixo)
     // — vai no padrão pra não quebrar os outros testes deste arquivo, que
@@ -80,6 +83,14 @@ async function build(options: BuildOptions = {}) {
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       AuthService,
+      {
+        provide: SystemConfigsService,
+        useValue: {
+          getQuoteIncomeProofRequiredAbove: jest
+            .fn()
+            .mockResolvedValue(quoteIncomeProofRequiredAbove),
+        },
+      },
       { provide: UsersService, useValue: usersService },
       { provide: JwtService, useValue: jwtService },
       { provide: ConfigService, useValue: configService },
@@ -310,6 +321,12 @@ describe('refreshTokens', () => {
 });
 
 describe('getProfile', () => {
+  it('retorna o limite configurado no perfil', async () => {
+    const { service } = await build({ quoteIncomeProofRequiredAbove: 3500 });
+    await expect(service.getProfile(USER_ID)).resolves.toMatchObject({
+      quoteIncomeProofRequiredAbove: 3500,
+    });
+  });
   it('devolve o perfil público com as permissões', async () => {
     const { service } = await build();
     const profile = await service.getProfile(USER_ID);
@@ -323,6 +340,7 @@ describe('getProfile', () => {
       permissions: ['INSTALLMENT_VIEW', 'QUOTE_ACTIVITY_GATES'],
       canSimulateQuote: true,
       canCreateQuote: true,
+      quoteIncomeProofRequiredAbove: 2000,
     });
   });
 

@@ -65,3 +65,33 @@ describe('SystemConfigsService', () => {
     ).rejects.toEqual(new MissingSystemConfigError(['CONFIG_B']));
   });
 });
+
+describe('limite de comprovante de renda', () => {
+  it('usa 2000 quando a chave não existe', async () => {
+    await expect(
+      build([]).service.getQuoteIncomeProofRequiredAbove(),
+    ).resolves.toBe(2000);
+  });
+  it.each(['2000', '3500', '0'])(
+    'converte o limite %s em reais',
+    async (value) => {
+      await expect(
+        build([
+          { key: 'QUOTE_INCOME_PROOF_REQUIRED_ABOVE', value },
+        ]).service.getQuoteIncomeProofRequiredAbove(),
+      ).resolves.toBe(Number(value));
+    },
+  );
+  it.each(['', 'abc', '-1', 'Infinity'])(
+    'recusa configuração inválida %s',
+    async (value) => {
+      await expect(
+        build([
+          { key: 'QUOTE_INCOME_PROOF_REQUIRED_ABOVE', value },
+        ]).service.getQuoteIncomeProofRequiredAbove(),
+      ).rejects.toThrow(
+        'Configuração QUOTE_INCOME_PROOF_REQUIRED_ABOVE inválida.',
+      );
+    },
+  );
+});
