@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MissingSystemConfigError } from './errors/missing-system-config.error';
 
@@ -19,6 +19,17 @@ export class SystemConfigsService {
   async getValue(key: string): Promise<string | null> {
     const values = await this.getValues([key]);
     return values[key];
+  }
+
+  async getQuoteIncomeProofRequiredAbove(): Promise<number> {
+    const value = await this.getValue('QUOTE_INCOME_PROOF_REQUIRED_ABOVE');
+    const threshold = value === null ? 2000 : Number(value);
+    if (!Number.isFinite(threshold) || threshold < 0 || value?.trim() === '') {
+      throw new ServiceUnavailableException(
+        'Configuração QUOTE_INCOME_PROOF_REQUIRED_ABOVE inválida.',
+      );
+    }
+    return threshold;
   }
 
   /** Busca chaves em lote e devolve `null` para as que não existem. */

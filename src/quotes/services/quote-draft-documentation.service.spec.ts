@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -21,6 +22,7 @@ const BUCKET = 'quotes-test';
 const actor: JwtPayload = {
   sub: USER_ID,
   email: 'partner@example.com',
+  role: 'consultant',
   permissions: ['QUOTE_CREATE'],
 };
 
@@ -42,6 +44,7 @@ function attachment(overrides: Record<string, unknown> = {}) {
 
 function editableQuote(overrides: Record<string, unknown> = {}) {
   return {
+    finance_amount: new Prisma.Decimal(3000),
     quote_status: QuoteStatus.DRAFT,
     current_sales_agent_id: USER_ID,
     document_attachment: [],
@@ -74,6 +77,7 @@ function build(initialQuote = editableQuote()) {
   const tx = {
     quotes: {
       findUnique: jest.fn().mockResolvedValue(initialQuote),
+      findUniqueOrThrow: jest.fn().mockResolvedValue(initialQuote),
       update: jest.fn().mockResolvedValue({}),
     },
     quote_draft_steps: {
@@ -98,6 +102,7 @@ function build(initialQuote = editableQuote()) {
     createWithinTransaction: jest.fn().mockResolvedValue({}),
   };
   const systemConfigs = {
+    getQuoteIncomeProofRequiredAbove: jest.fn().mockResolvedValue(2000),
     getRequiredValues: jest
       .fn()
       .mockResolvedValue({ S3_QUOTES_ATTACHMENTS_BUCKET: BUCKET }),
@@ -227,7 +232,7 @@ describe('QuoteDraftDocumentationService', () => {
     expect(storage.upload).not.toHaveBeenCalled();
   });
 
-  it('aceita comprovante de renda somente em PDF', async () => {
+  it('aceita foto de holerite', async () => {
     const { service, storage } = build();
 
     await expect(
@@ -240,8 +245,11 @@ describe('QuoteDraftDocumentationService', () => {
         uploadedFile(png, 'holerite.png'),
         actor,
       ),
-    ).rejects.toThrow('Comprovantes de renda devem estar em formato PDF.');
-    expect(storage.upload).not.toHaveBeenCalled();
+    ).resolves.toMatchObject({
+      mimetype: 'image/png',
+      incomeProofType: IncomeProofType.PAYSLIP,
+    });
+    expect(storage.upload).toHaveBeenCalled();
   });
 
   it('lista os grupos com URL assinada sem expor a chave do S3', async () => {
@@ -324,6 +332,110 @@ describe('QuoteDraftDocumentationService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it.each([0, 1999.99, 2000])(
+    'permite concluir sem comprovante até o limite: %s',
+    async (amount) => {
+      const { service } = build(
+        editableQuote({
+          finance_amount: new Prisma.Decimal(amount),
+          document_attachment: [attachment()],
+          proof_of_residence_attachment: [attachment()],
+          activity_photos_attachment: [attachment()],
+        }),
+      );
+      await expect(service.complete(QUOTE_ID, actor)).resolves.toMatchObject({
+        proofOfIncome: [],
+      });
+    },
+  );
+
+  it.each([2000.01, 3000])(
+    'exige comprovante acima do limite: %s',
+    async (amount) => {
+      const { service } = build(
+        editableQuote({
+          finance_amount: new Prisma.Decimal(amount),
+          document_attachment: [attachment()],
+          proof_of_residence_attachment: [attachment()],
+          activity_photos_attachment: [attachment()],
+        }),
+      );
+      await expect(service.complete(QUOTE_ID, actor)).rejects.toThrow(
+        'comprovante de renda',
+      );
+    },
+  );
+
+  it('reavalia o valor na submissão após concluir a documentação', async () => {
+    const { service, tx } = build(
+      editableQuote({
+        finance_amount: new Prisma.Decimal(2000),
+        document_attachment: [attachment()],
+        proof_of_residence_attachment: [attachment()],
+        activity_photos_attachment: [attachment()],
+      }),
+    );
+    await service.complete(QUOTE_ID, actor);
+    tx.quotes.findUniqueOrThrow.mockResolvedValue(
+      editableQuote({
+        finance_amount: new Prisma.Decimal(2000.01),
+        document_attachment: [attachment()],
+        proof_of_residence_attachment: [attachment()],
+        activity_photos_attachment: [attachment()],
+      }),
+    );
+    await expect(
+      service.validateForSubmission(
+        QUOTE_ID,
+        tx as unknown as Prisma.TransactionClient,
+      ),
+    ).rejects.toThrow('comprovante de renda');
+  });
+
+  it('usa o limite configurado e exige classificação mesmo abaixo dele', async () => {
+    const { service, systemConfigs } = build(
+      editableQuote({
+        finance_amount: new Prisma.Decimal(3000),
+        document_attachment: [attachment()],
+        proof_of_residence_attachment: [attachment()],
+        activity_photos_attachment: [attachment()],
+      }),
+    );
+    systemConfigs.getQuoteIncomeProofRequiredAbove.mockResolvedValue(3500);
+    await expect(service.complete(QUOTE_ID, actor)).resolves.toBeDefined();
+    const unclassified = build(
+      editableQuote({
+        finance_amount: new Prisma.Decimal(1000),
+        proof_of_income_attachment: [attachment()],
+      }),
+    );
+    await expect(
+      unclassified.service.complete(QUOTE_ID, actor),
+    ).rejects.toThrow('Classifique');
+  });
+
+  it.each([
+    IncomeProofType.BANK_STATEMENT,
+    IncomeProofType.INSS_BENEFIT,
+    IncomeProofType.MEI_DAS,
+  ])('rejeita foto para %s', async (incomeProofType) => {
+    const { service, storage } = build();
+    await expect(
+      service.upload(
+        QUOTE_ID,
+        {
+          attachmentType: QuoteAttachmentType.PROOF_OF_INCOME,
+          incomeProofType,
+        },
+        uploadedFile(png, 'renda.png'),
+        actor,
+      ),
+    ).rejects.toThrow(
+      'Para esse tipo de comprovante, envie o arquivo em PDF. Só o holerite pode ser enviado como foto.',
+    );
+    expect(storage.upload).not.toHaveBeenCalled();
+  });
+
   it('recusa alterações quando a quote já saiu de draft', async () => {
     const { service, storage } = build(
       editableQuote({ quote_status: QuoteStatus.CLIENT_REVIEW }),
@@ -340,3 +452,29 @@ describe('QuoteDraftDocumentationService', () => {
     expect(storage.upload).not.toHaveBeenCalled();
   });
 });
+
+it.each([2000, 2100])(
+  'conclui e submete sem fotos da atividade com valor %s',
+  async (amount) => {
+    const { service, tx } = build(
+      editableQuote({
+        finance_amount: new Prisma.Decimal(amount),
+        document_attachment: [attachment()],
+        proof_of_residence_attachment: [attachment()],
+        proof_of_income_attachment: [
+          attachment({ incomeProofType: IncomeProofType.PAYSLIP }),
+        ],
+        activity_photos_attachment: [],
+      }),
+    );
+    await expect(service.complete(QUOTE_ID, actor)).resolves.toMatchObject({
+      activityPhotos: [],
+    });
+    await expect(
+      service.validateForSubmission(
+        QUOTE_ID,
+        tx as unknown as Prisma.TransactionClient,
+      ),
+    ).resolves.toBeUndefined();
+  },
+);

@@ -16,6 +16,7 @@ import { QuoteEventsService } from '../quote-events/quote-events.service';
 import { QuoteStatus } from './enums/quote-status.enum';
 import { QuoteDraftStep } from './enums/quote-draft-step.enum';
 import { QuoteStatusResponse } from './interfaces/quote-status-response.interface';
+import { QuoteDraftDocumentationService } from './services/quote-draft-documentation.service';
 import { QuoteDraftSnapshot } from './interfaces/quote-draft-snapshot.interface';
 
 const EMPTY_ADDRESS = {
@@ -37,6 +38,7 @@ export class QuotesService {
     private readonly prisma: PrismaService,
     private readonly quoteEvents: QuoteEventsService,
     private readonly quoteActivityPermissions: QuoteActivityPermissionsService,
+    private readonly documentation: QuoteDraftDocumentationService,
   ) {}
 
   /**
@@ -317,6 +319,8 @@ export class QuotesService {
           missingSteps,
         });
       }
+
+      await this.documentation.validateForSubmission(quoteId, tx);
 
       await this.quoteEvents.createWithinTransaction(tx, {
         quoteId,

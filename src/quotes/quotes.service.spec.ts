@@ -57,6 +57,7 @@ import { QuoteDraftGuarantorService } from './services/quote-draft-guarantor.ser
 import { QuoteDraftIncomeService } from './services/quote-draft-income.service';
 import { QuoteDraftPartnerOpinionService } from './services/quote-draft-partner-opinion.service';
 import { QuoteDraftRegistrationService } from './services/quote-draft-registration.service';
+import { QuoteDraftDocumentationService } from './services/quote-draft-documentation.service';
 import { QuoteDraftStepsService } from './services/quote-draft-steps.service';
 
 const QUOTE_ID = '11111111-1111-4111-8111-111111111111';
@@ -367,6 +368,12 @@ async function build(options: BuildOptions = {}) {
       QuoteDraftPartnerOpinionService,
       QuoteDraftRegistrationService,
       QuoteDraftStepsService,
+      {
+        provide: QuoteDraftDocumentationService,
+        useValue: {
+          validateForSubmission: jest.fn().mockResolvedValue(undefined),
+        },
+      },
       { provide: PrismaService, useValue: prisma },
       { provide: QuoteEventsService, useValue: quoteEvents },
       {

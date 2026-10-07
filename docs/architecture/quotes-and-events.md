@@ -350,7 +350,7 @@ e aceita `bank_statement`, `payslip`, `inss_benefit` ou `mei_das`.
 
 PDF, JPEG e PNG são aceitos nos documentos de identificação e residência;
 fotos da atividade aceitam apenas JPEG e PNG; comprovantes de renda aceitam
-somente PDF. O conteúdo real é validado pela assinatura do arquivo e o limite
+PDF; holerite também aceita JPEG e PNG. O conteúdo real é validado pela assinatura do arquivo e o limite
 é 10 MB por upload. Cada metadata recebe um UUID gerado pelo backend, usado
 para exclusão sem expor `s3Key`. A listagem devolve os quatro grupos com URLs
 assinadas de leitura válidas por 15 minutos.
@@ -367,9 +367,9 @@ atividade usam o novo JSONB `activity_photos_attachment`. Upload e exclusão
 invalidam uma conclusão anterior do passo e registram respectivamente
 `attachment_added` e `attachment_removed`, na mesma transação do metadata.
 
-O PATCH de conclusão exige pelo menos um arquivo de identificação, residência
-e atividade. Também exige renda, exceto quando o passo 2 declarou
-`available_income_proof=none`. Só então grava
+O PATCH de conclusão exige pelo menos um arquivo de identificação e residência.
+Fotos da atividade são opcionais. Também exige renda quando o valor solicitado supera o limite
+`QUOTE_INCOME_PROOF_REQUIRED_ABOVE` (padrão: R$ 2.000,00). Só então grava
 `quote_draft_steps.documentation`. Fotos da atividade são preservadas no
 cadastro do cliente após aprovação, como `client_files.activity_photo`, mas
 não são enviadas à Celcoin até existir decisão explícita de Produto.
@@ -448,3 +448,19 @@ src/
 5. Cobrir sucesso, ownership, estado inválido, inexistência e ausência de evento
    em falhas.
 6. Atualizar este documento quando surgir uma nova decisão arquitetural.
+
+### Obrigatoriedade do comprovante de renda
+
+O comprovante é opcional quando `quotes.finance_amount` é menor ou igual ao
+limite `QUOTE_INCOME_PROOF_REQUIRED_ABOVE` de `system_configs` (padrão: 2000,
+em reais). Acima desse limite, é obrigatório. A migration do trigo-connector
+cria a configuração editável no banco compartilhado. Alterações são refletidas
+pelo cache de configurações em até cinco minutos, sem deploy.
+
+Cada comprovante anexado exige `incomeProofType`, inclusive em propostas abaixo
+do limite. Apenas `payslip` aceita PDF, JPEG ou PNG; extrato, INSS e MEI/DAS
+aceitam PDF. A conclusão de Documentação e a submissão final consultam o valor
+atual da proposta e revalidam a exigência, mesmo com a etapa já concluída.
+A listagem de anexos inclui `incomeProofRequired`. O perfil `GET /auth/me`
+retorna `quoteIncomeProofRequiredAbove` em reais, usado nos textos do formulário.
+O connector publica o mesmo campo em `GET /api/access-management/users/me`.

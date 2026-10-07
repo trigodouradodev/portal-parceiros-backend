@@ -35,6 +35,9 @@ export class QuoteAttachmentSnapshot {
 }
 
 export class QuoteDocumentationAttachments {
+  @ApiPropertyOptional()
+  incomeProofRequired?: boolean;
+
   @ApiProperty({ type: [QuoteAttachmentSnapshot] })
   identificationDocuments: QuoteAttachmentSnapshot[];
 
