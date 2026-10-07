@@ -10,6 +10,7 @@ import { Prisma } from '@prisma/client';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { normalizeCpf } from '../common/cpf.util';
+import { normalizeBrazilianPhone } from '../common/phone.util';
 import { CabureService } from '../cabure/cabure.service';
 import { checkInsuranceEligibility } from '../cabure/insurance-eligibility';
 import { CelcoinSimulationService } from '../celcoin/celcoin-simulation.service';
@@ -375,7 +376,7 @@ export class SimulationsService {
     }
 
     const document = normalizeCpf(dto.document);
-    const telephone = this.normalizePhone(dto.telephone);
+    const telephone = normalizeBrazilianPhone(dto.telephone);
     const birthDate = this.parseDateOnly(dto.birthDate, 'Data de nascimento');
     this.assertAdultAge(birthDate);
     const financial = await this.prepareFinancialPreview(user, {
@@ -653,14 +654,6 @@ export class SimulationsService {
             ),
           }),
     };
-  }
-
-  private normalizePhone(value: string): string {
-    const digits = value.replace(/\D/g, '');
-    if (digits.length < 10 || digits.length > 13) {
-      throw new BadRequestException('Celular inválido.');
-    }
-    return digits;
   }
 
   private parseDateOnly(value: string, label: string): Date {
