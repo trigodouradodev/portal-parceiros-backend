@@ -415,7 +415,7 @@ describe('QuotesService.createDraftFromSimulation', () => {
       document: '52998224725',
       birthDate: '1990-05-20',
       email: 'maria@email.com',
-      telephone: '11987654321',
+      telephone: '+5511987654321',
       productId: PRODUCT_ID,
       productName: 'GIRO',
       interestRate: 0.0339,
@@ -447,7 +447,7 @@ describe('QuotesService.createDraftFromSimulation', () => {
       client_name: 'Maria Souza',
       birth_date: simulation.birth_date,
       email: 'maria@email.com',
-      telephone: '11987654321',
+      telephone: '+5511987654321',
       finance_product_id: PRODUCT_ID,
       finance_amount: 5000,
       interest_rate: 0.0339,
@@ -631,6 +631,26 @@ describe('QuotesService.createDraftFromSimulation', () => {
 });
 
 describe('QuoteDraftRegistrationService.save', () => {
+  it.each(['73987654321', '+5573987654321', '5573987654321'])(
+    'persiste o telefone %s com +55',
+    async (telephone) => {
+      const { registrationService: service, tx } = await build();
+      const result = await service.save(
+        QUOTE_ID,
+        { ...registration, telephone },
+        actor(),
+      );
+      expect(result.telephone).toBe('+5573987654321');
+      expect(tx.quotes.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            telephone: '+5573987654321',
+          }) as unknown,
+        }),
+      );
+    },
+  );
+
   it('salva o Cadastro e conclui a etapa na mesma transação', async () => {
     const { registrationService: service, tx } = await build();
 
@@ -645,7 +665,7 @@ describe('QuoteDraftRegistrationService.save', () => {
       name: 'Maria Souza',
       birthDate: '1990-05-20',
       email: 'maria@email.com',
-      telephone: '11987654321',
+      telephone: '+5511987654321',
       isRenegotiation: false,
       gender: Gender.FEMALE,
       secondaryDocument: '123456789',
@@ -671,7 +691,7 @@ describe('QuoteDraftRegistrationService.save', () => {
         client_name: 'Maria Souza',
         birth_date: new Date('1990-05-20T00:00:00.000Z'),
         email: 'maria@email.com',
-        telephone: '11987654321',
+        telephone: '+5511987654321',
         is_renegotiation: false,
         gender: Gender.FEMALE,
         secondary_document: '123456789',

@@ -314,13 +314,14 @@ describe('SimulationsService.simulate — criação', () => {
       firstPaymentDate: futureDueDate(),
     });
     expect(queryRaw.mock.calls[1]).toContain(JSON.stringify(celcoinResult));
+    expect(queryRaw.mock.calls[1]).toContain('+5511987654321');
     expect(resolveForSimulation).toHaveBeenCalledWith(
       {
         name: 'Maria Souza',
         document: '52998224725',
         birthDate: new Date('1990-05-20T00:00:00.000Z'),
         email: 'maria@email.com',
-        telephone: '11987654321',
+        telephone: '+5511987654321',
       },
       expect.anything(),
     );
