@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../../auth/permissions/permission-keys';
 import { cpfDigits, isValidCpf } from '../../common/cpf.util';
+import { normalizeBrazilianPhone } from '../../common/phone.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SaveQuoteRegistrationDto } from '../dto/save-quote-registration.dto';
 import { QuoteDraftStep } from '../enums/quote-draft-step.enum';
@@ -134,7 +135,7 @@ function normalizeRegistration(
     throw new BadRequestException('O tomador deve ter entre 18 e 120 anos.');
   }
 
-  const telephone = normalizePhone(dto.telephone);
+  const telephone = normalizeBrazilianPhone(dto.telephone);
 
   const hasSpouse =
     dto.maritalStatus === MaritalStatus.MARRIED ||
@@ -170,14 +171,6 @@ function normalizeRegistration(
     spouseDocument,
     vehicleFinanced: dto.ownsVehicle ? (dto.vehicleFinanced ?? null) : null,
   };
-}
-
-function normalizePhone(value: string): string {
-  const digits = value.replace(/\D/g, '');
-  if (digits.length < 10 || digits.length > 13) {
-    throw new BadRequestException('Celular inválido.');
-  }
-  return digits;
 }
 
 function parseDateOnly(value: string): Date {

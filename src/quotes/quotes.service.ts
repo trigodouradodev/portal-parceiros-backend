@@ -1,3 +1,4 @@
+import { normalizeBrazilianPhone } from '../common/phone.util';
 import {
   BadRequestException,
   ConflictException,
@@ -129,7 +130,7 @@ export class QuotesService {
             activity_type: 'CLT',
             profession: '',
             email: simulation.email,
-            telephone: simulation.telephone,
+            telephone: normalizeBrazilianPhone(simulation.telephone),
             client_address: initialAddress,
             finance_amount: simulation.finance_amount,
             personal_income: 0,
@@ -254,7 +255,7 @@ export class QuotesService {
           document: simulation.document,
           birthDate: toDateOnly(simulation.birth_date),
           email: simulation.email,
-          telephone: simulation.telephone,
+          telephone: normalizeBrazilianPhone(simulation.telephone),
           productId: simulation.finance_product_id,
           productName: simulation.finance_products.product_name,
           interestRate: Number(simulation.interest_rate),
