@@ -102,6 +102,44 @@ describe('CelcoinSimulationService', () => {
     });
   });
 
+  it.each([
+    { tacRate: 0, insuranceAmount: 0 },
+    { tacRate: 0, insuranceAmount: 189.9 },
+    { tacRate: 0.03, insuranceAmount: 0 },
+    { tacRate: 0.03, insuranceAmount: 189.9 },
+    { tacRate: 1.25, insuranceAmount: 0 },
+    { tacRate: 1.25, insuranceAmount: 189.9 },
+  ])(
+    'envia o mesmo payload de TAC do backoffice: %j',
+    async ({ tacRate, insuranceAmount }) => {
+      const { service } = build();
+      mockResponse(result);
+
+      await service.simulateRequestedAmount({
+        ...input,
+        tacRate,
+        insuranceAmount,
+      });
+
+      const [, request] = (global.fetch as jest.Mock).mock.calls[0] as [
+        string,
+        RequestInit,
+      ];
+      expect(JSON.parse(request.body as string)).toEqual({
+        requested_amount: 5000,
+        interest_rate: 0.0339,
+        finance_fee: 0,
+        insurance_amount: insuranceAmount,
+        iof_type: 'PERSON',
+        num_payments: 10,
+        first_payment_date: '2026-09-10',
+        disbursement_date: '2026-09-01',
+        schedule_type: 'MONTHLY',
+        ...(tacRate > 0 ? { tac_rate: tacRate } : { tac_amount: 0 }),
+      });
+    },
+  );
+
   it('envia insurance_amount quando o seguro é financiado junto', async () => {
     const { service } = build();
     mockResponse(result);

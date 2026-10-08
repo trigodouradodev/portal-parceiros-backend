@@ -30,6 +30,7 @@ export class CelcoinSimulationService {
     const token = await this.auth.getAccessToken();
     const url = `${trimTrailingSlash(config.platformBaseUrl)}/banking/originator/products/${encodeURIComponent(config.productId)}/preview`;
 
+    const tacRate = input.tacRate ?? 0;
     let response: Response;
     try {
       response = await fetch(url, {
@@ -49,7 +50,7 @@ export class CelcoinSimulationService {
           first_payment_date: input.firstPaymentDate,
           disbursement_date: todayInSaoPaulo(),
           schedule_type: 'MONTHLY',
-          tac_amount: 0,
+          ...(tacRate > 0 ? { tac_rate: tacRate } : { tac_amount: 0 }),
         }),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });

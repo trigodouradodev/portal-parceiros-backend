@@ -202,6 +202,7 @@ const simulation = {
   telephone: '11987654321',
   finance_amount: 5000,
   interest_rate: 0.0339,
+  tac_amount: 0.03 as number | Prisma.Decimal,
   installment_numbers: 10,
   first_installment_date: new Date('2026-09-10T00:00:00.000Z'),
   installment_amount: 612.34,
@@ -400,6 +401,23 @@ async function build(options: BuildOptions = {}) {
 }
 
 describe('QuotesService.createDraftFromSimulation', () => {
+  it.each(['0', '0.07'])(
+    'copia a TAC persistida na simulação para a proposta: %s',
+    async (rate) => {
+      const tacAmount = new Prisma.Decimal(rate);
+      const { service, tx, createQuote } = await build({
+        simulation: { ...simulation, tac_amount: tacAmount },
+      });
+      await service.createDraftFromSimulation(SIMULATION_ID, actor());
+      expect(tx.simulations.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({ tac_amount: true }) as unknown,
+        }),
+      );
+      expect(createQuote.mock.calls[0][0].data.tac_amount).toEqual(tacAmount);
+    },
+  );
+
   it('cria o draft com o snapshot da simulação e registra o evento', async () => {
     const { service, tx, quoteEvents, quoteActivityPermissions, createQuote } =
       await build();
@@ -451,6 +469,7 @@ describe('QuotesService.createDraftFromSimulation', () => {
       finance_product_id: PRODUCT_ID,
       finance_amount: 5000,
       interest_rate: 0.0339,
+      tac_amount: 0.03,
       installment_numbers: 10,
       first_installment_date: simulation.first_installment_date,
       // Normalizado pro contrato do Backoffice (installment_amount, não
