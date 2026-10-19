@@ -1401,6 +1401,7 @@ model quotes {
   customer_relationship_origin                                String?                      @db.VarChar(50)
   customer_relationship_other                                 String?                      @db.VarChar(255)
   referrer_document                                           String?                      @db.VarChar(11)
+  origin                                                      String                       @default("time_comercial") @db.VarChar(30)
   partner_assessment                                          String?                      @db.VarChar(30)
   informal_debt_signs                                         Boolean?
   financial_urgency_signs                                     Boolean?

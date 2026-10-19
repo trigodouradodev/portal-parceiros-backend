@@ -418,6 +418,14 @@ describe('QuotesService.createDraftFromSimulation', () => {
     },
   );
 
+  it('grava a origem time_comercial explicitamente na proposta', async () => {
+    const { service, createQuote } = await build();
+
+    await service.createDraftFromSimulation(SIMULATION_ID, actor());
+
+    expect(createQuote.mock.calls[0][0].data.origin).toBe('time_comercial');
+  });
+
   it('cria o draft com o snapshot da simulação e registra o evento', async () => {
     const { service, tx, quoteEvents, quoteActivityPermissions, createQuote } =
       await build();

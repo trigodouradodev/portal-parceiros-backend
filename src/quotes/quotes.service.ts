@@ -148,6 +148,9 @@ export class QuotesService {
             signature_type: 'EMAIL',
             current_sales_agent_id: actor.sub,
             created_by: actor.sub,
+            // Proposta criada pelo Portal do Parceiro é do Time Comercial
+            // (AUREA-634). Explícito: não depende do DEFAULT da coluna.
+            origin: 'time_comercial',
             quote_status: QuoteStatus.DRAFT,
             document_attachment: [],
             proof_of_residence_attachment: [],
