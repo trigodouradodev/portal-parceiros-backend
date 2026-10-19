@@ -1,19 +1,22 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import {
   ApiBearerAuth,
-  ApiInternalServerErrorResponse,
-  ApiNotFoundResponse,
+  ApiBadRequestResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
+  ApiServiceUnavailableResponse,
 } from '@nestjs/swagger';
-import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PerformanceService } from './performance.service';
-import { PartnerProfile } from './interfaces/partner-profile.interface';
-import { PartnerProgram } from './interfaces/partner-program.interface';
-import { CurrentPerformance } from './interfaces/current-performance.interface';
+import { GetPerformanceQueryDto } from './dto/get-performance-query.dto';
+import {
+  PerformanceMonthsResponseDto,
+  PerformanceResponseDto,
+} from './dto/performance-response.dto';
+
+// Temporário para validação local. Restaurar user.sub antes de publicar.
+const PERFORMANCE_TEST_PARTNER_ID = '2e95c324-bd29-4f42-896c-2c8f0a1e1c94';
 
 @ApiTags('performance')
 @ApiBearerAuth('access-token')
@@ -22,82 +25,31 @@ import { CurrentPerformance } from './interfaces/current-performance.interface';
 export class PerformanceController {
   constructor(private readonly performanceService: PerformanceService) {}
 
-  /**
-   * Barra de identidade do parceiro, nível contratado e posição na trilha de
-   * permanência. Alimenta também o ponto de partida do simulador no front.
-   *
-   * Sem `@RequirePermissions` de propósito: é dado próprio do viewer (nível e
-   * remuneração dele), então o gate é o guard de autenticação global mais a
-   * inscrição no programa. Não há scope hierárquico aqui — um gerente não vê o
-   * nível do subordinado por esta rota.
-   */
   @ApiOperation({
-    summary: 'Identidade, nível e mês de parceria do parceiro logado.',
+    summary: 'Competências disponíveis do parceiro autenticado.',
   })
-  @ApiOkResponse({ type: PartnerProfile })
-  @ApiNotFoundResponse({
-    description:
-      'Viewer não inscrito no Programa de Parceiros Exclusivos (ou com ' +
-      'parceria de início futuro). O front esconde a aba Desempenho.',
+  @ApiOkResponse({ type: PerformanceMonthsResponseDto })
+  @ApiServiceUnavailableResponse({
+    description: 'Fonte Analytics indisponível.',
   })
-  @Get('me')
-  getMe(@CurrentUser() user: JwtPayload) {
-    return this.performanceService.getPartnerProfile(
-      user.sub,
-      user.permissions,
+  @Get('months')
+  getMonths() {
+    return this.performanceService.getMonths(PERFORMANCE_TEST_PARTNER_ID);
+  }
+
+  @ApiOperation({ summary: 'Nível e indicadores oficiais por competência.' })
+  @ApiOkResponse({ type: PerformanceResponseDto })
+  @ApiBadRequestResponse({
+    description: 'Competência inválida ou parâmetro desconhecido.',
+  })
+  @ApiServiceUnavailableResponse({
+    description: 'Fonte Analytics indisponível.',
+  })
+  @Get()
+  getPerformance(@Query() query: GetPerformanceQueryDto) {
+    return this.performanceService.getPerformance(
+      PERFORMANCE_TEST_PARTNER_ID,
+      query.month,
     );
-  }
-
-  /**
-   * Parâmetros do Programa de Parceiros Exclusivos: níveis, faixas dos 3 pilares
-   * de bônus, marcos de permanência e bônus de boas-vindas.
-   *
-   * É o insumo do simulador do front, que avalia as faixas localmente — a cada
-   * arrasto de slider — em vez de bater no servidor. Também é a base da tabela
-   * comparativa entre níveis.
-   *
-   * Sem `@RequirePermissions`: são os parâmetros do programa, iguais para todo
-   * parceiro e sem nenhum dado de carteira. Vale para quem não está inscrito,
-   * então não replica o 404 de `/me`.
-   */
-  @ApiOperation({
-    summary: 'Níveis, faixas de bônus e marcos do programa (parâmetros).',
-  })
-  @ApiOkResponse({ type: PartnerProgram })
-  @ApiInternalServerErrorResponse({
-    description:
-      'Parâmetros mal cadastrados no banco — régua de bônus com buraco ou ' +
-      'sobreposição, ou config do bônus de boas-vindas ausente/inválida.',
-  })
-  @Get('program')
-  getProgram() {
-    return this.performanceService.getProgram();
-  }
-
-  /**
-   * Bloco "Desempenho real do mês": originação contra a meta, inadimplência da
-   * carteira e taxa média, cada um com o bônus já garantido, mais a comissão
-   * acumulada do mês.
-   *
-   * Mesmo gate do `/me`: dado próprio do viewer, sem scope hierárquico, e não
-   * inscrito recebe 404. As metas são individuais — nada de subárvore.
-   */
-  @ApiOperation({
-    summary: 'Desempenho real do mês corrente e comissão acumulada.',
-  })
-  @ApiOkResponse({ type: CurrentPerformance })
-  @ApiNotFoundResponse({
-    description:
-      'Viewer não inscrito no Programa de Parceiros Exclusivos (ou com ' +
-      'parceria de início futuro).',
-  })
-  @ApiInternalServerErrorResponse({
-    description:
-      'Parâmetros do programa mal cadastrados no banco — mesma validação de ' +
-      '`/performance/program`.',
-  })
-  @Get('current')
-  getCurrent(@CurrentUser('sub') userId: string) {
-    return this.performanceService.getCurrentPerformance(userId);
   }
 }
