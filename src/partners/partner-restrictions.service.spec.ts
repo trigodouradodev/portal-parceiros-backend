@@ -97,6 +97,19 @@ describe('PartnerRestrictionsService.isOriginationRestricted', () => {
     expect(query.values).toEqual([USER_ID]);
   });
 
+  it('com logBlock false (perfil) a restrição é detectada mas não vira log de bloqueio', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const { service } = await build([{ id: 'restriction-1' }]);
+
+    await expect(
+      service.isOriginationRestricted(consultant, 'auth/profile', {
+        logBlock: false,
+      }),
+    ).resolves.toBe(true);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it('ROLE_ADMIN nunca é barrado e nem consulta o banco', async () => {
     const { service, queryRaw } = await build([{ id: 'restriction-1' }]);
 

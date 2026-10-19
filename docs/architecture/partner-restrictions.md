@@ -24,8 +24,8 @@ O corpo do erro é `{ statusCode: 403, code, message }`; o `code` separa estes 4
 ## Falhas e implantação
 
 - Se a consulta falhar, o Portal **recusa com 503 e registra** (`partner_restriction_check_failed`), em vez de liberar.
-- Tabela inexistente (`missingTable: true` no log) é erro de **ordem de deploy**: o Portal só pode subir depois das migrations do módulo de parceiros do Backoffice no ambiente. Hoje elas existem só em `dev`.
-- Cada bloqueio gera um log `partner_restriction_blocked` com `scope`, `userId` e `route`.
+- Tabela inexistente (`missingTable: true` no log) é erro de **ordem de deploy**: o Portal só pode subir depois das migrations do módulo de parceiros do Backoffice no ambiente. Conferido no banco de cada ambiente: as tabelas existem em `dev` e em `homolog`; **a produção ainda não as tem**.
+- Cada bloqueio gera um log `partner_restriction_blocked` com `scope`, `userId` e `route`. A leitura do perfil não gera esse log, e se a consulta falhar ali o perfil **não** falha (só devolve `originationRestricted: false`; a recusa de verdade fica no servidor).
 - Uma sessão já emitida só cai quando o token de acesso expira (15 min).
 
 Código em `src/partners/`.

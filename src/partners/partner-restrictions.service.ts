@@ -62,11 +62,13 @@ export class PartnerRestrictionsService {
 
   /**
    * Restrição de `originacao` ativa impede iniciar e enviar proposta.
-   * `ROLE_ADMIN` não é barrado, igual ao Backoffice.
+   * `ROLE_ADMIN` não é barrado, igual ao Backoffice. `options.logBlock`
+   * (padrão `true`) controla o log de bloqueio.
    */
   async isOriginationRestricted(
     actor: PartnerRestrictionActor,
     route: string,
+    options: { logBlock?: boolean } = {},
   ): Promise<boolean> {
     if (actor.permissions?.includes(PermissionKey.ROLE_ADMIN)) return false;
 
@@ -83,7 +85,11 @@ export class PartnerRestrictionsService {
       route,
     );
 
-    if (restricted) this.logBlocked('originacao', actor.userId, route);
+    // `logBlock: false` para leitura informativa (perfil): nada foi barrado,
+    // então não deve virar "bloqueio" no log nem na métrica.
+    if (restricted && options.logBlock !== false) {
+      this.logBlocked('originacao', actor.userId, route);
+    }
     return restricted;
   }
 

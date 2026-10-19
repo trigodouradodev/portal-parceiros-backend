@@ -190,10 +190,19 @@ export class AuthService {
         permissions,
       }),
       this.systemConfigs.getQuoteIncomeProofRequiredAbove(),
-      this.partnerRestrictions.isOriginationRestricted(
-        { userId: user.id, permissions },
-        'auth/profile',
-      ),
+      // Só informativo (desabilita o botão e mostra o motivo): a recusa de
+      // verdade fica no servidor, ao iniciar e ao enviar. Se a consulta falhar,
+      // o perfil NÃO pode falhar junto: o frontend desloga o usuário em
+      // qualquer erro do perfil. O serviço já registra a falha.
+      this.partnerRestrictions
+        .isOriginationRestricted(
+          { userId: user.id, permissions },
+          'auth/profile',
+          {
+            logBlock: false,
+          },
+        )
+        .catch(() => false),
     ]);
 
     return {

@@ -578,6 +578,30 @@ describe('restrições de parceiro (AUREA-623)', () => {
       expect(result.user.originationRestricted).toBe(false);
     });
 
+    it('a leitura do perfil não conta como bloqueio (sem log de bloqueio)', async () => {
+      const { service, partnerRestrictions } = await build();
+
+      await service.login(credentials);
+
+      expect(partnerRestrictions.isOriginationRestricted).toHaveBeenCalledWith(
+        { userId: USER_ID, permissions: expect.any(Array) as string[] },
+        'auth/profile',
+        { logBlock: false },
+      );
+    });
+
+    it('se a consulta de restrição falhar, o perfil NÃO falha (o front desloga em qualquer erro de perfil)', async () => {
+      const { service, partnerRestrictions } = await build();
+      partnerRestrictions.isOriginationRestricted.mockRejectedValue(
+        new Error('banco indisponível'),
+      );
+
+      const profile = await service.getProfile(USER_ID);
+
+      expect(profile.originationRestricted).toBe(false);
+      expect(profile.canCreateQuote).toBe(true);
+    });
+
     it('restrição não reabilita quem já estava bloqueado por pendência de cobrança', async () => {
       const { service } = await build({
         quoteActivityPermissions: {
