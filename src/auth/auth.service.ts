@@ -9,6 +9,8 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { trigo_users } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { PartnerAccessRestrictedException } from '../partners/partner-restriction.exceptions';
+import { PartnerRestrictionsService } from '../partners/partner-restrictions.service';
 import { UsersService } from '../users/users.service';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
 import { UpdateProfileDto } from '../users/dto/update-profile.dto';
@@ -30,6 +32,7 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly quoteActivityPermissions: QuoteActivityPermissionsService,
     private readonly systemConfigs: SystemConfigsService,
+    private readonly partnerRestrictions: PartnerRestrictionsService,
   ) {}
 
   async login(dto: LoginDto) {
@@ -61,6 +64,10 @@ export class AuthService {
       );
     }
 
+    // Depois da senha, para não revelar a quem não a conhece que a conta é de
+    // parceiro restrito. Mesma regra do login do Backoffice.
+    await this.assertPartnerAccessAllowed(user.id, 'auth/login');
+
     const tokens = await this.generateTokens(user, permissions);
     await this.usersService.updateLastLogin(user.id);
 
@@ -73,6 +80,10 @@ export class AuthService {
     if (!user || !user.is_active || user.is_deleted) {
       throw new ForbiddenException('Acesso negado');
     }
+
+    // Mais rígido que o Backoffice (que só barra login novo): sem isto um
+    // parceiro bloqueado já logado renovaria a sessão por até 7 dias.
+    await this.assertPartnerAccessAllowed(user.id, 'auth/refresh');
 
     const permissions = await this.usersService.getPermissionKeys(user.id);
     return this.generateTokens(user, permissions);
@@ -120,6 +131,15 @@ export class AuthService {
     return { message: 'Senha alterada com sucesso' };
   }
 
+  private async assertPartnerAccessAllowed(
+    userId: string,
+    route: string,
+  ): Promise<void> {
+    if (await this.partnerRestrictions.isLoginBlocked(userId, route)) {
+      throw new PartnerAccessRestrictedException();
+    }
+  }
+
   private async generateTokens(
     user: trigo_users,
     permissions: string[],
@@ -160,19 +180,30 @@ export class AuthService {
   }
 
   private async toProfile(user: trigo_users, permissions: string[]) {
-    const [activityPermissions, quoteIncomeProofRequiredAbove] =
-      await Promise.all([
-        this.quoteActivityPermissions.getPermissions({
-          userId: user.id,
-          permissions,
-        }),
-        this.systemConfigs.getQuoteIncomeProofRequiredAbove(),
-      ]);
+    const [
+      activityPermissions,
+      quoteIncomeProofRequiredAbove,
+      originationRestricted,
+    ] = await Promise.all([
+      this.quoteActivityPermissions.getPermissions({
+        userId: user.id,
+        permissions,
+      }),
+      this.systemConfigs.getQuoteIncomeProofRequiredAbove(),
+      this.partnerRestrictions.isOriginationRestricted(
+        { userId: user.id, permissions },
+        'auth/profile',
+      ),
+    ]);
 
     return {
       ...this.toPublicUser(user),
       permissions,
       ...activityPermissions,
+      // Restrição de originação também desabilita "Iniciar proposta".
+      canCreateQuote:
+        activityPermissions.canCreateQuote && !originationRestricted,
+      originationRestricted,
       quoteIncomeProofRequiredAbove,
     };
   }

@@ -12,6 +12,7 @@ import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
+import { PartnerRestrictionsService } from '../partners/partner-restrictions.service';
 
 jest.mock('bcrypt');
 
@@ -46,6 +47,8 @@ interface BuildOptions {
     canSimulateQuote: boolean;
     canCreateQuote: boolean;
   };
+  loginBlocked?: boolean;
+  originationRestricted?: boolean;
 }
 
 async function build(options: BuildOptions = {}) {
@@ -60,6 +63,8 @@ async function build(options: BuildOptions = {}) {
       canSimulateQuote: true,
       canCreateQuote: true,
     },
+    loginBlocked = false,
+    originationRestricted = false,
   } = options;
 
   const usersService = {
@@ -78,6 +83,10 @@ async function build(options: BuildOptions = {}) {
   };
   const quoteActivityPermissionsService = {
     getPermissions: jest.fn().mockResolvedValue(quoteActivityPermissions),
+  };
+  const partnerRestrictions = {
+    isLoginBlocked: jest.fn().mockResolvedValue(loginBlocked),
+    isOriginationRestricted: jest.fn().mockResolvedValue(originationRestricted),
   };
 
   const module: TestingModule = await Test.createTestingModule({
@@ -98,6 +107,7 @@ async function build(options: BuildOptions = {}) {
         provide: QuoteActivityPermissionsService,
         useValue: quoteActivityPermissionsService,
       },
+      { provide: PartnerRestrictionsService, useValue: partnerRestrictions },
     ],
   }).compile();
 
@@ -106,6 +116,7 @@ async function build(options: BuildOptions = {}) {
     usersService,
     jwtService,
     quoteActivityPermissionsService,
+    partnerRestrictions,
   };
 }
 
@@ -340,6 +351,7 @@ describe('getProfile', () => {
       permissions: ['INSTALLMENT_VIEW', 'QUOTE_ACTIVITY_GATES'],
       canSimulateQuote: true,
       canCreateQuote: true,
+      originationRestricted: false,
       quoteIncomeProofRequiredAbove: 2000,
     });
   });
@@ -450,5 +462,134 @@ describe('changePassword', () => {
     await expect(service.changePassword(USER_ID, dto)).rejects.toThrow(
       UnauthorizedException,
     );
+  });
+});
+
+describe('restrições de parceiro (AUREA-623)', () => {
+  const credentials = { email: 'parceiro@trigodourado.com', password: 'senha' };
+
+  describe('login', () => {
+    it('403 com código estável quando o parceiro está bloqueado', async () => {
+      const { service, usersService } = await build({ loginBlocked: true });
+
+      const erro = await service.login(credentials).catch((e: unknown) => e);
+
+      expect(erro).toBeInstanceOf(ForbiddenException);
+      expect((erro as ForbiddenException).getResponse()).toEqual({
+        statusCode: 403,
+        code: 'PARTNER_ACCESS_RESTRICTED',
+        message: 'Acesso bloqueado. Fale com seu gerente.',
+      });
+      expect(usersService.updateLastLogin).not.toHaveBeenCalled();
+    });
+
+    it('não emite tokens quando o parceiro está bloqueado', async () => {
+      const { service, jwtService } = await build({ loginBlocked: true });
+
+      await expect(service.login(credentials)).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(jwtService.signAsync).not.toHaveBeenCalled();
+    });
+
+    it('senha errada continua em 401 e a restrição nem é consultada', async () => {
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+      const { service, partnerRestrictions } = await build({
+        loginBlocked: true,
+      });
+
+      await expect(service.login(credentials)).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(partnerRestrictions.isLoginBlocked).not.toHaveBeenCalled();
+    });
+
+    it('sem QUOTE_ACTIVITY_GATES continua com a mensagem de permissão, sem consultar a restrição', async () => {
+      const { service, partnerRestrictions } = await build({
+        permissions: ['INSTALLMENT_VIEW'],
+        loginBlocked: true,
+      });
+
+      const erro = await service.login(credentials).catch((e: unknown) => e);
+
+      expect(erro).toBeInstanceOf(ForbiddenException);
+      expect((erro as ForbiddenException).message).toBe(
+        'Você não tem permissão para acessar o Portal do Parceiro.',
+      );
+      expect(partnerRestrictions.isLoginBlocked).not.toHaveBeenCalled();
+    });
+
+    it('quem não é parceiro ou não está bloqueado loga como antes', async () => {
+      const { service, partnerRestrictions } = await build();
+
+      const result = await service.login(credentials);
+
+      expect(result.accessToken).toBe('token-assinado');
+      expect(partnerRestrictions.isLoginBlocked).toHaveBeenCalledWith(
+        USER_ID,
+        'auth/login',
+      );
+    });
+  });
+
+  describe('refreshTokens', () => {
+    it('403 com o mesmo código quando o parceiro foi bloqueado depois de logar', async () => {
+      const { service, jwtService } = await build({ loginBlocked: true });
+
+      const erro = await service
+        .refreshTokens(USER_ID)
+        .catch((e: unknown) => e);
+
+      expect(erro).toBeInstanceOf(ForbiddenException);
+      expect((erro as ForbiddenException).getResponse()).toMatchObject({
+        code: 'PARTNER_ACCESS_RESTRICTED',
+      });
+      expect(jwtService.signAsync).not.toHaveBeenCalled();
+    });
+
+    it('parceiro liberado renova normalmente', async () => {
+      const { service } = await build();
+
+      await expect(service.refreshTokens(USER_ID)).resolves.toEqual({
+        accessToken: 'token-assinado',
+        refreshToken: 'token-assinado',
+      });
+    });
+  });
+
+  describe('perfil', () => {
+    it('restrição de originação desabilita canCreateQuote e sinaliza o motivo', async () => {
+      const { service } = await build({ originationRestricted: true });
+
+      const result = await service.login(credentials);
+
+      expect(result.user.canCreateQuote).toBe(false);
+      expect(result.user.originationRestricted).toBe(true);
+      // simular continua liberado
+      expect(result.user.canSimulateQuote).toBe(true);
+    });
+
+    it('sem restrição o perfil não muda', async () => {
+      const { service } = await build();
+
+      const result = await service.login(credentials);
+
+      expect(result.user.canCreateQuote).toBe(true);
+      expect(result.user.originationRestricted).toBe(false);
+    });
+
+    it('restrição não reabilita quem já estava bloqueado por pendência de cobrança', async () => {
+      const { service } = await build({
+        quoteActivityPermissions: {
+          canSimulateQuote: false,
+          canCreateQuote: false,
+        },
+      });
+
+      const result = await service.login(credentials);
+
+      expect(result.user.canCreateQuote).toBe(false);
+      expect(result.user.originationRestricted).toBe(false);
+    });
   });
 });
