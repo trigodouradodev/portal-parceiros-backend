@@ -27,6 +27,28 @@ export interface PartnerRestrictionActor {
  * Se a consulta falhar, recusa (503) em vez de liberar: deixar passar reabre
  * o bug que este serviço corrige.
  */
+/**
+ * Tabela inexistente (SQLSTATE 42P01). Prefere o código, que não depende do
+ * idioma das mensagens do servidor; a mensagem fica como reserva.
+ */
+function isMissingTableError(error: unknown, message: string): boolean {
+  const e = error as {
+    code?: unknown;
+    meta?: { code?: unknown };
+    cause?: { code?: unknown; originalCode?: unknown };
+  } | null;
+  const codes = [
+    e?.meta?.code,
+    e?.code,
+    e?.cause?.originalCode,
+    e?.cause?.code,
+  ];
+  if (codes.includes('42P01')) return true;
+  return /relation .* does not exist|rela[cç][aã]o .* n[aã]o existe/i.test(
+    message,
+  );
+}
+
 @Injectable()
 export class PartnerRestrictionsService {
   private readonly logger = new Logger(PartnerRestrictionsService.name);
@@ -99,7 +121,7 @@ export class PartnerRestrictionsService {
       return rows.length > 0;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const missingTable = /relation .* does not exist/i.test(message);
+      const missingTable = isMissingTableError(error, message);
       this.logger.error(
         JSON.stringify({
           event: 'partner_restriction_check_failed',
