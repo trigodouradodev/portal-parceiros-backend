@@ -1,39 +1,87 @@
 # Desempenho V2: consulta à view do Analytics
 
 Status: backend e frontend adaptados. Rota e navegação habilitadas para validação
-local com dados reais. O mês atual depende da disponibilização pelo BI.
-
-Validação local temporária: as duas rotas usam diretamente o parceiro
-`2e95c324-bd29-4f42-896c-2c8f0a1e1c94`, independentemente do usuário autenticado,
-conforme solicitado para o teste. Restaurar o filtro por `user.sub` descrito abaixo
-antes de publicar a implementação.
+local com dados reais. A liberação exige `PERFORMANCE_VIEW` explícita, atribuída
+manualmente aos grupos pela gestão de permissões. O mês atual depende da disponibilização pelo BI.
 
 ## Fonte única e responsabilidades
 
-Todas as leituras deste módulo usam exclusivamente
+Todos os indicadores e valores de remuneração são lidos exclusivamente da
 `analytics.vw_metric_remuneracao_parceiro_mes`, pela conexão `PrismaService` já
 existente. O Analytics calcula os indicadores e fornece nível e meta por
-competência. A API autentica, limita a consulta ao próprio parceiro e adapta os
+competência. A API autentica, autoriza a pessoa selecionada pelo mesmo escopo da Home e adapta os
 valores. O frontend apresenta as medições oficiais.
 
 O filtro da view é `data_competencia`, uma data com o primeiro dia do mês. Não é
-um parâmetro de função. As consultas também filtram `id_consultor = user.sub`,
-inclusive para usuários com perfil de administrador ou gestor.
+um parâmetro de função. As consultas também filtram `id_consultor`: por padrão, `user.sub`; quando informado,
+o UUID autorizado em `partnerId`. Nunca há agregação de indicadores da equipe.
 
 O BI está preparando o mês corrente com posição diária D-1. Meses anteriores
 representam o mês completo. A extração confirmada contém setembro de 2026, primeiro
 mês do novo modelo, com 94 parceiros. O acompanhamento usa a mesma view para o
 histórico; o portal não preserva nem substitui seus resultados por snapshots.
 
-Nome, avatar e cargo continuam vindo do usuário autenticado (`GET /auth/me`). Cargo
-e nível financeiro são conceitos distintos. Fixo, bônus em reais, acordos e total
+Na consulta própria, nome, avatar e cargo vêm do usuário autenticado (`GET /auth/me`).
+Ao selecionar outra pessoa, o nome exibido no bloco de Desempenho vem da mesma
+lista da Home; o cargo do usuário autenticado não é atribuído a ela. Cargo e nível
+financeiro são conceitos distintos. Fixo, bônus em reais, acordos e total
 da remuneração são apresentados com os valores oficiais da view. Simulador,
 comparação de ganhos, permanência e data de início da parceria ficam fora da tela
 e da resposta desta V2, pois esses dois últimos campos não são fornecidos pela view.
 
+## Liberação por grupo
+
+Menu, rota `/performance` e endpoints `/performance` e `/performance/months`
+exigem a permissão `PERFORMANCE_VIEW`. O backend usa `RequireExplicitPermissions`,
+sem bypass para administradores. `ROLE_MANAGER` sozinho também não concede acesso;
+a capacidade vem da permissão atribuída aos grupos ativos do usuário.
+
+A migration do trigo-connector
+`20261020120000_add_performance_view_permission.ts` cria somente a permissão de
+ID 40, sem atribuí-la automaticamente a grupos ou usuários. Não depende da
+existência do grupo Gerentes. Colisão de ID/chave aborta a transação.
+O catálogo e a normalização de JWT do connector preservam o caráter opt-in,
+inclusive para administradores. O rollback remove a permissão e seus vínculos
+por cascade, preservando grupos e membros.
+
+A liberação para gerentes ou demais parceiros é manual: atribuir
+`PERFORMANCE_VIEW` aos grupos desejados pela gestão de grupos e permissões.
+Não é preciso alterar o código.
+Essa permissão controla a entrada no módulo; o escopo de pessoas continua sendo
+validado separadamente, conforme a Home.
+
+Aplicar a migration antes de liberar os serviços com a nova exigência. Após a
+atribuição, renovar a sessão para atualizar as permissões do token e do perfil.
+A migration está preparada no repositório; sua execução no banco faz parte da
+implantação.
+
+## Filtro de pessoas da equipe
+
+O frontend reutiliza `useSubordinates`, a rota `GET /activities/subordinates` e o
+componente `SelectDialogField` da Home. A opção inicial é "Meu desempenho". O
+seletor aparece quando há pessoas disponíveis e permite escolher uma por vez.
+Mantém a competência selecionada na troca, mesmo sem dados naquele mês. O filtro
+permanece acessível durante carregamentos e erros.
+
+`PeopleScopeService`, exportado pelo módulo Scope, concentra a listagem e a
+validação usadas pela Home e pelo Desempenho. Gestores acessam seus subordinados
+recursivos. Admin e suporte acessam os parceiros ativos habilitados no rollout,
+com grupos ativos, permissão `QUOTE_ACTIVITY_GATES` e papel de consultor ou cobrador.
+`INSTALLMENT_VIEW_ALL` sozinho não amplia essa seleção para fora da hierarquia.
+A seleção de outra pessoa exige as mesmas permissões da rota da Home:
+`INSTALLMENT_VIEW`, `INSTALLMENT_VIEW_ALL`, `ROLE_SUPPORT` ou `ROLE_ADMIN`.
+Consulta própria não exige essas permissões de equipe; exige `PERFORMANCE_VIEW`.
+
+As duas rotas de Desempenho aceitam `partnerId` opcional, validado como UUID.
+Ausência de `PERFORMANCE_VIEW` ou pessoa fora do escopo retorna 403 antes da
+consulta à view. A listagem e a
+hierarquia usam as tabelas de usuários e permissões existentes; a fonte dos
+indicadores e da remuneração continua sendo somente a view do Analytics.
+O ID fixo usado na validação local foi removido.
+
 ## API
 
-### `GET /performance/months`
+### `GET /performance/months?partnerId=UUID`
 
 Retorna competências distintas disponíveis para o parceiro, em ordem decrescente,
 e o mês corrente calculado no banco em `America/Sao_Paulo`:
@@ -50,7 +98,7 @@ A tela seleciona inicialmente `currentMonth`, mesmo quando não existe na view, 
 mantém o histórico selecionável. Uma competência futura, se fornecida pela fonte,
 é identificada como futura, sem afirmar que está completa.
 
-### `GET /performance?month=YYYY-MM`
+### `GET /performance?month=YYYY-MM&partnerId=UUID`
 
 `month` é opcional e usa o mês corrente em Brasília quando omitido. Aceita mês
 válido no formato `YYYY-MM`, excluindo ano zero. Query desconhecida ou inválida
@@ -63,7 +111,7 @@ Sem linha para a competência e o parceiro, retorna HTTP 200:
 ```
 
 A tela informa ausência de dados e permite escolher o histórico, sem trocar o mês
-automaticamente. Falha de consulta, permissão ou conversão retorna HTTP 503 com
+automaticamente. Falha de leitura da fonte ou conversão retorna HTTP 503 com
 `message: "performance_data_unavailable"`, sem expor detalhes do driver. Mais de
 uma linha para o mesmo parceiro e competência também é falha de integridade;
 a API não soma nem escolhe arbitrariamente uma linha.
@@ -211,15 +259,15 @@ completo". Esses rótulos descrevem o período; não são status de fechamento o
 nem garantia de que o histórico é imutável. Não se calcula ontem para inventar uma
 data de referência. A data efetiva poderá ser acrescentada quando fornecida pelo BI.
 
-As consultas do frontend têm cache de um minuto com chave por usuário e competência,
+As consultas do frontend têm cache de um minuto com chave por usuário autenticado,
+pessoa selecionada e competência,
 sem atualização periódica automática. Reconsultar a API não dispara cargas do BI.
 A ausência do mês atual até a entrega do Analytics continua sendo `NO_DATA`.
 
 Foram removidos `/performance/me`, `/performance/current` e `/performance/program`,
 sem consumidores no frontend adaptado, e seus cálculos operacionais. Nenhuma tabela,
 migration, configuração de conexão ou cálculo do BI foi alterado. Backend e frontend
-devem ser publicados com o novo contrato juntos, após a validação integrada e a
-remoção do ID fixo de teste.
+devem ser publicados com o novo contrato juntos, após a validação integrada.
 
 ## Validação antes de liberar
 
@@ -230,4 +278,6 @@ remoção do ID fixo de teste.
 - Validar categorias, zeros, nulos e ausência de mês sem inferir falta de inscrição.
 - Medir latência das consultas de competências e indicadores com filtros por parceiro;
   a view possui dependências de cálculo que precisam atender o uso do portal.
-- Concluir essa validação e restaurar o escopo do usuário autenticado antes de publicar.
+- Validar a liberação por `PERFORMANCE_VIEW` e o bloqueio sem ela, inclusive para admin.
+- Para usuários autorizados, validar o filtro com gestor, parceiro sem equipe, admin e suporte, incluindo
+  a recusa de pessoas fora do escopo permitido.

@@ -1,3 +1,4 @@
+import { PeopleScopeService } from '../scope/people-scope.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
@@ -143,6 +144,7 @@ async function build(options: TxOptions = {}): Promise<{
   };
   const module: TestingModule = await Test.createTestingModule({
     providers: [
+      PeopleScopeService,
       ActivitiesService,
       { provide: PrismaService, useValue: prisma },
       { provide: ScopeService, useValue: {} },
@@ -166,6 +168,7 @@ async function buildQueue(
   };
   const module: TestingModule = await Test.createTestingModule({
     providers: [
+      PeopleScopeService,
       ActivitiesService,
       { provide: PrismaService, useValue: prisma },
       { provide: ScopeService, useValue: scope },
@@ -184,6 +187,7 @@ async function buildInstallmentAccess(canView: boolean) {
   const scope = { canViewContract: jest.fn().mockResolvedValue(canView) };
   const module: TestingModule = await Test.createTestingModule({
     providers: [
+      PeopleScopeService,
       ActivitiesService,
       { provide: PrismaService, useValue: prisma },
       { provide: ScopeService, useValue: scope },

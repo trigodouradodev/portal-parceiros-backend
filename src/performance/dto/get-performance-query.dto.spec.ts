@@ -1,5 +1,8 @@
 import { BadRequestException, ValidationPipe } from '@nestjs/common';
-import { GetPerformanceQueryDto } from './get-performance-query.dto';
+import {
+  GetPerformanceQueryDto,
+  GetPerformanceMonthsQueryDto,
+} from './get-performance-query.dto';
 
 describe('GetPerformanceQueryDto', () => {
   const pipe = new ValidationPipe({
@@ -7,7 +10,10 @@ describe('GetPerformanceQueryDto', () => {
     transform: true,
     forbidNonWhitelisted: true,
   });
-  const metadata = { type: 'query' as const, metatype: GetPerformanceQueryDto };
+  const metadata = {
+    type: 'query' as const,
+    metatype: GetPerformanceQueryDto,
+  };
 
   it.each(['2026-01', '2026-09', '2026-12', '2000-02', '0001-01'])(
     'aceita competência %s',
@@ -47,4 +53,25 @@ describe('GetPerformanceQueryDto', () => {
       pipe.transform({ month: '2026-09', userId: 'outro-parceiro' }, metadata),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
+
+  describe.each([GetPerformanceQueryDto, GetPerformanceMonthsQueryDto])(
+    '%s partnerId',
+    (metatype) => {
+      const metadata = { type: 'query' as const, metatype };
+      it('aceita UUID de pessoa selecionada', async () => {
+        const partnerId = '2410a057-4613-4596-a164-e07c694b7eff';
+        await expect(
+          pipe.transform({ partnerId }, metadata),
+        ).resolves.toMatchObject({ partnerId });
+      });
+      it.each([null, '', 'invalid', ['2410a057-4613-4596-a164-e07c694b7eff']])(
+        'recusa parâmetro inválido %p',
+        async (partnerId) => {
+          await expect(
+            pipe.transform({ partnerId }, metadata),
+          ).rejects.toBeInstanceOf(BadRequestException);
+        },
+      );
+    },
+  );
 });

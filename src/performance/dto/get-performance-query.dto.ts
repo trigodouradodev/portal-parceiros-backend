@@ -1,7 +1,18 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, Length, Matches, ValidateIf } from 'class-validator';
+import { IsUUID, IsString, Length, Matches, ValidateIf } from 'class-validator';
 
-export class GetPerformanceQueryDto {
+export class GetPerformanceMonthsQueryDto {
+  @ApiPropertyOptional({
+    description:
+      'Pessoa selecionada no filtro da equipe. Padrão: usuário autenticado.',
+    format: 'uuid',
+  })
+  @ValidateIf((_object, value: unknown) => value !== undefined)
+  @IsUUID()
+  partnerId?: string;
+}
+
+export class GetPerformanceQueryDto extends GetPerformanceMonthsQueryDto {
   @ApiPropertyOptional({
     example: '2026-09',
     description: 'Competência YYYY-MM. Padrão: mês corrente em Brasília.',
