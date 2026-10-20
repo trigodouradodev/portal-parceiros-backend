@@ -157,4 +157,41 @@ describe('PartnerRestrictionsService — falha da consulta', () => {
     });
     error.mockRestore();
   });
+
+  it.each([
+    ['mensagem em português', new Error('relação "partners" não existe')],
+    [
+      'código 42P01 do Prisma, qualquer que seja o idioma',
+      Object.assign(new Error('falha na consulta'), {
+        code: 'P2010',
+        meta: { code: '42P01' },
+      }),
+    ],
+  ])('tabela inexistente é reconhecida: %s', async (_nome, failure) => {
+    const { service } = await build(failure);
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+
+    await expect(service.isLoginBlocked(USER_ID, 'auth/login')).rejects.toThrow(
+      ServiceUnavailableException,
+    );
+
+    expect(JSON.parse(error.mock.calls[0][0] as string)).toMatchObject({
+      missingTable: true,
+    });
+    error.mockRestore();
+  });
+
+  it('outro erro de banco não é marcado como tabela inexistente', async () => {
+    const { service } = await build(new Error('connection terminated'));
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+
+    await expect(service.isLoginBlocked(USER_ID, 'auth/login')).rejects.toThrow(
+      ServiceUnavailableException,
+    );
+
+    expect(JSON.parse(error.mock.calls[0][0] as string)).toMatchObject({
+      missingTable: false,
+    });
+    error.mockRestore();
+  });
 });
