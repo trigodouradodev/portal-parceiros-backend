@@ -10,6 +10,7 @@ import type { Prisma } from '@prisma/client';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
+import { assertInsuranceAgeEligible } from '../cabure/insurance-age.guard';
 import { PartnerOriginationRestrictedException } from '../partners/partner-restriction.exceptions';
 import { PartnerRestrictionsService } from '../partners/partner-restrictions.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -117,6 +118,14 @@ export class QuotesService {
             'Simulação não encontrada para o parceiro autenticado.',
           );
         }
+
+        // Toda proposta do novo fluxo tem seguro: a idade do cliente precisa
+        // caber na regra da Caburé (até 70 anos ao fim da vigência).
+        assertInsuranceAgeEligible({
+          birthDate: simulation.birth_date,
+          installments: simulation.installment_numbers,
+          firstInstallmentDate: simulation.first_installment_date,
+        });
 
         const existing = await tx.quotes.findUnique({
           where: { simulation_id: simulationId },

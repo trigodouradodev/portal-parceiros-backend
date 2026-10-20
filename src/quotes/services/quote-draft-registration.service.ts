@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { assertInsuranceAgeEligible } from '../../cabure/insurance-age.guard';
 import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../../auth/permissions/permission-keys';
 import { cpfDigits, isValidCpf } from '../../common/cpf.util';
@@ -35,6 +36,25 @@ export class QuoteDraftRegistrationService {
     return this.prisma.$transaction(async (tx) => {
       const updatedAt = new Date();
       const isAdmin = actor.permissions.includes(PermissionKey.ROLE_ADMIN);
+
+      // Proposta do novo fluxo (nasce de uma simulação) tem seguro: mudar a
+      // data de nascimento não pode tornar o cliente inelegível à cobertura.
+      const draft = await tx.quotes.findFirst({
+        where: { id: quoteId },
+        select: {
+          simulation_id: true,
+          installment_numbers: true,
+          first_installment_date: true,
+        },
+      });
+      if (draft?.simulation_id) {
+        assertInsuranceAgeEligible({
+          birthDate: registration.birthDate,
+          installments: draft.installment_numbers,
+          firstInstallmentDate: draft.first_installment_date,
+        });
+      }
+
       const result = await tx.quotes.updateMany({
         where: {
           id: quoteId,
