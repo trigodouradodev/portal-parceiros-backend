@@ -3,6 +3,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { PrismaService } from '../prisma/prisma.service';
+import { PartnerRestrictionScope } from './enums/partner-restriction-scope.enum';
+import { PartnerStatus } from './enums/partner-status.enum';
 import { PartnerRestrictionsService } from './partner-restrictions.service';
 
 const USER_ID = '11111111-1111-1111-1111-111111111111';
@@ -48,10 +50,15 @@ describe('PartnerRestrictionsService.isLoginBlocked', () => {
     await service.isLoginBlocked(USER_ID, 'auth/login');
 
     const query = lastSql(queryRaw);
-    expect(query.sql).toContain("pr.scope = 'acesso'");
+    expect(query.sql).toContain('pr.scope = ?');
     expect(query.sql).toContain('pr.lifted_at IS NULL');
     expect(query.sql).toContain('p.current_status IN');
-    expect(query.values).toEqual([USER_ID, 'suspenso', 'desligado']);
+    expect(query.values).toEqual([
+      PartnerRestrictionScope.ACCESS,
+      USER_ID,
+      PartnerStatus.SUSPENDED,
+      PartnerStatus.DISMISSED,
+    ]);
   });
 
   it('registra o bloqueio em log estruturado', async () => {
@@ -92,9 +99,12 @@ describe('PartnerRestrictionsService.isOriginationRestricted', () => {
     ).resolves.toBe(false);
 
     const query = lastSql(queryRaw);
-    expect(query.sql).toContain("pr.scope = 'originacao'");
+    expect(query.sql).toContain('pr.scope = ?');
     expect(query.sql).toContain('pr.lifted_at IS NULL');
-    expect(query.values).toEqual([USER_ID]);
+    expect(query.values).toEqual([
+      USER_ID,
+      PartnerRestrictionScope.ORIGINATION,
+    ]);
   });
 
   it('com logBlock false (perfil) a restrição é detectada mas não vira log de bloqueio', async () => {

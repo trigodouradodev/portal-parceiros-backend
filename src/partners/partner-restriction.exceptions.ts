@@ -1,8 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
-
-/** Códigos estáveis do erro 403, para o frontend distinguir os casos. */
-export const PARTNER_ACCESS_RESTRICTED = 'PARTNER_ACCESS_RESTRICTED';
-export const PARTNER_ORIGINATION_RESTRICTED = 'PARTNER_ORIGINATION_RESTRICTED';
+import { PartnerRestrictionCode } from './enums/partner-restriction-code.enum';
 
 export const PARTNER_ACCESS_RESTRICTED_MESSAGE =
   'Acesso bloqueado. Fale com seu gerente.';
@@ -14,7 +11,7 @@ export class PartnerAccessRestrictedException extends ForbiddenException {
   constructor() {
     super({
       statusCode: 403,
-      code: PARTNER_ACCESS_RESTRICTED,
+      code: PartnerRestrictionCode.ACCESS_RESTRICTED,
       message: PARTNER_ACCESS_RESTRICTED_MESSAGE,
     });
   }
@@ -25,7 +22,7 @@ export class PartnerOriginationRestrictedException extends ForbiddenException {
   constructor() {
     super({
       statusCode: 403,
-      code: PARTNER_ORIGINATION_RESTRICTED,
+      code: PartnerRestrictionCode.ORIGINATION_RESTRICTED,
       message: PARTNER_ORIGINATION_RESTRICTED_MESSAGE,
     });
   }

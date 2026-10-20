@@ -6,9 +6,14 @@ import {
 import { Prisma } from '@prisma/client';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { PrismaService } from '../prisma/prisma.service';
+import { PartnerRestrictionScope } from './enums/partner-restriction-scope.enum';
+import { PartnerStatus } from './enums/partner-status.enum';
 
 /** Status do parceiro que impedem login novo (mesma lista do Backoffice). */
-const LOGIN_BLOCKING_STATUSES = ['suspenso', 'desligado'] as const;
+const LOGIN_BLOCKING_STATUSES = [
+  PartnerStatus.SUSPENDED,
+  PartnerStatus.DISMISSED,
+] as const;
 
 export interface PartnerRestrictionActor {
   userId: string;
@@ -66,7 +71,7 @@ export class PartnerRestrictionsService {
         FROM partners p
         LEFT JOIN partner_restrictions pr
           ON pr.partner_id = p.id
-         AND pr.scope = 'acesso'
+         AND pr.scope = ${PartnerRestrictionScope.ACCESS}
          AND pr.lifted_at IS NULL
         WHERE p.user_id = ${userId}::uuid
           AND (
@@ -78,7 +83,7 @@ export class PartnerRestrictionsService {
       route,
     );
 
-    if (blocked) this.logBlocked('acesso', userId, route);
+    if (blocked) this.logBlocked(PartnerRestrictionScope.ACCESS, userId, route);
     return blocked;
   }
 
@@ -100,7 +105,7 @@ export class PartnerRestrictionsService {
         FROM partner_restrictions pr
         JOIN partners p ON p.id = pr.partner_id
         WHERE p.user_id = ${actor.userId}::uuid
-          AND pr.scope = 'originacao'
+          AND pr.scope = ${PartnerRestrictionScope.ORIGINATION}
           AND pr.lifted_at IS NULL
         LIMIT 1
       `,
@@ -110,7 +115,7 @@ export class PartnerRestrictionsService {
     // `logBlock: false` para leitura informativa (perfil): nada foi barrado,
     // então não deve virar "bloqueio" no log nem na métrica.
     if (restricted && options.logBlock !== false) {
-      this.logBlocked('originacao', actor.userId, route);
+      this.logBlocked(PartnerRestrictionScope.ORIGINATION, actor.userId, route);
     }
     return restricted;
   }
@@ -139,7 +144,7 @@ export class PartnerRestrictionsService {
   }
 
   private logBlocked(
-    scope: 'acesso' | 'originacao',
+    scope: PartnerRestrictionScope,
     userId: string,
     route: string,
   ): void {

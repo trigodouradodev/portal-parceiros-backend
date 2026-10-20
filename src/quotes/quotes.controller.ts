@@ -20,6 +20,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiServiceUnavailableResponse,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -130,6 +131,14 @@ export class QuotesController {
   })
   @ApiConflictResponse({
     description: 'A simulação já originou uma proposta.',
+  })
+  @ApiForbiddenResponse({
+    description:
+      'Permissão insuficiente, bloqueio por cobrança pendente, ou parceiro com restrição de originação (code PARTNER_ORIGINATION_RESTRICTED).',
+  })
+  @ApiServiceUnavailableResponse({
+    description:
+      'Não foi possível verificar as restrições do parceiro. A proposta não é criada.',
   })
   @RequirePermissions(PermissionKey.QUOTE_CREATE)
   @Post('draft')
@@ -272,6 +281,14 @@ export class QuotesController {
   @ApiNotFoundResponse({ description: 'Proposta não encontrada.' })
   @ApiConflictResponse({
     description: 'A proposta não está mais no status draft.',
+  })
+  @ApiForbiddenResponse({
+    description:
+      'Permissão insuficiente, proposta de outro parceiro, ou parceiro com restrição de originação (code PARTNER_ORIGINATION_RESTRICTED): a proposta continua em rascunho.',
+  })
+  @ApiServiceUnavailableResponse({
+    description:
+      'Não foi possível verificar as restrições do parceiro. A proposta não é enviada.',
   })
   @RequirePermissions(PermissionKey.QUOTE_CREATE)
   @Put('draft/:quoteId/submit')
