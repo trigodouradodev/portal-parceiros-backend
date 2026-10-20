@@ -423,6 +423,7 @@ describe('QuotesService.createDraftFromSimulation', () => {
 
     await service.createDraftFromSimulation(SIMULATION_ID, actor());
 
+    // Valor literal de propósito: é o contrato gravado em `quotes.origin`.
     expect(createQuote.mock.calls[0][0].data.origin).toBe('time_comercial');
   });
 
