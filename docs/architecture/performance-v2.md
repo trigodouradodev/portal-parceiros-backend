@@ -1,33 +1,47 @@
-# Desempenho V2: consulta à view do Analytics
+# Desempenho V2: consulta aos snapshots do Analytics
 
-Status: backend e frontend adaptados. Rota e navegação habilitadas para validação
-local com dados reais. A liberação exige `PERFORMANCE_VIEW` explícita, atribuída
-manualmente aos grupos pela gestão de permissões. O mês atual depende da disponibilização pelo BI.
+Status: competências e indicadores adaptados para a tabela de snapshots do BI.
+A liberação publicada exige `PERFORMANCE_VIEW` explícita, atribuída manualmente
+aos grupos pela gestão de permissões.
+
+A validação local com identidades fixas foi encerrada. API, rota e menu exigem
+`PERFORMANCE_VIEW`, e as consultas usam a identidade autenticada e seu escopo.
 
 ## Fonte única e responsabilidades
 
-Todos os indicadores e valores de remuneração são lidos exclusivamente da
-`analytics.vw_metric_remuneracao_parceiro_mes`, pela conexão `PrismaService` já
-existente. O Analytics calcula os indicadores e fornece nível e meta por
-competência. A API autentica, autoriza a pessoa selecionada pelo mesmo escopo da Home e adapta os
-valores. O frontend apresenta as medições oficiais.
+Todos os indicadores e valores de remuneração são lidos de
+`analytics.tbl_snapshot_remuneracao_parceiro_mes`, pela conexão `PrismaService`
+já existente. O BI calcula os valores na view
+`analytics.vw_metric_remuneracao_parceiro_mes` e seu processo de carga os persiste
+na tabela. O portal consulta a foto persistida e adapta os valores para a API.
+Essa leitura evita executar as dependências de cálculo da view em cada chamada.
 
-O filtro da view é `data_competencia`, uma data com o primeiro dia do mês. Não é
-um parâmetro de função. As consultas também filtram `id_consultor`: por padrão, `user.sub`; quando informado,
-o UUID autorizado em `partnerId`. Nunca há agregação de indicadores da equipe.
+O repository usa a tabela do parceiro para listar competências, parceiros e
+consultar o consolidado. As contribuições individuais vêm de
+`analytics.tbl_snapshot_remuneracao_equipe_mes`, com filtros simultâneos por
+`id_parceiro`, `id_pessoa_equipe` e `data_competencia`. Seleciona explicitamente as colunas do contrato, preserva os campos
+nulos e mantém os filtros por `id_consultor` e `data_competencia` (primeiro dia do
+mês). A chave primária informada é `(id_consultor, data_competencia)`, compatível
+com esses filtros. Por padrão, o parceiro é `user.sub`; quando informado, o UUID
+em `partnerId` é autorizado pelo mesmo escopo da Home. Nunca há agregação da equipe.
 
-O BI está preparando o mês corrente com posição diária D-1. Meses anteriores
-representam o mês completo. A extração confirmada contém setembro de 2026, primeiro
-mês do novo modelo, com 94 parceiros. O acompanhamento usa a mesma view para o
-histórico; o portal não preserva nem substitui seus resultados por snapshots.
+A carga do BI atualiza diariamente a competência corrente como `Aberto` e
+preserva a foto final das competências `Fechado`. O fechamento depende de existir
+snapshot de parcelas do último dia do mês. No levantamento de 22/10/2026, outubro
+tinha 94 parceiros, carga às 04h de Brasília e parcelas de 21/10 (D-1). Setembro
+tinha 95 parceiros, situação `Fechado` e parcelas de 30/09. A data da gravação de
+um mês fechado pode ser posterior à competência; não é a referência das parcelas.
+
+O contrato da API e o frontend são preservados na troca da fonte. O backend
+continua sem calcular originação, percentuais, bônus ou remuneração total.
 
 Na consulta própria, nome, avatar e cargo vêm do usuário autenticado (`GET /auth/me`).
 Ao selecionar outra pessoa, o nome exibido no bloco de Desempenho vem da mesma
 lista da Home; o cargo do usuário autenticado não é atribuído a ela. Cargo e nível
 financeiro são conceitos distintos. Fixo, bônus em reais, acordos e total
-da remuneração são apresentados com os valores oficiais da view. Simulador,
+da remuneração são apresentados com os valores oficiais do snapshot. Simulador,
 comparação de ganhos, permanência e data de início da parceria ficam fora da tela
-e da resposta desta V2, pois esses dois últimos campos não são fornecidos pela view.
+e da resposta desta V2, pois esses dois últimos campos não integram a fonte consumida.
 
 ## Liberação por grupo
 
@@ -44,47 +58,82 @@ O catálogo e a normalização de JWT do connector preservam o caráter opt-in,
 inclusive para administradores. O rollback remove a permissão e seus vínculos
 por cascade, preservando grupos e membros.
 
-A liberação para gerentes ou demais parceiros é manual: atribuir
-`PERFORMANCE_VIEW` aos grupos desejados pela gestão de grupos e permissões.
+A migration adicional `20261022120000_create_performance_access_group.ts` cria
+um grupo de sistema ativo "Acesso ao Desempenho"
+(`10000000-0000-0000-0000-000000000012`) com somente `PERFORMANCE_VIEW` (ID 40).
+O grupo nasce sem membros e depende da permissão já criada pela migration anterior.
+Seu rollback remove apenas o grupo, seus vínculos e seus membros, preservando a
+permissão e os demais grupos.
+
+A liberação para gerentes ou demais parceiros é manual: adicionar os usuários ao
+grupo "Acesso ao Desempenho" pela gestão de grupos e permissões. Também continua
+possível atribuir a permissão aos demais grupos conforme a configuração desejada.
 Não é preciso alterar o código.
 Essa permissão controla a entrada no módulo; o escopo de pessoas continua sendo
 validado separadamente, conforme a Home.
 
-Aplicar a migration antes de liberar os serviços com a nova exigência. Após a
+Aplicar as migrations antes de liberar os serviços com a nova exigência. Após a
 atribuição, renovar a sessão para atualizar as permissões do token e do perfil.
 A migration está preparada no repositório; sua execução no banco faz parte da
 implantação.
 
-## Filtro de pessoas da equipe
+## Seleção de parceiro e contribuição individual
 
-O frontend reutiliza `useSubordinates`, a rota `GET /activities/subordinates` e o
-componente `SelectDialogField` da Home. A opção inicial é "Meu desempenho". O
-seletor aparece quando há pessoas disponíveis e permite escolher uma por vez.
-Mantém a competência selecionada na troca, mesmo sem dados naquele mês. O filtro
-permanece acessível durante carregamentos e erros.
+Os seletores de pessoas ficam à esquerda e a competência à direita no desktop;
+no celular, ficam empilhados. Todos reutilizam `SelectDialogField`.
 
-`PeopleScopeService`, exportado pelo módulo Scope, concentra a listagem e a
-validação usadas pela Home e pelo Desempenho. Gestores acessam seus subordinados
-recursivos. Admin e suporte acessam os parceiros ativos habilitados no rollout,
-com grupos ativos, permissão `QUOTE_ACTIVITY_GATES` e papel de consultor ou cobrador.
-`INSTALLMENT_VIEW_ALL` sozinho não amplia essa seleção para fora da hierarquia.
-A seleção de outra pessoa exige as mesmas permissões da rota da Home:
-`INSTALLMENT_VIEW`, `INSTALLMENT_VIEW_ALL`, `ROLE_SUPPORT` ou `ROLE_ADMIN`.
-Consulta própria não exige essas permissões de equipe; exige `PERFORMANCE_VIEW`.
+`GET /performance/partners?month=YYYY-MM` lista somente os parceiros que possuem
+consolidado na competência e estão no escopo permitido. A autorização reutiliza
+`PeopleScopeService`: subárvore recursiva para gestores e parceiros ativos do
+rollout para admin/suporte. A própria pessoa também é candidata. A seleção de
+outros titulares exige as permissões de equipe já usadas pela Home. Não é exigida
+permissão de Desempenho das pessoas consultadas; a permissão de entrada pertence
+a quem acessa a tela.
 
-As duas rotas de Desempenho aceitam `partnerId` opcional, validado como UUID.
-Ausência de `PERFORMANCE_VIEW` ou pessoa fora do escopo retorna 403 antes da
-consulta à view. A listagem e a
-hierarquia usam as tabelas de usuários e permissões existentes; a fonte dos
-indicadores e da remuneração continua sendo somente a view do Analytics.
-O ID fixo usado na validação local foi removido.
+Um gerente sem consolidado próprio seleciona um parceiro antes de ver números.
+O próprio parceiro é selecionado automaticamente quando disponível. Quando só
+existe um parceiro disponível, ele é selecionado; se for o usuário autenticado,
+o seletor de parceiro fica oculto.
+
+`GET /performance/team?partnerId=UUID&month=YYYY-MM` reúne o titular e os
+integrantes encontrados na hierarquia atual e no snapshot de equipe daquela
+competência. A união preserva integrantes históricos e permite escolher
+subordinados que ainda não possuem detalhamento. Pessoas excluídas não entram na
+lista. `flag_ativo=false` no snapshot não elimina uma contribuição histórica.
+
+Havendo integrantes além do titular, aparece o seletor "Visualização":
+"Consolidado", o próprio titular e cada integrante. Sem integrantes adicionais,
+o seletor fica oculto. Ao trocar de parceiro ou competência, a visualização volta
+ao consolidado. As chaves de cache incluem usuário autenticado, parceiro,
+integrante e competência para não reutilizar números de outra seleção.
+
+`GET /performance?partnerId=UUID&memberId=UUID&month=YYYY-MM` retorna a
+contribuição individual. O backend valida primeiro o titular no escopo do usuário
+e depois o vínculo do integrante com esse titular, antes da leitura individual.
+Um integrante de outro titular retorna 403. O acesso não depende de o integrante
+ter login ou permissão de acesso ao portal.
+
+O BI confirmou que o detalhamento representa a contribuição para o superior, e
+não uma remuneração própria. No individual, aparecem originação, contratos,
+taxa média informada, carteira ativa, inadimplência em reais e reembolso. Nível,
+meta, percentuais de inadimplência, bônus e remuneração não são herdados do
+consolidado nem calculados pelo portal; seus blocos são ocultados no frontend.
+`taxa_media` é apresentada como a média da pessoa, sem identificá-la como taxa de
+bônus ou ponderada. Desconsiderações fornecidas pelo BI permanecem em detalhes.
+
+Se o integrante autorizado não tem linha no snapshot da competência, retorna uma
+contribuição com valores zerados e `view.missingDetails=true`. A tela informa que
+o detalhamento não está disponível. Uma linha existente com valores nulos mantém
+N/A; falhas de consulta continuam sendo 503, sem virar zeros. O consolidado sem
+linha continua sendo `NO_DATA`.
 
 ## API
 
 ### `GET /performance/months?partnerId=UUID`
 
-Retorna competências distintas disponíveis para o parceiro, em ordem decrescente,
-e o mês corrente calculado no banco em `America/Sao_Paulo`:
+Retorna competências distintas, em ordem decrescente, e o mês corrente calculado
+no banco em `America/Sao_Paulo`. Com `partnerId`, usa aquele titular autorizado;
+sem ele, usa o escopo permitido, inclusive para gerentes sem consolidado próprio:
 
 ```json
 {
@@ -94,17 +143,20 @@ e o mês corrente calculado no banco em `America/Sao_Paulo`:
 ```
 
 Sem linhas para o parceiro, `months` é `[]`. Isso não significa ausência de inscrição.
-A tela seleciona inicialmente `currentMonth`, mesmo quando não existe na view, e
+A tela seleciona inicialmente `currentMonth`, mesmo quando não existe na tabela, e
 mantém o histórico selecionável. Uma competência futura, se fornecida pela fonte,
 é identificada como futura, sem afirmar que está completa.
 
-### `GET /performance?month=YYYY-MM&partnerId=UUID`
+### `GET /performance?month=YYYY-MM&partnerId=UUID&memberId=UUID`
 
 `month` é opcional e usa o mês corrente em Brasília quando omitido. Aceita mês
 válido no formato `YYYY-MM`, excluindo ano zero. Query desconhecida ou inválida
 retorna 400; não aceita `userId`. Token inválido retorna 401.
 
-Sem linha para a competência e o parceiro, retorna HTTP 200:
+`memberId` é opcional e validado como UUID. Omitido, retorna o consolidado;
+informado, retorna a contribuição do integrante autorizado.
+
+Sem linha consolidada para a competência e o parceiro, retorna HTTP 200:
 
 ```json
 { "month": "2026-10", "availability": "NO_DATA", "data": null }
@@ -167,7 +219,7 @@ Exemplo fictício de resposta disponível:
 
 ### Mapeamento direto
 
-| Campo em `data`                                     | Coluna da view                       |
+| Campo em `data`                                     | Coluna do snapshot                   |
 | --------------------------------------------------- | ------------------------------------ |
 | `level.label`                                       | `nivel`                              |
 | `indicators.origination.amount`                     | `valor_originado_mes`                |
@@ -214,8 +266,9 @@ O total nunca é recomposto pela soma dos componentes: em Híbrido e Reembolso, 
 exemplo, produção e bônus de reembolso são alternativas calculadas pelo Analytics.
 Nenhum percentual de bônus ou faixa é deduzido desses valores monetários.
 
-O campo "Tipo de alerta" presente no relatório de BI não está na estrutura da
-view informada e não é fabricado pelo portal.
+O campo "Tipo de alerta" presente no relatório de BI não integra o contrato
+confirmado. A extração recente trouxe três colunas adicionais sem cabeçalhos;
+seus significados não são inferidos a partir da posição ou dos valores.
 
 ## Categorias e campos nulos
 
@@ -243,41 +296,50 @@ ficam nulas, sem atribuir parâmetros de outro nível. Categorias desconhecidas 
 nulas usam `UNKNOWN`, preservam o rótulo e mostram somente medições preenchidas,
 como informação, sem metas ou regras de bônus.
 
-`appliedBand` permanece nulo: a view não fornece limites e percentual da faixa
+`appliedBand` permanece nulo: o snapshot não fornece limites e percentual da faixa
 aplicada. Não deduzir a faixa de indicadores arredondados, de bônus/fixo ou de
 réguas vigentes em outra tabela. Os cards não afirmam uma faixa ou bônus inferido.
 
 ## Períodos, atualização e compatibilidade
 
-A view não fornece situação de fechamento, data efetiva da carga ou referência
-da carteira. O contrato removeu `data.snapshot` e `months[].status`. A tela não
-exibe "Atualizado em", "Referência da carteira" ou "Fechado".
+A resposta disponível inclui `view.mode` (`CONSOLIDATED` ou `INDIVIDUAL`),
+`view.portfolioReference` e `view.missingDetails`. A referência da carteira vem de
+`data_snapshot_parcelas` do snapshot que forneceu os indicadores selecionados.
+A tela exibe essa data, pois consolidado e equipe podem estar em cargas diferentes.
+Um integrante sem detalhamento não recebe a data da carteira do consolidado.
 
-Com base em `currentMonth` do backend, a tela apresenta o mês atual como "Prévia",
-com a informação "Posição diária com base em D-1", e meses anteriores como "Mês
-completo". Esses rótulos descrevem o período; não são status de fechamento oficial
-nem garantia de que o histórico é imutável. Não se calcula ontem para inventar uma
-data de referência. A data efetiva poderá ser acrescentada quando fornecida pelo BI.
+`data_foto` e `data_hora_foto` representam a gravação da carga e não são usados
+como referência da carteira. A situação oficial de fechamento continua fora do
+contrato. O mês corrente é identificado como "Prévia", e anteriores como "Mês
+completo", pelo calendário do backend. A antiga legenda D-1 é apenas fallback
+para respostas consolidadas que ainda não tragam referência; a visão individual
+usa a referência real ou a indicação de ausência de detalhamento.
 
 As consultas do frontend têm cache de um minuto com chave por usuário autenticado,
-pessoa selecionada e competência,
+parceiro, integrante e competência,
 sem atualização periódica automática. Reconsultar a API não dispara cargas do BI.
-A ausência do mês atual até a entrega do Analytics continua sendo `NO_DATA`.
+Uma competência ausente na tabela continua sendo `NO_DATA`, inclusive se faltar
+a carga do mês atual. A consulta não recorre à view nem recalcula valores.
 
 Foram removidos `/performance/me`, `/performance/current` e `/performance/program`,
-sem consumidores no frontend adaptado, e seus cálculos operacionais. Nenhuma tabela,
-migration, configuração de conexão ou cálculo do BI foi alterado. Backend e frontend
-devem ser publicados com o novo contrato juntos, após a validação integrada.
+sem consumidores no frontend adaptado, e seus cálculos operacionais. A troca da
+view pela tabela preserva o contrato da V2 e é compatível com o frontend atual.
+Não exige migration, mudança de conexão ou alteração dos cálculos do BI.
 
 ## Validação antes de liberar
 
 - Confirmar que o usuário da conexão tem `USAGE` no schema `analytics` e `SELECT` na
-  view, incluindo eventuais requisitos de acesso das dependências definidos pelo BI.
-- Confirmar o mês atual com corte D-1 e comparar os indicadores da API, da view e
+  tabela `analytics.tbl_snapshot_remuneracao_parceiro_mes`.
+- Confirmar o mês atual com corte D-1 e comparar os indicadores da API, da tabela e
   do relatório para o mesmo parceiro e competência.
 - Validar categorias, zeros, nulos e ausência de mês sem inferir falta de inscrição.
 - Medir latência das consultas de competências e indicadores com filtros por parceiro;
-  a view possui dependências de cálculo que precisam atender o uso do portal.
+  confirmar o ganho de tempo na consulta aos valores persistidos.
 - Validar a liberação por `PERFORMANCE_VIEW` e o bloqueio sem ela, inclusive para admin.
 - Para usuários autorizados, validar o filtro com gestor, parceiro sem equipe, admin e suporte, incluindo
   a recusa de pessoas fora do escopo permitido.
+
+- Validar gerente sem consolidado, parceiro sem equipe e titular com integrantes.
+- Comparar "Consolidado", próprio titular e integrante com a linha correspondente
+  de cada snapshot e sua referência de carteira.
+- Confirmar o caso sem detalhamento: zeros informados, sem remuneração herdada.

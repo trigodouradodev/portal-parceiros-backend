@@ -74,4 +74,25 @@ describe('GetPerformanceQueryDto', () => {
       );
     },
   );
+  it.each([null, '', 'not-a-uuid', ['adb77ae3-7fda-4b87-856e-9583f4d90d0c']])(
+    'recusa integrante inválido %p',
+    async (memberId) => {
+      await expect(
+        pipe.transform({ memberId }, metadata),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    },
+  );
+  it('aceita o integrante separado do titular e da competência', async () => {
+    const memberId = 'adb77ae3-7fda-4b87-856e-9583f4d90d0c';
+    await expect(
+      pipe.transform(
+        {
+          month: '2026-10',
+          partnerId: 'f630bd84-1425-423a-a533-5e5139abb9d5',
+          memberId,
+        },
+        metadata,
+      ),
+    ).resolves.toMatchObject({ memberId });
+  });
 });

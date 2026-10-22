@@ -14,6 +14,14 @@ export class GetPerformanceMonthsQueryDto {
 
 export class GetPerformanceQueryDto extends GetPerformanceMonthsQueryDto {
   @ApiPropertyOptional({
+    description: 'Integrante selecionado. Omitir para consultar o consolidado.',
+    format: 'uuid',
+  })
+  @ValidateIf((_object, value: unknown) => value !== undefined)
+  @IsUUID()
+  memberId?: string;
+
+  @ApiPropertyOptional({
     example: '2026-09',
     description: 'Competência YYYY-MM. Padrão: mês corrente em Brasília.',
   })

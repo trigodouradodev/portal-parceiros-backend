@@ -13,6 +13,7 @@ export interface PerformanceRow {
   requested_month: string;
   id_consultor: string | null;
   nivel: string | null;
+  data_snapshot_parcelas?: string | null;
   valor_originado_mes: PerformanceNumeric;
   meta_originacao_mensal: PerformanceNumeric;
   pct_meta_atingido: PerformanceNumeric;
@@ -34,4 +35,22 @@ export interface PerformanceRow {
   valor_bonus_producao: PerformanceNumeric;
   valor_bonus_reembolso: PerformanceNumeric;
   valor_remuneracao_total: PerformanceNumeric;
+}
+
+export interface PerformancePersonRow {
+  id: string;
+  name: string;
+}
+
+export interface PerformanceTeamRow {
+  requested_month: string;
+  id_pessoa_equipe: string | null;
+  valor_originado: PerformanceNumeric;
+  qtd_contratos: number | null;
+  taxa_media: PerformanceNumeric;
+  valor_inadimplencia: PerformanceNumeric;
+  valor_carteira_ativa: PerformanceNumeric;
+  valor_inadimplencia_desconsiderada: PerformanceNumeric;
+  valor_reembolso_mes: PerformanceNumeric;
+  data_snapshot_parcelas: string | null;
 }

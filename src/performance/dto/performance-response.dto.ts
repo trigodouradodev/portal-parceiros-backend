@@ -90,7 +90,8 @@ export class PerformanceInterestRateDto {
   @ApiProperty({
     type: Number,
     nullable: true,
-    description: 'Taxa considerada no bônus, na escala 0–100.',
+    description:
+      'Taxa do bônus no consolidado ou média informada da pessoa no individual, na escala 0–100.',
   })
   rate: number | null;
 
@@ -156,7 +157,7 @@ export class PerformanceIndicatorsDto {
   reimbursement: PerformanceReimbursementDto;
 }
 
-/** Valores oficiais da view. Null não é convertido em zero nem entra em somas. */
+/** Valores oficiais do snapshot consolidado. Null não é convertido em zero nem entra em somas. */
 export class PerformanceRemunerationDto {
   @ApiProperty({ type: Number, nullable: true })
   fixedAmount: number | null;
@@ -184,6 +185,8 @@ export class PerformanceRemunerationDto {
 }
 
 export class PerformanceDataDto {
+  @ApiProperty({ type: Number, required: false, nullable: true })
+  contractsCount?: number | null;
   @ApiProperty({ type: PerformanceLevelDto })
   level: PerformanceLevelDto;
 
@@ -194,7 +197,25 @@ export class PerformanceDataDto {
   indicators: PerformanceIndicatorsDto;
 }
 
+export class PerformancePersonDto {
+  @ApiProperty({ format: 'uuid' }) id: string;
+  @ApiProperty() name: string;
+}
+
+export class PerformanceViewDto {
+  @ApiProperty({ enum: ['CONSOLIDATED', 'INDIVIDUAL'] }) mode:
+    | 'CONSOLIDATED'
+    | 'INDIVIDUAL';
+  @ApiProperty({ type: String, nullable: true }) portfolioReference:
+    | string
+    | null;
+  @ApiProperty() missingDetails: boolean;
+}
+
 export class PerformanceResponseDto {
+  @ApiProperty({ type: PerformanceViewDto, required: false })
+  view?: PerformanceViewDto;
+
   @ApiProperty({ example: '2026-09' })
   month: string;
 

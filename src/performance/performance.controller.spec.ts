@@ -25,16 +25,26 @@ const partnerId = '2410a057-4613-4596-a164-e07c694b7eff';
 
 describe('PerformanceController V2', () => {
   let controller: PerformanceController;
-  let service: { getMonths: jest.Mock; getPerformance: jest.Mock };
+  let service: {
+    getMonths: jest.Mock;
+    getPerformance: jest.Mock;
+    getPartners: jest.Mock;
+    getTeam: jest.Mock;
+  };
 
   beforeEach(() => {
-    service = { getMonths: jest.fn(), getPerformance: jest.fn() };
+    service = {
+      getMonths: jest.fn(),
+      getPerformance: jest.fn(),
+      getPartners: jest.fn(),
+      getTeam: jest.fn(),
+    };
     controller = new PerformanceController(
       service as unknown as PerformanceService,
     );
   });
 
-  it('usa o usuário autenticado por padrão para consultar competências', async () => {
+  it('usa o usuário autenticado para consultar competências', async () => {
     service.getMonths.mockResolvedValue({
       currentMonth: '2026-10',
       months: [],
@@ -57,6 +67,7 @@ describe('PerformanceController V2', () => {
       viewer,
       '2026-09',
       partnerId,
+      undefined,
     );
   });
 
@@ -66,12 +77,32 @@ describe('PerformanceController V2', () => {
       viewer,
       undefined,
       undefined,
+      undefined,
     );
   });
 
   it('encaminha a pessoa selecionada também para as competências', async () => {
     await controller.getMonths(user, { partnerId });
     expect(service.getMonths).toHaveBeenCalledWith(viewer, partnerId);
+  });
+
+  it('encaminha opções e integrante com o escopo do usuário autenticado', async () => {
+    const memberId = 'adb77ae3-7fda-4b87-856e-9583f4d90d0c';
+    await controller.getPartners(user, { month: '2026-10' });
+    await controller.getTeam(user, { partnerId, month: '2026-10' });
+    await controller.getPerformance(user, {
+      partnerId,
+      memberId,
+      month: '2026-10',
+    });
+    expect(service.getPartners).toHaveBeenCalledWith(viewer, '2026-10');
+    expect(service.getTeam).toHaveBeenCalledWith(viewer, partnerId, '2026-10');
+    expect(service.getPerformance).toHaveBeenCalledWith(
+      viewer,
+      '2026-10',
+      partnerId,
+      memberId,
+    );
   });
 
   it('registra os provedores e os contratos Swagger das rotas novas no módulo', async () => {
@@ -128,10 +159,15 @@ describe('PerformanceController V2', () => {
   });
 });
 
-describe('Desempenho: permissão explícita nas duas rotas', () => {
+describe('Desempenho: permissão explícita nas quatro rotas', () => {
   let app: INestApplication<Server>;
   let permissions: string[];
-  const service = { getMonths: jest.fn(), getPerformance: jest.fn() };
+  const service = {
+    getMonths: jest.fn(),
+    getPerformance: jest.fn(),
+    getPartners: jest.fn(),
+    getTeam: jest.fn(),
+  };
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({
@@ -159,12 +195,19 @@ describe('Desempenho: permissão explícita nas duas rotas', () => {
       availability: 'NO_DATA',
       data: null,
     });
+    service.getPartners.mockResolvedValue([]);
+    service.getTeam.mockResolvedValue([]);
   });
   afterAll(async () => {
     await app.close();
   });
 
-  describe.each(['/performance', '/performance/months'])('%s', (path) => {
+  describe.each([
+    '/performance',
+    '/performance/months',
+    '/performance/partners',
+    '/performance/team',
+  ])('%s', (path) => {
     it.each(
       [
         [],
@@ -181,6 +224,8 @@ describe('Desempenho: permissão explícita nas duas rotas', () => {
       await request(app.getHttpServer()).get(path).expect(403);
       expect(service.getMonths).not.toHaveBeenCalled();
       expect(service.getPerformance).not.toHaveBeenCalled();
+      expect(service.getPartners).not.toHaveBeenCalled();
+      expect(service.getTeam).not.toHaveBeenCalled();
     });
 
     it.each(

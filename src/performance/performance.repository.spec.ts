@@ -27,12 +27,12 @@ describe('PerformanceRepository', () => {
     );
     const [strings, ...values] = queryRaw.mock.calls[0];
     const sql = strings.join('?');
-    expect(values).toEqual([PERFORMANCE_USER_ID]);
-    expect(sql).toContain('s.id_consultor = ?::uuid');
+    expect(values).toEqual([[PERFORMANCE_USER_ID]]);
+    expect(sql).toContain('s.id_consultor = ANY(?::uuid[])');
     expect(sql).toContain("now() AT TIME ZONE 'America/Sao_Paulo'");
     expect(sql).toContain('ORDER BY month DESC');
     expect(sql).toContain(
-      'LEFT JOIN analytics.vw_metric_remuneracao_parceiro_mes',
+      'LEFT JOIN analytics.tbl_snapshot_remuneracao_parceiro_mes',
     );
   });
 
@@ -60,8 +60,8 @@ describe('PerformanceRepository', () => {
     expect(sql).toContain('s.pct_inadimplencia_bonus');
     expect(sql).not.toContain(month);
     expect(sql).not.toContain('SELECT *');
-    expect(sql).toContain('analytics.vw_metric_remuneracao_parceiro_mes');
-    expect(sql).not.toContain('tbl_snapshot');
+    expect(sql).toContain('analytics.tbl_snapshot_remuneracao_parceiro_mes');
+    expect(sql).not.toContain('vw_metric_remuneracao_parceiro_mes');
     expect(sql).not.toContain('situacao_competencia');
     expect(sql).not.toContain('data_hora_foto');
     expect(sql).toContain(
@@ -96,4 +96,61 @@ it('recusa mais de uma linha para o mesmo parceiro e competência', async () => 
   await expect(
     repository.findPerformance(PERFORMANCE_USER_ID, '2026-09'),
   ).rejects.toThrow('duplicate_performance_rows');
+});
+
+describe('Snapshots de parceiros e equipes', () => {
+  function build(rows: unknown[] = []) {
+    const queryRaw = jest
+      .fn<Promise<unknown[]>, [TemplateStringsArray, ...unknown[]]>()
+      .mockResolvedValue(rows);
+    return {
+      queryRaw,
+      repository: new PerformanceRepository({
+        $queryRaw: queryRaw,
+      } as unknown as PrismaService),
+    };
+  }
+  it('restringe parceiros aos IDs autorizados e à competência selecionada', async () => {
+    const { queryRaw, repository } = build();
+    await repository.findPartners([PERFORMANCE_USER_ID], '2026-10');
+    const [strings, ...values] = queryRaw.mock.calls[0];
+    expect(values).toEqual([[PERFORMANCE_USER_ID], '2026-10']);
+    expect(strings.join('?')).toContain('s.id_consultor = ANY(?::uuid[])');
+    expect(strings.join('?')).toContain('s.data_competencia =');
+  });
+  it('inclui a hierarquia e os integrantes históricos do snapshot sem exigir permissão de acesso dos integrantes', async () => {
+    const { queryRaw, repository } = build();
+    await repository.findTeam(
+      PERFORMANCE_USER_ID,
+      [PERFORMANCE_USER_ID, 'member'],
+      '2026-10',
+    );
+    const [strings, ...values] = queryRaw.mock.calls[0];
+    expect(values).toEqual([
+      '2026-10',
+      [PERFORMANCE_USER_ID, 'member'],
+      PERFORMANCE_USER_ID,
+    ]);
+    const sql = strings.join('?');
+    expect(sql).toContain('UNION');
+    expect(sql).toContain('tbl_snapshot_remuneracao_equipe_mes');
+    expect(sql).not.toContain('flag_ativo = true');
+    expect(sql).not.toContain('permissions');
+  });
+  it('vincula titular, integrante e mês separadamente na consulta individual', async () => {
+    const { queryRaw, repository } = build();
+    await expect(
+      repository.findIndividual(PERFORMANCE_USER_ID, 'member', '2026-10'),
+    ).resolves.toBeUndefined();
+    const [strings, ...values] = queryRaw.mock.calls[0];
+    expect(values).toEqual([PERFORMANCE_USER_ID, 'member', '2026-10']);
+    expect(strings.join('?')).toContain('e.id_parceiro = ?::uuid');
+    expect(strings.join('?')).toContain('e.id_pessoa_equipe = ?::uuid');
+  });
+  it('recusa duplicidade no detalhe em vez de escolher uma linha ou somar números', async () => {
+    const { repository } = build([{}, {}]);
+    await expect(
+      repository.findIndividual(PERFORMANCE_USER_ID, 'member', '2026-10'),
+    ).rejects.toThrow('duplicate_performance_team_rows');
+  });
 });

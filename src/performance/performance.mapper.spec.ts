@@ -1,5 +1,9 @@
 import { Prisma } from '@prisma/client';
-import { mapPerformance, mapPerformanceMonths } from './performance.mapper';
+import {
+  mapPerformance,
+  mapPerformanceMonths,
+  mapIndividualPerformance,
+} from './performance.mapper';
 import { performanceRow } from './performance.fixture';
 
 describe('mapPerformance', () => {
@@ -354,4 +358,66 @@ describe('remuneração oficial', () => {
       mapPerformance(performanceRow({ valor_remuneracao_total: 'NaN' })),
     ).toThrow('invalid_performance_number');
   });
+});
+
+describe('Contribuição individual', () => {
+  it('preserva os valores individuais sem inventar metas, percentuais ou remuneração', () => {
+    const result = mapIndividualPerformance('2026-10', {
+      requested_month: '2026-10',
+      id_pessoa_equipe: 'member',
+      valor_originado: '19200',
+      qtd_contratos: 7,
+      taxa_media: '10.67',
+      valor_inadimplencia: '61035.16',
+      valor_carteira_ativa: '222058.82',
+      valor_inadimplencia_desconsiderada: '2246.13',
+      valor_reembolso_mes: '22832.11',
+      data_snapshot_parcelas: '2026-10-20',
+    });
+    expect(result.view).toEqual({
+      mode: 'INDIVIDUAL',
+      portfolioReference: '2026-10-20',
+      missingDetails: false,
+    });
+    expect(result.data!.indicators.origination).toMatchObject({
+      amount: 19200,
+      targetAmount: null,
+      targetPercent: null,
+    });
+    expect(result.data!.indicators.interestRate).toMatchObject({
+      rate: 10.67,
+      weightedRate: null,
+    });
+    expect(result.data!.indicators.delinquency).toMatchObject({
+      rate: null,
+      portfolioAmount: 222058.82,
+      overdueAmount: 61035.16,
+    });
+    expect(result.data!.contractsCount).toBe(7);
+    expect(result.data!.indicators.reimbursement.amount).toBe(22832.11);
+    expect(result.data!.remuneration.totalAmount).toBeNull();
+    expect(result.data!.level.label).toBeNull();
+  });
+  it.each([null, 0])(
+    'preserva a contagem %s em um registro existente',
+    (count) => {
+      const result = mapIndividualPerformance('2026-10', {
+        requested_month: '2026-10',
+        id_pessoa_equipe: 'member',
+        valor_originado: null,
+        qtd_contratos: count,
+        taxa_media: null,
+        valor_inadimplencia: null,
+        valor_carteira_ativa: null,
+        valor_inadimplencia_desconsiderada: null,
+        valor_reembolso_mes: null,
+        data_snapshot_parcelas: null,
+      });
+      expect(result.data!.contractsCount).toBe(count);
+      expect(result.view!.missingDetails).toBe(false);
+      expect(result.data!.indicators.interestRate.status).toBe(
+        'NO_MEASUREMENT',
+      );
+    },
+  );
 });

@@ -21,6 +21,7 @@ import {
 import {
   PerformanceMonthsResponseDto,
   PerformanceResponseDto,
+  PerformancePersonDto,
 } from './dto/performance-response.dto';
 
 @ApiTags('performance')
@@ -54,6 +55,39 @@ export class PerformanceController {
     );
   }
 
+  @ApiOperation({
+    summary:
+      'Parceiros com consolidado na competência, dentro do escopo do usuário.',
+  })
+  @ApiOkResponse({ type: [PerformancePersonDto] })
+  @Get('partners')
+  getPartners(
+    @CurrentUser() user: JwtPayload,
+    @Query() query: GetPerformanceQueryDto,
+  ) {
+    return this.performanceService.getPartners(
+      { userId: user.sub, permissions: user.permissions },
+      query.month,
+    );
+  }
+
+  @ApiOperation({
+    summary:
+      'Integrantes da equipe do parceiro, incluindo os que ainda não têm detalhamento.',
+  })
+  @ApiOkResponse({ type: [PerformancePersonDto] })
+  @Get('team')
+  getTeam(
+    @CurrentUser() user: JwtPayload,
+    @Query() query: GetPerformanceQueryDto,
+  ) {
+    return this.performanceService.getTeam(
+      { userId: user.sub, permissions: user.permissions },
+      query.partnerId,
+      query.month,
+    );
+  }
+
   @ApiOperation({ summary: 'Nível e indicadores oficiais por competência.' })
   @ApiOkResponse({ type: PerformanceResponseDto })
   @ApiBadRequestResponse({
@@ -71,6 +105,7 @@ export class PerformanceController {
       { userId: user.sub, permissions: user.permissions },
       query.month,
       query.partnerId,
+      query.memberId,
     );
   }
 }

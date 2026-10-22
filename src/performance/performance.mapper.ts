@@ -10,6 +10,7 @@ import {
   PerformanceMonthRow,
   PerformanceRow,
   PerformanceNumeric,
+  PerformanceTeamRow,
 } from './interfaces/performance-row.interface';
 
 const LEVEL_KEYS: Readonly<Record<string, PerformanceLevelKey>> = {
@@ -69,7 +70,7 @@ export function mapPerformanceMonths(
   };
 }
 
-/** Adapta os valores oficiais da view; não calcula taxas, metas, faixas ou remuneração. */
+/** Adapta os valores oficiais do snapshot; não calcula taxas, metas, faixas ou remuneração. */
 export function mapPerformance(row: PerformanceRow): PerformanceResponseDto {
   if (row.id_consultor === null) {
     return {
@@ -171,6 +172,73 @@ export function mapPerformance(row: PerformanceRow): PerformanceResponseDto {
         reimbursement: {
           status: indicatorStatus(hasReimbursement, reimbursementAmount),
           amount: reimbursementAmount,
+        },
+      },
+    },
+  };
+}
+
+/** Contribuição individual: não atribui nível, metas ou remuneração do titular. */
+export function mapIndividualPerformance(
+  month: string,
+  row?: PerformanceTeamRow,
+): PerformanceResponseDto {
+  const number = (value: PerformanceNumeric | undefined) =>
+    row ? performanceNumber(value ?? null) : 0;
+  const amount = number(row?.valor_originado);
+  const rate = number(row?.taxa_media);
+  const reimbursement = number(row?.valor_reembolso_mes);
+  return {
+    month,
+    availability: PerformanceAvailability.AVAILABLE,
+    view: {
+      mode: 'INDIVIDUAL',
+      portfolioReference: row?.data_snapshot_parcelas ?? null,
+      missingDetails: !row,
+    },
+    data: {
+      level: { key: PerformanceLevelKey.UNKNOWN, label: null },
+      contractsCount: row ? row.qtd_contratos : 0,
+      remuneration: {
+        fixedAmount: null,
+        disbursementBonusAmount: null,
+        rateBonusAmount: null,
+        riskBonusAmount: null,
+        agreementAmount: null,
+        productionBonusAmount: null,
+        reimbursementBonusAmount: null,
+        totalAmount: null,
+      },
+      indicators: {
+        origination: {
+          status: indicatorStatus(true, amount),
+          amount,
+          targetAmount: null,
+          targetPercent: null,
+          appliedBand: null,
+        },
+        interestRate: {
+          status: indicatorStatus(true, rate),
+          rate,
+          simpleRate: null,
+          weightedRate: null,
+          appliedBand: null,
+        },
+        delinquency: {
+          status: PerformanceIndicatorStatus.AVAILABLE,
+          rate: null,
+          portfolioRate: null,
+          overdueAmount: number(row?.valor_inadimplencia),
+          portfolioAmount: number(row?.valor_carteira_ativa),
+          disregardedOverdueAmount: number(
+            row?.valor_inadimplencia_desconsiderada,
+          ),
+          disregardedPortfolioAmount: null,
+          appliedBand: null,
+        },
+        reimbursement: {
+          status: indicatorStatus(true, reimbursement),
+          amount: reimbursement,
         },
       },
     },
