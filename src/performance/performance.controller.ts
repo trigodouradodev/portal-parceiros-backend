@@ -1,103 +1,111 @@
-import { Controller, Get } from '@nestjs/common';
+import { RequireExplicitPermissions } from '../auth/decorators/require-permissions.decorator';
+import { PermissionKey } from '../auth/permissions/permission-keys';
+import { Controller, Get, Query } from '@nestjs/common';
 import {
   ApiBearerAuth,
-  ApiInternalServerErrorResponse,
-  ApiNotFoundResponse,
+  ApiForbiddenResponse,
+  ApiBadRequestResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
+  ApiServiceUnavailableResponse,
 } from '@nestjs/swagger';
+import { PerformanceService } from './performance.service';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
-import { PerformanceService } from './performance.service';
-import { PartnerProfile } from './interfaces/partner-profile.interface';
-import { PartnerProgram } from './interfaces/partner-program.interface';
-import { CurrentPerformance } from './interfaces/current-performance.interface';
+import {
+  GetPerformanceQueryDto,
+  GetPerformanceMonthsQueryDto,
+} from './dto/get-performance-query.dto';
+import {
+  PerformanceMonthsResponseDto,
+  PerformanceResponseDto,
+  PerformancePersonDto,
+} from './dto/performance-response.dto';
 
 @ApiTags('performance')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ description: 'Token ausente ou inválido.' })
+@ApiForbiddenResponse({
+  description:
+    'Sem PERFORMANCE_VIEW ou pessoa fora do escopo permitido na Home.',
+})
+@ApiBadRequestResponse({ description: 'Parâmetro inválido ou desconhecido.' })
+@RequireExplicitPermissions(PermissionKey.PERFORMANCE_VIEW)
 @Controller('performance')
 export class PerformanceController {
   constructor(private readonly performanceService: PerformanceService) {}
 
-  /**
-   * Barra de identidade do parceiro, nível contratado e posição na trilha de
-   * permanência. Alimenta também o ponto de partida do simulador no front.
-   *
-   * Sem `@RequirePermissions` de propósito: é dado próprio do viewer (nível e
-   * remuneração dele), então o gate é o guard de autenticação global mais a
-   * inscrição no programa. Não há scope hierárquico aqui — um gerente não vê o
-   * nível do subordinado por esta rota.
-   */
   @ApiOperation({
-    summary: 'Identidade, nível e mês de parceria do parceiro logado.',
+    summary: 'Competências disponíveis da pessoa selecionada.',
   })
-  @ApiOkResponse({ type: PartnerProfile })
-  @ApiNotFoundResponse({
-    description:
-      'Viewer não inscrito no Programa de Parceiros Exclusivos (ou com ' +
-      'parceria de início futuro). O front esconde a aba Desempenho.',
+  @ApiOkResponse({ type: PerformanceMonthsResponseDto })
+  @ApiServiceUnavailableResponse({
+    description: 'Fonte Analytics indisponível.',
   })
-  @Get('me')
-  getMe(@CurrentUser() user: JwtPayload) {
-    return this.performanceService.getPartnerProfile(
-      user.sub,
-      user.permissions,
+  @Get('months')
+  getMonths(
+    @CurrentUser() user: JwtPayload,
+    @Query() query: GetPerformanceMonthsQueryDto,
+  ) {
+    return this.performanceService.getMonths(
+      { userId: user.sub, permissions: user.permissions },
+      query.partnerId,
     );
   }
 
-  /**
-   * Parâmetros do Programa de Parceiros Exclusivos: níveis, faixas dos 3 pilares
-   * de bônus, marcos de permanência e bônus de boas-vindas.
-   *
-   * É o insumo do simulador do front, que avalia as faixas localmente — a cada
-   * arrasto de slider — em vez de bater no servidor. Também é a base da tabela
-   * comparativa entre níveis.
-   *
-   * Sem `@RequirePermissions`: são os parâmetros do programa, iguais para todo
-   * parceiro e sem nenhum dado de carteira. Vale para quem não está inscrito,
-   * então não replica o 404 de `/me`.
-   */
   @ApiOperation({
-    summary: 'Níveis, faixas de bônus e marcos do programa (parâmetros).',
+    summary:
+      'Parceiros com consolidado na competência, dentro do escopo do usuário.',
   })
-  @ApiOkResponse({ type: PartnerProgram })
-  @ApiInternalServerErrorResponse({
-    description:
-      'Parâmetros mal cadastrados no banco — régua de bônus com buraco ou ' +
-      'sobreposição, ou config do bônus de boas-vindas ausente/inválida.',
-  })
-  @Get('program')
-  getProgram() {
-    return this.performanceService.getProgram();
+  @ApiOkResponse({ type: [PerformancePersonDto] })
+  @Get('partners')
+  getPartners(
+    @CurrentUser() user: JwtPayload,
+    @Query() query: GetPerformanceQueryDto,
+  ) {
+    return this.performanceService.getPartners(
+      { userId: user.sub, permissions: user.permissions },
+      query.month,
+    );
   }
 
-  /**
-   * Bloco "Desempenho real do mês": originação contra a meta, inadimplência da
-   * carteira e taxa média, cada um com o bônus já garantido, mais a comissão
-   * acumulada do mês.
-   *
-   * Mesmo gate do `/me`: dado próprio do viewer, sem scope hierárquico, e não
-   * inscrito recebe 404. As metas são individuais — nada de subárvore.
-   */
   @ApiOperation({
-    summary: 'Desempenho real do mês corrente e comissão acumulada.',
+    summary:
+      'Integrantes da equipe do parceiro, incluindo os que ainda não têm detalhamento.',
   })
-  @ApiOkResponse({ type: CurrentPerformance })
-  @ApiNotFoundResponse({
-    description:
-      'Viewer não inscrito no Programa de Parceiros Exclusivos (ou com ' +
-      'parceria de início futuro).',
+  @ApiOkResponse({ type: [PerformancePersonDto] })
+  @Get('team')
+  getTeam(
+    @CurrentUser() user: JwtPayload,
+    @Query() query: GetPerformanceQueryDto,
+  ) {
+    return this.performanceService.getTeam(
+      { userId: user.sub, permissions: user.permissions },
+      query.partnerId,
+      query.month,
+    );
+  }
+
+  @ApiOperation({ summary: 'Nível e indicadores oficiais por competência.' })
+  @ApiOkResponse({ type: PerformanceResponseDto })
+  @ApiBadRequestResponse({
+    description: 'Competência inválida ou parâmetro desconhecido.',
   })
-  @ApiInternalServerErrorResponse({
-    description:
-      'Parâmetros do programa mal cadastrados no banco — mesma validação de ' +
-      '`/performance/program`.',
+  @ApiServiceUnavailableResponse({
+    description: 'Fonte Analytics indisponível.',
   })
-  @Get('current')
-  getCurrent(@CurrentUser('sub') userId: string) {
-    return this.performanceService.getCurrentPerformance(userId);
+  @Get()
+  getPerformance(
+    @CurrentUser() user: JwtPayload,
+    @Query() query: GetPerformanceQueryDto,
+  ) {
+    return this.performanceService.getPerformance(
+      { userId: user.sub, permissions: user.permissions },
+      query.month,
+      query.partnerId,
+      query.memberId,
+    );
   }
 }
