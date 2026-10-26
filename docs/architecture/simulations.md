@@ -67,7 +67,10 @@ reads use the database. The shared `SystemConfigsModule` owns batched access and
 the five-minute per-key cache, matching the connector's current TTL.
 
 The fixed provider values are `iof_type=PERSON`, `schedule_type=MONTHLY`,
-`finance_fee=0`, `insurance_amount=0` and `tac_amount=0`. The disbursement date
+`finance_fee=0` and `insurance_amount=0` for the simulation without insurance.
+TAC uses the linked product's `max_tac_rate`, matching the backoffice: a positive
+rate is sent as `tac_rate`; zero is sent as `tac_amount=0`. The same TAC is used
+when financing the insurance premium. The disbursement date
 is the current business date in `America/Sao_Paulo`. `payment_amount` from the
 Celcoin response is the authoritative `simulations.installment_amount`; values
 from `schedule` and the former local Price calculation must not replace it.
@@ -93,8 +96,11 @@ Saved simulations use the shared `simulations` table. Database schema changes
 are owned by Knex migrations in `trigo-connector`; this backend must not keep a
 parallel SQL installer or its own copy of the migration.
 
-This integration uses the existing `installment_amount` and
-`simulation_result` columns, so it requires no database migration.
+The TAC used in the calculation is stored in `simulations.tac_amount` and
+copied into `quotes.tac_amount` when creating the draft. Existing simulations
+retain zero until recalculated. The column is added by the connector migration
+`20261008180000_add_tac_amount_to_simulations.ts`, which must run before deploying
+the portal code.
 
 The name `origination` is intentionally not used for this module because it is
 broader than the responsibility implemented here and would mix simulations,

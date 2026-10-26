@@ -36,6 +36,7 @@ interface LinkedProduct {
   max_installment_count: number;
   min_interest_rate: Prisma.Decimal | number | string;
   max_interest_rate: Prisma.Decimal | number | string;
+  max_tac_rate: Prisma.Decimal | number | string;
   enabled: boolean;
 }
 
@@ -75,6 +76,7 @@ interface PreparedSimulation {
   amount: number;
   installments: number;
   interestRate: number;
+  tacRate: number;
   installmentAmount: number;
   simulationResult: CelcoinSimulationResult;
   insurance: InsurancePreview;
@@ -215,6 +217,7 @@ export class SimulationsService {
         telephone,
         finance_amount,
         interest_rate,
+        tac_amount,
         installment_numbers,
         first_installment_date,
         installment_amount,
@@ -236,6 +239,7 @@ export class SimulationsService {
         ${prepared.telephone},
         ${prepared.amount},
         ${prepared.interestRate},
+        ${prepared.tacRate},
         ${prepared.installments},
         ${toSqlDate(prepared.firstInstallmentDate)}::date,
         ${prepared.installmentAmount},
@@ -312,6 +316,7 @@ export class SimulationsService {
           telephone = ${prepared.telephone},
           finance_amount = ${prepared.amount},
           interest_rate = ${prepared.interestRate},
+          tac_amount = ${prepared.tacRate},
           installment_numbers = ${prepared.installments},
           first_installment_date = ${toSqlDate(prepared.firstInstallmentDate)}::date,
           installment_amount = ${prepared.installmentAmount},
@@ -399,6 +404,7 @@ export class SimulationsService {
       amount: financial.amount,
       installments: financial.installments,
       interestRate: financial.interestRate,
+      tacRate: financial.tacRate,
       installmentAmount: financial.installmentAmount,
       simulationResult: financial.simulationResult,
       insurance: financial.insurance,
@@ -413,6 +419,7 @@ export class SimulationsService {
     amount: number;
     installments: number;
     interestRate: number;
+    tacRate: number;
     firstInstallmentDate: Date;
     installmentAmount: number;
     simulationResult: CelcoinSimulationResult;
@@ -449,17 +456,20 @@ export class SimulationsService {
       );
     }
 
+    const tacRate = toNum(product.max_tac_rate) || 0;
     const simulationResult =
       await this.celcoinSimulation.simulateRequestedAmount({
         requestedAmount: dto.amount,
         interestRate,
         installments: dto.installments,
         firstPaymentDate: toSqlDate(firstInstallmentDate),
+        tacRate,
       });
 
     const insurance = await this.prepareInsurancePreview({
       amount: dto.amount,
       interestRate,
+      tacRate,
       installments: dto.installments,
       birthDate: dto.birthDate,
       firstInstallmentDate,
@@ -470,6 +480,7 @@ export class SimulationsService {
       amount: dto.amount,
       installments: dto.installments,
       interestRate,
+      tacRate,
       firstInstallmentDate,
       installmentAmount: simulationResult.payment_amount,
       simulationResult,
@@ -488,6 +499,7 @@ export class SimulationsService {
   private async prepareInsurancePreview(input: {
     amount: number;
     interestRate: number;
+    tacRate: number;
     installments: number;
     birthDate: Date;
     firstInstallmentDate: Date;
@@ -513,6 +525,7 @@ export class SimulationsService {
           interestRate: input.interestRate,
           installments: input.installments,
           firstPaymentDate: toSqlDate(input.firstInstallmentDate),
+          tacRate: input.tacRate,
           insuranceAmount: cabureQuote.premium,
         });
 
@@ -611,6 +624,7 @@ export class SimulationsService {
         fp.max_installment_count,
         fp.min_interest_rate,
         fp.max_interest_rate,
+        fp.max_tac_rate,
         fp.enabled
       FROM public.consultant_finance_products cfp
       JOIN public.finance_products fp ON fp.id = cfp.finance_product_id

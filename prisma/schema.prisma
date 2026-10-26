@@ -2234,6 +2234,7 @@ model simulations {
   telephone                          String           @db.VarChar(20)
   finance_amount                     Decimal          @db.Decimal(15, 2)
   interest_rate                      Decimal          @db.Decimal(12, 8)
+  tac_amount                         Decimal          @default(0) @db.Decimal(15, 2)
   installment_numbers                Int
   first_installment_date             DateTime         @db.Date
   installment_amount                 Decimal          @db.Decimal(15, 2)
