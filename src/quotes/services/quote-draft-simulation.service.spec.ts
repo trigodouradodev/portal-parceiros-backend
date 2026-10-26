@@ -249,6 +249,7 @@ describe('QuoteDraftSimulationService.update (AUREA-701)', () => {
     const sql = call[0].join(' ');
     expect(sql).toContain('public.cabure_insurance_proposals');
     expect(sql).toContain('ON CONFLICT (quote_id) DO UPDATE');
+    expect(sql).toContain('updated_at = now()');
     expect(call).toContain('cabure-quote-2');
     expect(call).toContain(240);
   });

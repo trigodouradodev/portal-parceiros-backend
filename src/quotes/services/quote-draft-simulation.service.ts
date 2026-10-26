@@ -138,7 +138,8 @@ export class QuoteDraftSimulationService {
             cabure_quote_id = EXCLUDED.cabure_quote_id,
             premium = EXCLUDED.premium,
             product_code = EXCLUDED.product_code,
-            status = 'quoted'
+            status = 'quoted',
+            updated_at = now()
         `;
       }
 
