@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ActivitiesModule } from '../activities/activities.module';
 import { QuoteEventsModule } from '../quote-events/quote-events.module';
 import { ScopeModule } from '../scope/scope.module';
+import { SimulationsModule } from '../simulations/simulations.module';
 import { StorageModule } from '../storage/storage.module';
 import { SystemConfigsModule } from '../system-configs/system-configs.module';
 import { QuoteDraftDocumentationController } from './quote-draft-documentation.controller';
@@ -14,6 +15,7 @@ import { QuoteDraftGuarantorService } from './services/quote-draft-guarantor.ser
 import { QuoteDraftIncomeService } from './services/quote-draft-income.service';
 import { QuoteDraftPartnerOpinionService } from './services/quote-draft-partner-opinion.service';
 import { QuoteDraftRegistrationService } from './services/quote-draft-registration.service';
+import { QuoteDraftSimulationService } from './services/quote-draft-simulation.service';
 import { QuoteDraftStepsService } from './services/quote-draft-steps.service';
 import { QuoteReadService } from './services/quote-read.service';
 import { QuoteRenewalPrefillService } from './services/quote-renewal-prefill.service';
@@ -23,6 +25,7 @@ import { QuoteRenewalPrefillService } from './services/quote-renewal-prefill.ser
     ActivitiesModule,
     QuoteEventsModule,
     ScopeModule,
+    SimulationsModule,
     StorageModule,
     SystemConfigsModule,
   ],
@@ -35,6 +38,7 @@ import { QuoteRenewalPrefillService } from './services/quote-renewal-prefill.ser
     QuoteDraftIncomeService,
     QuoteDraftPartnerOpinionService,
     QuoteDraftRegistrationService,
+    QuoteDraftSimulationService,
     QuoteDraftStepsService,
     QuoteReadService,
     QuoteRenewalPrefillService,
