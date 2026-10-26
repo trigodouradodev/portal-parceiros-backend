@@ -1,295 +1,302 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { ScopeService } from '../scope/scope.service';
+import { PeopleScopeService } from '../scope/people-scope.service';
+import { PermissionKey } from '../auth/permissions/permission-keys';
 import {
-  InternalServerErrorException,
-  NotFoundException,
+  ForbiddenException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PerformanceService } from './performance.service';
-import { PrismaService } from '../prisma/prisma.service';
-import {
-  DISBURSEMENT_BANDS,
-  RATE_BANDS,
-  RISK_BANDS,
-  pgDate,
-} from './performance.fixture';
-import { BonusBand } from './interfaces/partner-program.interface';
-import { BonusBandRow } from './interfaces/performance-row.interface';
-import { PermissionKey } from '../auth/permissions/permission-keys';
+import { PerformanceRepository } from './performance.repository';
+import { PERFORMANCE_USER_ID, performanceRow } from './performance.fixture';
 
-const USER_ID = '269b0843-0aa8-40ab-af66-8304909930a6';
-
-function bandRows(pillar: string, bands: BonusBand[]): BonusBandRow[] {
-  return bands.map((band) => ({
-    pillar,
-    min_value: band.minValue,
-    min_inclusive: band.minInclusive,
-    max_value: band.maxValue,
-    max_inclusive: band.maxInclusive,
-    bonus_percent: band.bonusPercent,
-  }));
-}
-
-const ALL_BANDS: BonusBandRow[] = [
-  ...bandRows('DISBURSEMENT', DISBURSEMENT_BANDS),
-  ...bandRows('RISK', RISK_BANDS),
-  ...bandRows('RATE', RATE_BANDS),
-];
-
-const ENROLLMENT_ROW = {
-  full_name: 'Treinamento',
-  level_key: 'GOLD',
-  level_name: 'Ouro',
-  monthly_target: '200000.00',
-  monthly_fixed: '8000.00',
-  started_at: pgDate('2025-11-15'),
-  reference_date: pgDate('2026-07-30'),
+const viewer = {
+  userId: PERFORMANCE_USER_ID,
+  permissions: [PermissionKey.INSTALLMENT_VIEW],
 };
+const partnerId = 'f630bd84-1425-423a-a533-5e5139abb9d5';
 
-const ORIGINATION_ROW = {
-  month: '2026-07',
-  period_start: pgDate('2026-07-01'),
-  period_end: pgDate('2026-07-30'),
-  origination_count: 0n,
-  origination_amount: '0',
-  avg_rate: null,
-};
-
-const DELINQUENCY_ROW = { overdue_amount: '0', open_amount: '188645.33' };
-
-interface RawOverrides {
-  enrollment?: unknown[];
-  origination?: unknown[];
-  delinquency?: unknown[];
-}
-
-interface PrismaOverrides {
-  raw?: RawOverrides;
-  bands?: BonusBandRow[];
-  levels?: unknown[];
-  milestones?: unknown[];
-  config?: { value: string } | null;
-}
-
-/**
- * PrismaService mockado. `$queryRaw` roteia pelo conteúdo do SQL, e não pela
- * ordem das chamadas, porque `getCurrentPerformance` dispara as queries em
- * `Promise.all` — a ordem de resolução não é garantida.
- */
-function createPrismaMock(overrides: PrismaOverrides = {}) {
-  const raw = overrides.raw ?? {};
-  return {
-    $queryRaw: jest.fn((strings: TemplateStringsArray) => {
-      const sql = strings.join(' ');
-      if (sql.includes('partner_enrollments')) {
-        return Promise.resolve(raw.enrollment ?? [ENROLLMENT_ROW]);
-      }
-      if (sql.includes('loan_terms')) {
-        return Promise.resolve(raw.origination ?? [ORIGINATION_ROW]);
-      }
-      if (sql.includes('overdue_amount')) {
-        return Promise.resolve(raw.delinquency ?? [DELINQUENCY_ROW]);
-      }
-      throw new Error(`query não mapeada no mock: ${sql}`);
-    }),
-    partner_bonus_bands: {
-      findMany: jest.fn().mockResolvedValue(overrides.bands ?? ALL_BANDS),
-    },
-    partner_levels: {
-      findMany: jest.fn().mockResolvedValue(
-        overrides.levels ?? [
-          {
-            key: 'GOLD',
-            name: 'Ouro',
-            monthly_target_amount: '200000.00',
-            monthly_fixed_amount: '8000.00',
-          },
-        ],
-      ),
-    },
-    partner_permanence_milestones: {
-      findMany: jest.fn().mockResolvedValue(
-        overrides.milestones ?? [
-          { month_number: 6, fixed_multiplier: '1.00' },
-          { month_number: 12, fixed_multiplier: '2.00' },
-          { month_number: 18, fixed_multiplier: '3.00' },
-        ],
-      ),
-    },
-    system_configs: {
-      findUnique: jest
-        .fn()
-        .mockResolvedValue(
-          overrides.config === undefined
-            ? { value: '4000.00' }
-            : overrides.config,
-        ),
-    },
+describe('PerformanceService', () => {
+  const people = { assertCanSelect: jest.fn(), getOptions: jest.fn() };
+  const scope = { getViewerScopeIds: jest.fn() };
+  let service: PerformanceService;
+  let repository: {
+    findMonths: jest.Mock;
+    findPerformance: jest.Mock;
+    findPartners: jest.Mock;
+    findTeam: jest.Mock;
+    findIndividual: jest.Mock;
   };
-}
 
-async function buildService(
-  overrides: PrismaOverrides = {},
-): Promise<PerformanceService> {
-  const module: TestingModule = await Test.createTestingModule({
-    providers: [
-      PerformanceService,
-      { provide: PrismaService, useValue: createPrismaMock(overrides) },
-    ],
-  }).compile();
-  return module.get(PerformanceService);
-}
-
-describe('PerformanceService.getPartnerProfile', () => {
-  it('monta o perfil do parceiro inscrito', async () => {
-    const service = await buildService();
-    const profile = await service.getPartnerProfile(USER_ID, [
-      PermissionKey.ROLE_CONSULTANT,
-    ]);
-
-    expect(profile.level.key).toBe('GOLD');
-    expect(profile.partnership.monthNumber).toBe(9);
-    expect(profile.partner.roleLabel).toBe('Consultor parceiro');
-  });
-
-  it('responde 404 para quem não está inscrito no programa', async () => {
-    const service = await buildService({ raw: { enrollment: [] } });
-    await expect(service.getPartnerProfile(USER_ID, [])).rejects.toThrow(
-      NotFoundException,
+  beforeEach(() => {
+    people.assertCanSelect.mockReset();
+    people.getOptions.mockReset().mockResolvedValue([]);
+    scope.getViewerScopeIds
+      .mockReset()
+      .mockResolvedValue({ userIds: [PERFORMANCE_USER_ID] });
+    repository = {
+      findMonths: jest.fn(),
+      findPerformance: jest.fn(),
+      findPartners: jest.fn(),
+      findTeam: jest.fn(),
+      findIndividual: jest.fn(),
+    };
+    service = new PerformanceService(
+      repository as unknown as PerformanceRepository,
+      people as unknown as PeopleScopeService,
+      scope as unknown as ScopeService,
     );
   });
 
-  it('responde 404 para parceria com início no futuro', async () => {
-    // Cadastro antecipado pelo backoffice: a parceria ainda não começou, então
-    // não pode exibir "mês 0" nem liberar boas-vindas antes da hora.
-    const service = await buildService({
-      raw: {
-        enrollment: [{ ...ENROLLMENT_ROW, started_at: pgDate('2026-09-01') }],
-      },
+  it('consulta os indicadores do próprio parceiro e da competência explícita', async () => {
+    repository.findPerformance.mockResolvedValue(performanceRow());
+    const result = await service.getPerformance(viewer, '2026-09');
+    expect(repository.findPerformance).toHaveBeenCalledWith(
+      PERFORMANCE_USER_ID,
+      '2026-09',
+    );
+    expect(result.data!.level.label).toBe('Bronze');
+  });
+
+  it('delega ao banco a referência do mês corrente quando o mês não é informado', async () => {
+    repository.findPerformance.mockResolvedValue(
+      performanceRow({ requested_month: '2026-10', id_consultor: null }),
+    );
+    await expect(service.getPerformance(viewer)).resolves.toEqual({
+      month: '2026-10',
+      availability: 'NO_DATA',
+      data: null,
     });
-    await expect(service.getPartnerProfile(USER_ID, [])).rejects.toThrow(
-      NotFoundException,
+    expect(repository.findPerformance).toHaveBeenCalledWith(
+      PERFORMANCE_USER_ID,
+      undefined,
+    );
+  });
+
+  it('consulta as competências somente do usuário autenticado', async () => {
+    repository.findMonths.mockResolvedValue([
+      { current_month: '2026-10', month: null },
+    ]);
+    await expect(service.getMonths(viewer)).resolves.toEqual({
+      currentMonth: '2026-10',
+      months: [],
+    });
+    expect(repository.findMonths).toHaveBeenCalledWith([PERFORMANCE_USER_ID]);
+  });
+
+  it.each(['getMonths', 'getPerformance'] as const)(
+    'converte falha de leitura em 503 em %s, sem expor a mensagem do driver',
+    async (method) => {
+      const readError = new Error('database connection details');
+      repository.findMonths.mockRejectedValue(readError);
+      repository.findPerformance.mockRejectedValue(readError);
+      try {
+        await service[method](viewer);
+        throw new Error('expected_service_unavailable');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ServiceUnavailableException);
+        expect(
+          (error as ServiceUnavailableException).getResponse(),
+        ).toMatchObject({
+          statusCode: 503,
+          message: 'performance_data_unavailable',
+        });
+        expect((error as Error).message).not.toContain('connection details');
+      }
+    },
+  );
+
+  it('não transforma dados corrompidos ou resultado inesperado em NO_DATA', async () => {
+    repository.findPerformance.mockResolvedValue(
+      performanceRow({ taxa_media_bonus: 'NaN' }),
+    );
+    await expect(service.getPerformance(viewer)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    repository.findPerformance.mockResolvedValue(undefined);
+    await expect(service.getPerformance(viewer)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+  });
+
+  it('consulta a mesma pessoa autorizada no histórico e nos indicadores', async () => {
+    repository.findMonths.mockResolvedValue([
+      { current_month: '2026-10', month: null },
+    ]);
+    repository.findPerformance.mockResolvedValue(performanceRow());
+    await service.getMonths(viewer, partnerId);
+    await service.getPerformance(viewer, '2026-09', partnerId);
+    expect(people.assertCanSelect).toHaveBeenNthCalledWith(
+      1,
+      viewer,
+      partnerId,
+    );
+    expect(people.assertCanSelect).toHaveBeenNthCalledWith(
+      2,
+      viewer,
+      partnerId,
+    );
+    expect(repository.findMonths).toHaveBeenCalledWith(partnerId);
+    expect(repository.findPerformance).toHaveBeenCalledWith(
+      partnerId,
+      '2026-09',
+    );
+  });
+
+  it.each(['getMonths', 'getPerformance'] as const)(
+    'recusa pessoa fora do escopo antes de ler o snapshot em %s',
+    async (method) => {
+      people.assertCanSelect.mockRejectedValue(
+        new ForbiddenException('assignee_outside_viewer_scope'),
+      );
+      const result =
+        method === 'getMonths'
+          ? service.getMonths(viewer, partnerId)
+          : service.getPerformance(viewer, '2026-09', partnerId);
+      await expect(result).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repository.findMonths).not.toHaveBeenCalled();
+      expect(repository.findPerformance).not.toHaveBeenCalled();
+    },
+  );
+
+  it('não permite selecionar equipe sem as permissões exigidas pela Home', async () => {
+    await expect(
+      service.getPerformance(
+        { ...viewer, permissions: [] },
+        '2026-09',
+        partnerId,
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(people.assertCanSelect).not.toHaveBeenCalled();
+    expect(repository.findPerformance).not.toHaveBeenCalled();
+  });
+
+  it('permite consultar a si próprio sem permissões da Home', async () => {
+    repository.findPerformance.mockResolvedValue(performanceRow());
+    await service.getPerformance(
+      { ...viewer, permissions: [] },
+      '2026-09',
+      viewer.userId,
+    );
+    expect(people.assertCanSelect).not.toHaveBeenCalled();
+    expect(repository.findPerformance).toHaveBeenCalledWith(
+      viewer.userId,
+      '2026-09',
     );
   });
 });
 
-describe('PerformanceService.getProgram', () => {
-  it('devolve os parâmetros do programa com os 3 pilares', async () => {
-    const service = await buildService();
-    const program = await service.getProgram();
+describe('Seleção de parceiro e integrante', () => {
+  const owner = '11111111-1111-4111-8111-111111111111';
+  const member = '22222222-2222-4222-8222-222222222222';
+  function build() {
+    const repository = {
+      findPartners: jest.fn().mockResolvedValue([]),
+      findMonths: jest
+        .fn()
+        .mockResolvedValue([{ current_month: '2026-10', month: '2026-09' }]),
+      findTeam: jest.fn().mockResolvedValue([
+        { id: owner, name: 'Titular' },
+        { id: member, name: 'Integrante' },
+      ]),
+      findPerformance: jest.fn().mockResolvedValue(performanceRow()),
+      findIndividual: jest.fn().mockResolvedValue(undefined),
+    };
+    const people = {
+      getOptions: jest.fn().mockResolvedValue([
+        { id: owner, name: 'Titular' },
+        { id: member, name: 'Integrante' },
+      ]),
+      assertCanSelect: jest.fn().mockResolvedValue(undefined),
+    };
+    const scope = {
+      getViewerScopeIds: jest
+        .fn()
+        .mockResolvedValue({ userIds: [owner, member] }),
+    };
+    return {
+      repository,
+      people,
+      scope,
+      service: new PerformanceService(
+        repository as unknown as PerformanceRepository,
+        people as unknown as PeopleScopeService,
+        scope as unknown as ScopeService,
+      ),
+    };
+  }
 
-    expect(program.welcomeBonusAmount).toBe(4000);
-    expect(program.bonusPillars.map((p) => p.pillar)).toEqual([
-      'DISBURSEMENT',
-      'RISK',
-      'RATE',
-    ]);
-    expect(program.permanenceMilestones).toHaveLength(3);
-  });
-
-  it('falha alto quando uma régua tem buraco, em vez de pagar bônus errado calado', async () => {
-    // Remove a faixa [9.5 , 9.5] da taxa: o valor exatamente 9,5% fica sem
-    // cobertura e o parceiro receberia 0% sem que ninguém percebesse.
-    const bands = ALL_BANDS.filter(
-      (band) =>
-        !(
-          band.pillar === 'RATE' &&
-          band.min_value === 9.5 &&
-          band.max_value === 9.5
-        ),
+  it('lista somente os parceiros da competência dentro dos IDs autorizados', async () => {
+    const { service, repository } = build();
+    await service.getPartners(viewer, '2026-10');
+    expect(repository.findPartners).toHaveBeenCalledWith(
+      [viewer.userId, member],
+      '2026-10',
     );
-    const service = await buildService({ bands });
-    await expect(service.getProgram()).rejects.toThrow(
-      InternalServerErrorException,
+  });
+  it('consulta o histórico do escopo quando o gerente não selecionou um parceiro', async () => {
+    const { service, repository } = build();
+    await service.getMonths(viewer);
+    expect(repository.findMonths).toHaveBeenCalledWith([viewer.userId, member]);
+  });
+  it('restringe a listagem ao próprio usuário sem permissão de equipe', async () => {
+    const { service, repository, people } = build();
+    await service.getPartners({ ...viewer, permissions: [] }, '2026-10');
+    expect(repository.findPartners).toHaveBeenCalledWith(
+      [viewer.userId],
+      '2026-10',
+    );
+    expect(people.getOptions).not.toHaveBeenCalled();
+  });
+  it('inclui a hierarquia do titular na seleção mesmo quando falta snapshot do integrante', async () => {
+    const { service, repository } = build();
+    await service.getTeam(viewer, owner, '2026-10');
+    expect(repository.findTeam).toHaveBeenCalledWith(
+      owner,
+      [owner, member],
+      '2026-10',
     );
   });
-
-  it('falha quando um pilar não tem nenhuma faixa cadastrada', async () => {
-    const service = await buildService({
-      bands: ALL_BANDS.filter((band) => band.pillar !== 'RISK'),
+  it('rejeita titular fora do escopo antes de ler indicadores ou integrantes', async () => {
+    const { service, repository, people } = build();
+    people.assertCanSelect.mockRejectedValue(new ForbiddenException());
+    await expect(
+      service.getPerformance(viewer, '2026-10', member, owner),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(repository.findPerformance).not.toHaveBeenCalled();
+    expect(repository.findTeam).not.toHaveBeenCalled();
+  });
+  it('rejeita integrante que não pertence ao titular selecionado', async () => {
+    const { service, repository } = build();
+    await expect(
+      service.getPerformance(viewer, '2026-10', owner, 'outside'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(repository.findIndividual).not.toHaveBeenCalled();
+  });
+  it('retorna contribuição zerada se faltar detalhamento sem copiar a remuneração do titular', async () => {
+    const { service } = build();
+    const result = await service.getPerformance(
+      viewer,
+      '2026-09',
+      owner,
+      member,
+    );
+    expect(result.view).toMatchObject({
+      mode: 'INDIVIDUAL',
+      missingDetails: true,
     });
-    await expect(service.getProgram()).rejects.toThrow(
-      InternalServerErrorException,
-    );
+    expect(result.data!.indicators.origination.amount).toBe(0);
+    expect(result.data!.contractsCount).toBe(0);
+    expect(result.data!.indicators.reimbursement.amount).toBe(0);
+    expect(result.data!.remuneration.totalAmount).toBeNull();
+    expect(result.data!.indicators.origination.targetAmount).toBeNull();
   });
-
-  it('falha quando a config do bônus de boas-vindas não existe', async () => {
-    const service = await buildService({ config: null });
-    await expect(service.getProgram()).rejects.toThrow(
-      InternalServerErrorException,
+  it('propaga indisponibilidade da consulta individual como 503, sem retornar zeros', async () => {
+    const { service, repository } = build();
+    repository.findIndividual.mockRejectedValue(
+      new Error('snapshot unavailable'),
     );
-  });
-
-  it('falha quando a config do bônus de boas-vindas não é numérica', async () => {
-    // `system_configs.value` é texto livre — cair para 0 seria pior que erro:
-    // 0 é indistinguível de "não é o 1º mês" e sumiria da tela.
-    const service = await buildService({ config: { value: 'quatro mil' } });
-    await expect(service.getProgram()).rejects.toThrow(
-      InternalServerErrorException,
-    );
-  });
-
-  it('falha quando a config do bônus de boas-vindas é negativa', async () => {
-    const service = await buildService({ config: { value: '-100' } });
-    await expect(service.getProgram()).rejects.toThrow(
-      InternalServerErrorException,
-    );
-  });
-
-  it('falha quando não há nível ativo', async () => {
-    const service = await buildService({ levels: [] });
-    await expect(service.getProgram()).rejects.toThrow(
-      InternalServerErrorException,
-    );
-  });
-
-  it('falha quando não há marco de permanência', async () => {
-    const service = await buildService({ milestones: [] });
-    await expect(service.getProgram()).rejects.toThrow(
-      InternalServerErrorException,
-    );
-  });
-});
-
-describe('PerformanceService.getCurrentPerformance', () => {
-  it('monta o desempenho do mês com os bônus resolvidos', async () => {
-    const service = await buildService({
-      raw: {
-        origination: [
-          {
-            ...ORIGINATION_ROW,
-            origination_count: 14n,
-            origination_amount: '250000',
-            avg_rate: '0.1043',
-          },
-        ],
-        delinquency: [{ overdue_amount: '15000', open_amount: '1000000' }],
-      },
-    });
-
-    const result = await service.getCurrentPerformance(USER_ID);
-
-    expect(result.origination.targetPercent).toBe(125);
-    expect(result.origination.bonusPercent).toBe(20);
-    expect(result.delinquency.rate).toBe(1.5);
-    expect(result.delinquency.bonusPercent).toBe(50);
-    expect(result.averageRate.rate).toBe(10.43);
-    expect(result.averageRate.bonusPercent).toBe(30);
-    // Mês 9: sem boas-vindas e sem marco, então fixo + os três bônus.
-    expect(result.commission.total).toBe(16000);
-  });
-
-  it('responde 404 para quem não está inscrito', async () => {
-    const service = await buildService({ raw: { enrollment: [] } });
-    await expect(service.getCurrentPerformance(USER_ID)).rejects.toThrow(
-      NotFoundException,
-    );
-  });
-
-  it('valida as réguas também neste endpoint, não só no /program', async () => {
-    const service = await buildService({
-      bands: ALL_BANDS.filter((band) => band.pillar !== 'RATE'),
-    });
-    await expect(service.getCurrentPerformance(USER_ID)).rejects.toThrow(
-      InternalServerErrorException,
-    );
+    await expect(
+      service.getPerformance(viewer, '2026-09', owner, member),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 });

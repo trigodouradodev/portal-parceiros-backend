@@ -1,63 +1,56 @@
 import { Prisma } from '@prisma/client';
 
-/**
- * Shapes brutos (snake_case) retornados pelas queries do PerformanceService.
- * Não são contratos de API — são o resultado direto do Postgres.
- */
+/** Tipos de numeric lidos por $queryRaw, preservando NULL. */
+export type PerformanceNumeric = Prisma.Decimal | string | number | null;
 
-/** Linha de `findCurrentEnrollment`: inscrição vigente + termos do nível. */
-export interface EnrollmentRow {
-  full_name: string;
-  level_key: string;
-  level_name: string;
-  monthly_target: Prisma.Decimal | string | number;
-  monthly_fixed: Prisma.Decimal | string | number;
-  /** MIN(effective_from) do parceiro — não se move quando ele muda de nível. */
-  started_at: Date;
-  /** CURRENT_DATE do banco: "hoje" na mesma âncora usada pelo resto do app. */
-  reference_date: Date;
+export interface PerformanceMonthRow {
+  current_month: string;
+  month: string | null;
 }
 
-/** Marco da trilha de permanência, já coagido para número. */
-export interface PermanenceMilestone {
-  month: number;
-  multiplier: number;
+/** LEFT JOIN mantém requested_month mesmo quando o parceiro não tem dados. */
+export interface PerformanceRow {
+  requested_month: string;
+  id_consultor: string | null;
+  nivel: string | null;
+  data_snapshot_parcelas?: string | null;
+  valor_originado_mes: PerformanceNumeric;
+  meta_originacao_mensal: PerformanceNumeric;
+  pct_meta_atingido: PerformanceNumeric;
+  taxa_media_bonus: PerformanceNumeric;
+  taxa_media_simples: PerformanceNumeric;
+  taxa_media_ponderada: PerformanceNumeric;
+  pct_inadimplencia_bonus: PerformanceNumeric;
+  pct_inadimplencia: PerformanceNumeric;
+  valor_inadimplencia: PerformanceNumeric;
+  valor_carteira_ativa: PerformanceNumeric;
+  valor_inadimplencia_desconsiderada: PerformanceNumeric;
+  valor_carteira_desconsiderada: PerformanceNumeric;
+  valor_reembolso_mes: PerformanceNumeric;
+  valor_fixo_mensal: PerformanceNumeric;
+  valor_bonus_desembolso: PerformanceNumeric;
+  valor_bonus_taxa: PerformanceNumeric;
+  valor_bonus_risco: PerformanceNumeric;
+  valor_acordos: PerformanceNumeric;
+  valor_bonus_producao: PerformanceNumeric;
+  valor_bonus_reembolso: PerformanceNumeric;
+  valor_remuneracao_total: PerformanceNumeric;
 }
 
-/** Colunas lidas de `partner_levels` para a tabela comparativa de níveis. */
-export interface ProgramLevelRow {
-  key: string;
+export interface PerformancePersonRow {
+  id: string;
   name: string;
-  monthly_target_amount: Prisma.Decimal | string | number;
-  monthly_fixed_amount: Prisma.Decimal | string | number;
 }
 
-/**
- * Linha de `findMonthOrigination`: contratos desembolsados no mês pelo próprio
- * parceiro, mais o período de referência do banco.
- */
-export interface OriginationRow {
-  month: string;
-  period_start: Date;
-  period_end: Date;
-  origination_count: bigint | number;
-  origination_amount: Prisma.Decimal | string | number;
-  /** Fração (ex.: 0.0980 = 9,8%). null quando não houve originação no mês. */
-  avg_rate: Prisma.Decimal | string | number | null;
-}
-
-/** Linha de `findPortfolioDelinquency`: saldos vencido e em aberto (R$). */
-export interface DelinquencyRow {
-  overdue_amount: Prisma.Decimal | string | number;
-  open_amount: Prisma.Decimal | string | number;
-}
-
-/** Colunas lidas de `partner_bonus_bands`. */
-export interface BonusBandRow {
-  pillar: string;
-  min_value: Prisma.Decimal | string | number;
-  min_inclusive: boolean;
-  max_value: Prisma.Decimal | string | number | null;
-  max_inclusive: boolean;
-  bonus_percent: Prisma.Decimal | string | number;
+export interface PerformanceTeamRow {
+  requested_month: string;
+  id_pessoa_equipe: string | null;
+  valor_originado: PerformanceNumeric;
+  qtd_contratos: number | null;
+  taxa_media: PerformanceNumeric;
+  valor_inadimplencia: PerformanceNumeric;
+  valor_carteira_ativa: PerformanceNumeric;
+  valor_inadimplencia_desconsiderada: PerformanceNumeric;
+  valor_reembolso_mes: PerformanceNumeric;
+  data_snapshot_parcelas: string | null;
 }

@@ -50,6 +50,7 @@ const product = {
   max_installment_count: 12,
   min_interest_rate: 0.02,
   max_interest_rate: 0.0339,
+  max_tac_rate: 0.03,
   enabled: true,
 };
 
@@ -261,6 +262,24 @@ describe('SimulationsService.simulate', () => {
     ).toBe(false);
   });
 
+  it.each([0, 0.07])(
+    'usa e persiste a TAC do produto, ignorando uma TAC enviada pelo cliente: %s',
+    async (tacRate) => {
+      const { service, queryRaw, simulateRequestedAmount } = buildService({
+        product: { ...product, max_tac_rate: tacRate },
+      });
+      await service.simulate(actor, Object.assign(dto(), { tacRate: 99 }));
+      expect(simulateRequestedAmount).toHaveBeenCalledWith(
+        expect.objectContaining({ tacRate }),
+      );
+      const insertCall = queryRaw.mock.calls.find((call) =>
+        call[0].join(' ').includes('INSERT INTO public.simulations'),
+      )!;
+      expect(insertCall[0].join(' ')).toContain('tac_amount');
+      expect(insertCall).toContain(tacRate);
+    },
+  );
+
   it('não chama a Celcoin nem persiste quando o cliente é inelegível', async () => {
     const {
       service,
@@ -307,11 +326,14 @@ describe('SimulationsService.simulate — criação', () => {
     expect(insertSql).toContain('INSERT INTO public.simulations');
     expect(insertSql).toContain('party_id');
     expect(insertSql).toContain('simulation_result');
+    expect(insertSql).toContain('tac_amount');
+    expect(queryRaw.mock.calls[1]).toContain(product.max_tac_rate);
     expect(simulateRequestedAmount).toHaveBeenCalledWith({
       requestedAmount: 5000,
       interestRate: 0.0339,
       installments: 10,
       firstPaymentDate: futureDueDate(),
+      tacRate: product.max_tac_rate,
     });
     expect(queryRaw.mock.calls[1]).toContain(JSON.stringify(celcoinResult));
     expect(queryRaw.mock.calls[1]).toContain('+5511987654321');
@@ -367,6 +389,7 @@ describe('SimulationsService.simulate — criação', () => {
       interestRate: 0.0339,
       installments: 10,
       firstPaymentDate: futureDueDate(),
+      tacRate: product.max_tac_rate,
       insuranceAmount: 189.9,
     });
 
@@ -489,6 +512,7 @@ describe('SimulationsService.simulate — atualização', () => {
     };
     const { service, queryRaw, resolveForSimulation, simulateRequestedAmount } =
       buildService({
+        product: { ...product, max_tac_rate: 0.07 },
         celcoinResult: updatedCelcoinResult,
         updated: simulationRow({
           client_name: 'Maria Souza Silva',
@@ -524,6 +548,8 @@ describe('SimulationsService.simulate — atualização', () => {
     expect(updateSql).toContain('AND s.user_id =');
     expect(updateSql).toContain('party_id =');
     expect(updateSql).toContain('simulation_result =');
+    expect(updateSql).toContain('tac_amount =');
+    expect(updateCall).toContain(0.07);
     expect(updateSql).toContain('updated_at = NOW()');
     expect(updateSql).toContain('NOT EXISTS');
     expect(updateCall).toContain(updatedCelcoinResult.payment_amount);
@@ -536,6 +562,7 @@ describe('SimulationsService.simulate — atualização', () => {
       interestRate: 0.0339,
       installments: 12,
       firstPaymentDate: futureDueDate(),
+      tacRate: 0.07,
     });
     expect(resolveForSimulation).toHaveBeenCalledWith(
       expect.objectContaining({
