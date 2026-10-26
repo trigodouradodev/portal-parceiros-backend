@@ -192,6 +192,51 @@ describe('QuoteDraftSimulationService.update (AUREA-701)', () => {
     });
   });
 
+  it('não altera os dados do cliente: grava só campos comerciais na proposta e na simulação', async () => {
+    const { service, tx } = build();
+
+    await service.update(QUOTE_ID, dto, actor);
+
+    const commercialFields = [
+      'finance_product_id',
+      'finance_amount',
+      'installment_amount',
+      'installment_numbers',
+      'first_installment_date',
+      'interest_rate',
+      'tac_amount',
+      'simulation_result',
+      'insurance_premium',
+      'cabure_quote_id',
+      'installment_amount_with_insurance',
+      'simulation_result_with_insurance',
+      'insurance_product_code',
+      'updated_at',
+    ];
+    const clientFields = [
+      'client_name',
+      'document',
+      'birth_date',
+      'email',
+      'telephone',
+      'party_id',
+      'client_address',
+    ];
+    const quoteData = Object.keys(firstUpdateManyArgs(tx).data);
+    const simulationData = Object.keys(
+      (
+        tx.simulations.update.mock.calls as unknown as [
+          { data: Record<string, unknown> },
+        ][]
+      )[0][0].data,
+    );
+
+    for (const written of [quoteData, simulationData]) {
+      for (const field of written) expect(commercialFields).toContain(field);
+      for (const field of clientFields) expect(written).not.toContain(field);
+    }
+  });
+
   it('atualiza a cotação de seguro da proposta (cabure_insurance_proposals) e volta a "quoted"', async () => {
     const { service, tx } = build();
 
