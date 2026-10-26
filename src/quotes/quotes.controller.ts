@@ -20,6 +20,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiServiceUnavailableResponse,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -32,12 +33,14 @@ import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { CreateDraftQuoteDto } from './dto/create-draft-quote.dto';
 import { ListQuotesQueryDto } from './dto/list-quotes-query.dto';
+import { UpdateDraftSimulationDto } from './dto/update-draft-simulation.dto';
 import { SaveQuoteAddressDto } from './dto/save-quote-address.dto';
 import { SaveQuoteFinancialDto } from './dto/save-quote-financial.dto';
 import { SaveQuoteGuarantorDto } from './dto/save-quote-guarantor.dto';
 import { SaveQuoteIncomeDto } from './dto/save-quote-income.dto';
 import { SaveQuotePartnerOpinionDto } from './dto/save-quote-partner-opinion.dto';
 import { SaveQuoteRegistrationDto } from './dto/save-quote-registration.dto';
+import { QuoteDraftSimulationSnapshot } from './interfaces/quote-draft-simulation-snapshot.interface';
 import { QuoteDraftSnapshot } from './interfaces/quote-draft-snapshot.interface';
 import { QuoteDetail } from './interfaces/quote-detail.interface';
 import { QuoteAddressSnapshot } from './interfaces/quote-address-snapshot.interface';
@@ -56,6 +59,7 @@ import { QuoteDraftGuarantorService } from './services/quote-draft-guarantor.ser
 import { QuoteDraftIncomeService } from './services/quote-draft-income.service';
 import { QuoteDraftPartnerOpinionService } from './services/quote-draft-partner-opinion.service';
 import { QuoteDraftRegistrationService } from './services/quote-draft-registration.service';
+import { QuoteDraftSimulationService } from './services/quote-draft-simulation.service';
 import { QuoteReadService } from './services/quote-read.service';
 import { QuoteRenewalPrefillService } from './services/quote-renewal-prefill.service';
 
@@ -76,6 +80,7 @@ export class QuotesController {
     private readonly quoteDraftIncome: QuoteDraftIncomeService,
     private readonly quoteDraftPartnerOpinion: QuoteDraftPartnerOpinionService,
     private readonly quoteDraftRegistration: QuoteDraftRegistrationService,
+    private readonly quoteDraftSimulation: QuoteDraftSimulationService,
     private readonly quoteRead: QuoteReadService,
     private readonly quoteRenewalPrefill: QuoteRenewalPrefillService,
   ) {}
@@ -138,6 +143,32 @@ export class QuotesController {
     @Body() dto: CreateDraftQuoteDto,
   ): Promise<QuoteDraftSnapshot> {
     return this.quotesService.createDraftFromSimulation(dto.simulationId, user);
+  }
+
+  @ApiOperation({
+    summary:
+      'Altera produto, valor, prazo e primeira parcela de uma proposta em rascunho.',
+    description:
+      'Refaz a cotação da Celcoin e do seguro prestamista e mantém proposta, simulação e cotação do seguro consistentes. Os passos Financeiro e Documentação voltam a não concluídos. Nada é gravado se alguma cotação falhar.',
+  })
+  @ApiOkResponse({ type: QuoteDraftSimulationSnapshot })
+  @ApiBadRequestResponse({
+    description:
+      'Dados inválidos, ou cliente inelegível ao seguro com os novos valores (code INSURANCE_INELIGIBLE).',
+  })
+  @ApiNotFoundResponse({ description: 'Proposta não encontrada.' })
+  @ApiConflictResponse({ description: 'A proposta não está mais em draft.' })
+  @ApiServiceUnavailableResponse({
+    description: 'Não foi possível cotar o seguro ou a Celcoin agora.',
+  })
+  @RequirePermissions(PermissionKey.QUOTE_CREATE)
+  @Put('draft/:quoteId/simulation')
+  updateDraftSimulation(
+    @CurrentUser() user: JwtPayload,
+    @Param('quoteId', ParseUUIDPipe) quoteId: string,
+    @Body() dto: UpdateDraftSimulationDto,
+  ): Promise<QuoteDraftSimulationSnapshot> {
+    return this.quoteDraftSimulation.update(quoteId, dto, user);
   }
 
   @ApiOperation({
