@@ -636,6 +636,118 @@ describe('SimulationsService.simulate — atualização', () => {
   });
 });
 
+describe('SimulationsService.previewFinancialForDraft', () => {
+  const cabureQuote = {
+    id: 'cabure-quote-1',
+    premium: 189.9,
+    productCode: 'credito-pessoal-21',
+  };
+  const insuranceResult: CelcoinSimulationResult = {
+    payment_amount: 641.12,
+    total_amount_owed: 6411.2,
+  };
+
+  function input(overrides: { birthDate?: Date; installments?: number } = {}) {
+    return {
+      productId: PRODUCT_ID,
+      amount: 5000,
+      installments: overrides.installments ?? 10,
+      firstInstallmentDate: futureDueDate(),
+      birthDate: overrides.birthDate ?? new Date('1990-05-20T00:00:00.000Z'),
+    };
+  }
+
+  it('devolve a cotação com o seguro quando o cliente é elegível', async () => {
+    const {
+      service,
+      simulateRequestedAmount,
+      cabureQuote: quoteMock,
+    } = buildService({ cabureQuote });
+    simulateRequestedAmount
+      .mockResolvedValueOnce(celcoinResult)
+      .mockResolvedValueOnce(insuranceResult);
+
+    const preview = await service.previewFinancialForDraft(actor, input());
+
+    expect(preview).toMatchObject({
+      amount: 5000,
+      installments: 10,
+      installmentAmount: 612.34,
+      tacRate: product.max_tac_rate,
+      insurance: {
+        premium: 189.9,
+        cabureQuoteId: 'cabure-quote-1',
+        productCode: 'credito-pessoal-21',
+        installmentAmount: 641.12,
+      },
+    });
+    expect(preview.product.id).toBe(PRODUCT_ID);
+    expect(quoteMock).toHaveBeenCalledWith(5000, 10);
+  });
+
+  it('barra o cliente inelegível ao seguro com código e motivo, sem seguir sem seguro', async () => {
+    const { service, cabureQuote: quoteMock } = buildService({ cabureQuote });
+    const birthYear = new Date().getUTCFullYear() - 75;
+
+    await expect(
+      service.previewFinancialForDraft(
+        actor,
+        input({ birthDate: new Date(`${birthYear}-01-01T00:00:00.000Z`) }),
+      ),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'INSURANCE_INELIGIBLE',
+        reason: 'MAX_AGE_AT_CONTRACT_END',
+      },
+    });
+    expect(quoteMock).not.toHaveBeenCalled();
+  });
+
+  it('responde 503 quando o cliente é elegível mas a Caburé não cotou', async () => {
+    const { service } = buildService({
+      cabureQuote: new Error('Caburé fora do ar'),
+    });
+
+    await expect(
+      service.previewFinancialForDraft(actor, input()),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
+  it('bloqueia quando a fila de cobrança impede simular', async () => {
+    const { service, simulateRequestedAmount } = buildService({
+      canSimulateQuote: false,
+      cabureQuote,
+    });
+
+    await expect(
+      service.previewFinancialForDraft(actor, input()),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(simulateRequestedAmount).not.toHaveBeenCalled();
+  });
+
+  it('rejeita produto fora da faixa de prazo do produto', async () => {
+    const { service } = buildService({ cabureQuote });
+
+    await expect(
+      service.previewFinancialForDraft(actor, input({ installments: 30 })),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('não grava nada: só consulta', async () => {
+    const { service, queryRaw, simulateRequestedAmount } = buildService({
+      cabureQuote,
+    });
+    simulateRequestedAmount
+      .mockResolvedValueOnce(celcoinResult)
+      .mockResolvedValueOnce(insuranceResult);
+
+    await service.previewFinancialForDraft(actor, input());
+
+    const sqls = queryRaw.mock.calls.map(([strings]) => strings.join(' '));
+    expect(sqls.some((sql) => /INSERT|UPDATE/.test(sql))).toBe(false);
+  });
+});
+
 describe('SimulationsService.listSimulations', () => {
   function listService(rows: Record<string, unknown>[] = []) {
     const queryRaw = jest.fn().mockResolvedValue(rows);

@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
@@ -104,7 +105,28 @@ const UNAVAILABLE_INSURANCE: InsurancePreview = {
   simulationResult: null,
 };
 
-type FinancialSimulationInput = Pick<
+/**
+ * Cotação financeira (Celcoin + seguro prestamista) de uma proposta em rascunho
+ * (AUREA-701). Sempre com seguro: se não houver cotação, o método lança.
+ */
+export interface DraftFinancialPreview {
+  product: LinkedProduct;
+  amount: number;
+  installments: number;
+  interestRate: number;
+  tacRate: number;
+  firstInstallmentDate: Date;
+  installmentAmount: number;
+  simulationResult: CelcoinSimulationResult;
+  insurance: InsurancePreview & {
+    premium: number;
+    cabureQuoteId: string;
+    installmentAmount: number;
+    simulationResult: CelcoinSimulationResult;
+  };
+}
+
+export type FinancialSimulationInput = Pick<
   SimulateDto,
   | 'productId'
   | 'amount'
@@ -185,6 +207,59 @@ export class SimulationsService {
       : await this.createSimulation(user, prepared);
 
     return { eligible: true, simulation };
+  }
+
+  /**
+   * Recalcula a parte financeira de uma proposta em rascunho (AUREA-701): refaz
+   * a Celcoin e a cotação do seguro com o novo produto, valor, prazo e primeira
+   * parcela. Diferente do `simulate`, não admite seguir sem seguro: toda
+   * proposta do Portal tem seguro, então um cliente inelegível com os novos
+   * valores é barrado (400) e uma cotação indisponível agora é recusada (503).
+   * Não grava nada: quem chama persiste junto com a proposta.
+   */
+  async previewFinancialForDraft(
+    user: JwtPayload,
+    input: FinancialSimulationInput,
+  ): Promise<DraftFinancialPreview> {
+    await this.assertCanSimulate(user);
+    const financial = await this.prepareFinancialPreview(user, input);
+
+    const { insurance } = financial;
+    if (
+      insurance.premium === null ||
+      insurance.cabureQuoteId === null ||
+      insurance.installmentAmount === null ||
+      insurance.simulationResult === null
+    ) {
+      const eligibility = checkInsuranceEligibility(
+        input.birthDate,
+        financial.installments,
+        financial.firstInstallmentDate,
+      );
+      if (!eligibility.eligible) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'INSURANCE_INELIGIBLE',
+          reason: eligibility.reason,
+          message:
+            'Com este valor e prazo o cliente não é elegível ao seguro prestamista. Reduza o prazo ou ajuste a data da primeira parcela.',
+        });
+      }
+      throw new ServiceUnavailableException(
+        'Não foi possível cotar o seguro prestamista agora. Tente novamente em instantes.',
+      );
+    }
+
+    return {
+      ...financial,
+      insurance: {
+        ...insurance,
+        premium: insurance.premium,
+        cabureQuoteId: insurance.cabureQuoteId,
+        installmentAmount: insurance.installmentAmount,
+        simulationResult: insurance.simulationResult,
+      },
+    };
   }
 
   private async createSimulation(

@@ -17,5 +17,6 @@ import { SimulationsService } from './simulations.service';
   ],
   controllers: [SimulationsController],
   providers: [SimulationsService],
+  exports: [SimulationsService],
 })
 export class SimulationsModule {}
