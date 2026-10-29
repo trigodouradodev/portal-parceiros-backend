@@ -13,6 +13,7 @@ import { PermissionKey } from '../auth/permissions/permission-keys';
 import { PrismaService } from '../prisma/prisma.service';
 import { QuoteEventType } from '../quote-events/enums/quote-event-type.enum';
 import { QuoteEventsService } from '../quote-events/quote-events.service';
+import { QuoteOrigin } from './enums/quote-origin.enum';
 import { QuoteStatus } from './enums/quote-status.enum';
 import { QuoteDraftStep } from './enums/quote-draft-step.enum';
 import { QuoteStatusResponse } from './interfaces/quote-status-response.interface';
@@ -148,6 +149,9 @@ export class QuotesService {
             signature_type: 'EMAIL',
             current_sales_agent_id: actor.sub,
             created_by: actor.sub,
+            // Proposta criada pelo Portal do Parceiro é do Time Comercial
+            // (AUREA-634). Explícito: não depende do DEFAULT da coluna.
+            origin: QuoteOrigin.COMMERCIAL_TEAM,
             quote_status: QuoteStatus.DRAFT,
             document_attachment: [],
             proof_of_residence_attachment: [],
