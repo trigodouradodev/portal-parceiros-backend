@@ -10,6 +10,8 @@ import type { Prisma } from '@prisma/client';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
+import { PartnerOriginationRestrictedException } from '../partners/partner-restriction.exceptions';
+import { PartnerRestrictionsService } from '../partners/partner-restrictions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { QuoteEventType } from '../quote-events/enums/quote-event-type.enum';
 import { QuoteEventsService } from '../quote-events/quote-events.service';
@@ -39,6 +41,7 @@ export class QuotesService {
     private readonly quoteEvents: QuoteEventsService,
     private readonly quoteActivityPermissions: QuoteActivityPermissionsService,
     private readonly documentation: QuoteDraftDocumentationService,
+    private readonly partnerRestrictions: PartnerRestrictionsService,
   ) {}
 
   /**
@@ -49,6 +52,8 @@ export class QuotesService {
     simulationId: string,
     actor: JwtPayload,
   ): Promise<QuoteDraftSnapshot> {
+    await this.assertOriginationAllowed(actor, 'quotes/draft');
+
     const gates = await this.quoteActivityPermissions.getPermissions({
       userId: actor.sub,
       permissions: actor.permissions,
@@ -286,6 +291,10 @@ export class QuotesService {
     quoteId: string,
     actor: JwtPayload,
   ): Promise<QuoteStatusResponse> {
+    // Antes de qualquer escrita e da validação de passos: o parceiro restrito
+    // vê a mensagem de restrição, não "complete as etapas".
+    await this.assertOriginationAllowed(actor, 'quotes/draft/submit');
+
     return this.prisma.$transaction(async (tx) => {
       const updatedAt = new Date();
       const isAdmin = actor.permissions.includes(PermissionKey.ROLE_ADMIN);
@@ -339,6 +348,21 @@ export class QuotesService {
         updatedAt,
       };
     });
+  }
+
+  /**
+   * Restrição de originação (AUREA-590) barra iniciar e enviar proposta, como
+   * no Backoffice. `ROLE_ADMIN` não é barrado.
+   */
+  private async assertOriginationAllowed(
+    actor: JwtPayload,
+    route: string,
+  ): Promise<void> {
+    const restricted = await this.partnerRestrictions.isOriginationRestricted(
+      { userId: actor.sub, permissions: actor.permissions },
+      route,
+    );
+    if (restricted) throw new PartnerOriginationRestrictedException();
   }
 
   private async throwSubmitError(

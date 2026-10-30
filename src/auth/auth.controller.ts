@@ -16,6 +16,7 @@ import {
   ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiServiceUnavailableResponse,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -47,7 +48,11 @@ export class AuthController {
   @ApiUnauthorizedResponse({ description: 'Credenciais inválidas.' })
   @ApiForbiddenResponse({
     description:
-      'Usuário sem permissão para acessar o Portal do Parceiro (falta QUOTE_ACTIVITY_GATES).',
+      'Usuário sem permissão para acessar o Portal do Parceiro (falta QUOTE_ACTIVITY_GATES), ou parceiro suspenso, desligado ou com restrição de acesso (code PARTNER_ACCESS_RESTRICTED).',
+  })
+  @ApiServiceUnavailableResponse({
+    description:
+      'Não foi possível verificar as restrições do parceiro. O acesso não é liberado.',
   })
   @Public()
   @HttpCode(HttpStatus.OK)
@@ -69,6 +74,14 @@ export class AuthController {
   @ApiOkResponse({ type: TokensDto })
   @ApiUnauthorizedResponse({
     description: 'Refresh token ausente ou inválido.',
+  })
+  @ApiForbiddenResponse({
+    description:
+      'Conta inativa, ou parceiro suspenso, desligado ou com restrição de acesso (code PARTNER_ACCESS_RESTRICTED).',
+  })
+  @ApiServiceUnavailableResponse({
+    description:
+      'Não foi possível verificar as restrições do parceiro. A sessão não é renovada.',
   })
   @Public()
   @UseGuards(JwtRefreshGuard)

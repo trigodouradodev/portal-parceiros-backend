@@ -7,6 +7,7 @@ import {
 import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
+import { PartnerRestrictionsService } from '../partners/partner-restrictions.service';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { BrazilState } from '../common/brazil-state.enum';
@@ -252,6 +253,7 @@ interface BuildOptions {
   simulation?: typeof simulation | null;
   existingDraft?: { id: string } | null;
   canCreateQuote?: boolean;
+  originationRestricted?: boolean;
   createError?: Error & { code?: string };
   quoteDocument?: string;
   completedSteps?: QuoteDraftStep[];
@@ -359,6 +361,11 @@ async function build(options: BuildOptions = {}) {
       canCreateQuote: options.canCreateQuote ?? true,
     }),
   };
+  const partnerRestrictions = {
+    isOriginationRestricted: jest
+      .fn()
+      .mockResolvedValue(options.originationRestricted ?? false),
+  };
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       QuotesService,
@@ -381,6 +388,7 @@ async function build(options: BuildOptions = {}) {
         provide: QuoteActivityPermissionsService,
         useValue: quoteActivityPermissions,
       },
+      { provide: PartnerRestrictionsService, useValue: partnerRestrictions },
     ],
   }).compile();
 
@@ -395,6 +403,7 @@ async function build(options: BuildOptions = {}) {
     prisma,
     quoteEvents,
     quoteActivityPermissions,
+    partnerRestrictions,
     createQuote,
     tx,
   };
@@ -1924,5 +1933,90 @@ describe('QuotesService.submitDraftForClientReview', () => {
     await expect(
       service.submitDraftForClientReview(QUOTE_ID, actor()),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('restrição de originação (AUREA-624)', () => {
+  const RESTRICTED = {
+    statusCode: 403,
+    code: 'PARTNER_ORIGINATION_RESTRICTED',
+    message: 'Você está com a originação restrita. Fale com seu gerente.',
+  };
+
+  describe('envio (submitDraftForClientReview)', () => {
+    it('403 com código estável e a proposta continua em rascunho', async () => {
+      const { service, tx, quoteEvents } = await build({
+        originationRestricted: true,
+      });
+
+      const erro = await service
+        .submitDraftForClientReview(QUOTE_ID, actor())
+        .catch((e: unknown) => e);
+
+      expect(erro).toBeInstanceOf(ForbiddenException);
+      expect((erro as ForbiddenException).getResponse()).toEqual(RESTRICTED);
+      expect(tx.quotes.updateMany).not.toHaveBeenCalled();
+      expect(quoteEvents.createWithinTransaction).not.toHaveBeenCalled();
+    });
+
+    it('a restrição vem antes da validação de passos incompletos', async () => {
+      const { service } = await build({
+        originationRestricted: true,
+        completedSteps: [],
+      });
+
+      await expect(
+        service.submitDraftForClientReview(QUOTE_ID, actor()),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('consulta a restrição com o usuário e as permissões de quem envia', async () => {
+      const { service, partnerRestrictions } = await build();
+
+      await service.submitDraftForClientReview(QUOTE_ID, actor());
+
+      expect(partnerRestrictions.isOriginationRestricted).toHaveBeenCalledWith(
+        { userId: OWNER_ID, permissions: [PermissionKey.QUOTE_CREATE] },
+        'quotes/draft/submit',
+      );
+    });
+
+    it('sem restrição o envio funciona como antes', async () => {
+      const { service } = await build({ originationRestricted: false });
+
+      await expect(
+        service.submitDraftForClientReview(QUOTE_ID, actor()),
+      ).resolves.toMatchObject({ status: QuoteStatus.CLIENT_REVIEW });
+    });
+  });
+
+  describe('início (createDraftFromSimulation)', () => {
+    it('403 com código estável e nada é criado', async () => {
+      const { service, createQuote, quoteActivityPermissions } = await build({
+        originationRestricted: true,
+      });
+
+      const erro = await service
+        .createDraftFromSimulation(SIMULATION_ID, actor())
+        .catch((e: unknown) => e);
+
+      expect(erro).toBeInstanceOf(ForbiddenException);
+      expect((erro as ForbiddenException).getResponse()).toEqual(RESTRICTED);
+      expect(createQuote).not.toHaveBeenCalled();
+      // a restrição vem antes da checagem de pendências de cobrança
+      expect(quoteActivityPermissions.getPermissions).not.toHaveBeenCalled();
+    });
+
+    it('sem restrição o início funciona como antes', async () => {
+      const { service, partnerRestrictions } = await build();
+
+      await expect(
+        service.createDraftFromSimulation(SIMULATION_ID, actor()),
+      ).resolves.toMatchObject({ status: QuoteStatus.DRAFT });
+      expect(partnerRestrictions.isOriginationRestricted).toHaveBeenCalledWith(
+        { userId: OWNER_ID, permissions: [PermissionKey.QUOTE_CREATE] },
+        'quotes/draft',
+      );
+    });
   });
 });

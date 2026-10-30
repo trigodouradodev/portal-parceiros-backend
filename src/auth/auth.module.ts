@@ -5,6 +5,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { UsersModule } from '../users/users.module';
 import { ActivitiesModule } from '../activities/activities.module';
+import { PartnersModule } from '../partners/partners.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -17,6 +18,7 @@ import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
     SystemConfigsModule,
     UsersModule,
     ActivitiesModule,
+    PartnersModule,
     PassportModule,
     JwtModule.register({}),
   ],
