@@ -39,8 +39,14 @@ export class QuoteDraftRegistrationService {
 
       // Proposta do novo fluxo (nasce de uma simulação) tem seguro: mudar a
       // data de nascimento não pode tornar o cliente inelegível à cobertura.
+      // A leitura segue o mesmo escopo do `updateMany`: quem não tem acesso não
+      // chega à regra do seguro e recebe o 403 do `throwSaveError`.
       const draft = await tx.quotes.findFirst({
-        where: { id: quoteId },
+        where: {
+          id: quoteId,
+          quote_status: QuoteStatus.DRAFT,
+          ...(isAdmin ? {} : { current_sales_agent_id: actor.sub }),
+        },
         select: {
           simulation_id: true,
           installment_numbers: true,
