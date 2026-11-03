@@ -5,6 +5,8 @@ export interface CelcoinSimulationInput {
   installments: number;
   firstPaymentDate: string;
   tacRate?: number;
+  /** Piso da TAC em reais; 0/omitido = sem piso. */
+  tacMinAmount?: number;
   /**
    * Prêmio do seguro prestamista a financiar junto com o crédito
    * (`insurance_amount` na Celcoin). Omitido ou zero simula sem seguro —

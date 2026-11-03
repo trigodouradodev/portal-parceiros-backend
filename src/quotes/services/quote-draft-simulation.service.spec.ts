@@ -205,6 +205,8 @@ describe('QuoteDraftSimulationService.update (AUREA-701)', () => {
       'first_installment_date',
       'interest_rate',
       'tac_amount',
+      'tac_rate',
+      'tac_min_amount',
       'simulation_result',
       'insurance_premium',
       'cabure_quote_id',

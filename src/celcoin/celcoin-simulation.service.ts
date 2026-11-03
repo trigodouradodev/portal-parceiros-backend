@@ -10,6 +10,7 @@ import {
   CelcoinSimulationInput,
   CelcoinSimulationResult,
 } from './interfaces/celcoin-simulation.interface';
+import { resolveCelcoinTac } from './celcoin-tac';
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
@@ -30,7 +31,11 @@ export class CelcoinSimulationService {
     const token = await this.auth.getAccessToken();
     const url = `${trimTrailingSlash(config.platformBaseUrl)}/banking/originator/products/${encodeURIComponent(config.productId)}/preview`;
 
-    const tacRate = input.tacRate ?? 0;
+    const tac = resolveCelcoinTac(
+      input.tacRate ?? 0,
+      input.requestedAmount,
+      input.tacMinAmount,
+    );
     let response: Response;
     try {
       response = await fetch(url, {
@@ -50,7 +55,7 @@ export class CelcoinSimulationService {
           first_payment_date: input.firstPaymentDate,
           disbursement_date: todayInSaoPaulo(),
           schedule_type: 'MONTHLY',
-          ...(tacRate > 0 ? { tac_rate: tacRate } : { tac_amount: 0 }),
+          ...tac,
         }),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
