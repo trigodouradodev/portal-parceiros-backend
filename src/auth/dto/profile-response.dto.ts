@@ -41,4 +41,11 @@ export class ProfileResponseDto {
     description: 'Indica se o usuário pode criar proposta no momento.',
   })
   canCreateQuote: boolean;
+
+  @ApiProperty({
+    example: false,
+    description:
+      'Indica restrição de originação ativa (AUREA-590). Quando verdadeira, canCreateQuote vem falso e o envio de proposta é recusado.',
+  })
+  originationRestricted: boolean;
 }
