@@ -136,7 +136,14 @@ export type FinancialSimulationInput = Pick<
   | 'installments'
   | 'firstInstallmentDate'
   | 'interestRate'
-> & { birthDate: Date };
+> & {
+  birthDate: Date;
+  /**
+   * TAC da própria proposta (taxa e piso), quando ela segue no mesmo produto:
+   * propostas antigas não pegam as condições novas do produto.
+   */
+  ownTac?: { rate: number; minAmount: number };
+};
 
 @Injectable()
 export class SimulationsService {
@@ -542,8 +549,9 @@ export class SimulationsService {
       );
     }
 
-    const tacRate = toNum(product.max_tac_rate) || 0;
-    const tacMinAmount = toNum(product.min_tac_amount) || 0;
+    const tacRate = dto.ownTac?.rate ?? (toNum(product.max_tac_rate) || 0);
+    const tacMinAmount =
+      dto.ownTac?.minAmount ?? (toNum(product.min_tac_amount) || 0);
     const simulationResult =
       await this.celcoinSimulation.simulateRequestedAmount({
         requestedAmount: dto.amount,

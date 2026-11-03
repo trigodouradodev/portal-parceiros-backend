@@ -331,6 +331,59 @@ describe('QuoteDraftSimulationService.update (AUREA-701)', () => {
     expect(where).not.toHaveProperty('current_sales_agent_id');
   });
 
+  it('mesmo produto: o recálculo leva a TAC da proposta (legado sem taxa exata nem piso)', async () => {
+    const { service, previewFinancialForDraft } = build({
+      quote: quoteRow({
+        finance_product_id: PRODUCT_ID,
+        tac_amount: '0.03',
+        tac_rate: null,
+        tac_min_amount: null,
+      }),
+    });
+
+    await service.update(QUOTE_ID, dto, actor);
+
+    expect(previewFinancialForDraft).toHaveBeenCalledWith(
+      actor,
+      expect.objectContaining({ ownTac: { rate: 0.03, minAmount: 0 } }),
+    );
+  });
+
+  it('mesmo produto: proposta com taxa exata e piso próprios os mantém', async () => {
+    const { service, previewFinancialForDraft } = build({
+      quote: quoteRow({
+        finance_product_id: PRODUCT_ID,
+        tac_amount: '0.07',
+        tac_rate: '0.06500',
+        tac_min_amount: '100.00',
+      }),
+    });
+
+    await service.update(QUOTE_ID, dto, actor);
+
+    expect(previewFinancialForDraft).toHaveBeenCalledWith(
+      actor,
+      expect.objectContaining({ ownTac: { rate: 0.065, minAmount: 100 } }),
+    );
+  });
+
+  it('produto diferente: não leva TAC própria, valem as condições vigentes do novo produto', async () => {
+    const { service, previewFinancialForDraft } = build({
+      quote: quoteRow({
+        finance_product_id: 'outro-produto',
+        tac_amount: '0.03',
+      }),
+    });
+
+    await service.update(QUOTE_ID, dto, actor);
+
+    const [, input] = previewFinancialForDraft.mock.calls[0] as unknown as [
+      unknown,
+      { ownTac?: unknown },
+    ];
+    expect(input.ownTac).toBeUndefined();
+  });
+
   it.each([QuoteStatus.CLIENT_REVIEW, QuoteStatus.KYC_ANALYSIS])(
     'proposta em %s não pode ser alterada (409)',
     async (status) => {

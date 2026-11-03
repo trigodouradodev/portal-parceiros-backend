@@ -709,6 +709,27 @@ describe('SimulationsService.previewFinancialForDraft', () => {
     expect(quoteMock).toHaveBeenCalledWith(5000, 10);
   });
 
+  it('proposta no mesmo produto recalcula com a TAC dela, não com a vigente do produto', async () => {
+    const { service, simulateRequestedAmount } = buildService({
+      cabureQuote,
+      product: { ...product, max_tac_rate: 0.065, min_tac_amount: 100 },
+    });
+    simulateRequestedAmount
+      .mockResolvedValueOnce(celcoinResult)
+      .mockResolvedValueOnce(insuranceResult);
+
+    const preview = await service.previewFinancialForDraft(actor, {
+      ...input(),
+      ownTac: { rate: 0.03, minAmount: 0 },
+    });
+
+    expect(preview).toMatchObject({ tacRate: 0.03, tacMinAmount: 0 });
+    expect(simulateRequestedAmount).toHaveBeenCalledTimes(2);
+    for (const [call] of simulateRequestedAmount.mock.calls) {
+      expect(call).toMatchObject({ tacRate: 0.03, tacMinAmount: 0 });
+    }
+  });
+
   it('barra o cliente inelegível ao seguro com código e motivo, sem seguir sem seguro', async () => {
     const { service, cabureQuote: quoteMock } = buildService({ cabureQuote });
     const birthYear = new Date().getUTCFullYear() - 75;
