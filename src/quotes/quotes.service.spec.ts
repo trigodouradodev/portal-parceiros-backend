@@ -254,6 +254,14 @@ interface BuildOptions {
   existingDraft?: { id: string } | null;
   canCreateQuote?: boolean;
   originationRestricted?: boolean;
+  /** Dados do rascunho lidos pelo passo Cadastro; `null` = sem simulação (legado). */
+  draftTerm?: {
+    simulation_id: string | null;
+    installment_numbers: number;
+    first_installment_date: Date;
+  };
+  /** Consultor dono do rascunho: o `findFirst` filtra por `current_sales_agent_id` como o banco. */
+  draftOwnerId?: string;
   createError?: Error & { code?: string };
   quoteDocument?: string;
   completedSteps?: QuoteDraftStep[];
@@ -295,6 +303,23 @@ async function build(options: BuildOptions = {}) {
         ),
     },
     quotes: {
+      findFirst: jest.fn((args: { where: Record<string, unknown> }) => {
+        const ownerFilter = args.where.current_sales_agent_id;
+        if (
+          options.draftOwnerId !== undefined &&
+          ownerFilter !== undefined &&
+          ownerFilter !== options.draftOwnerId
+        ) {
+          return Promise.resolve(null);
+        }
+        return Promise.resolve(
+          options.draftTerm ?? {
+            simulation_id: SIMULATION_ID,
+            installment_numbers: 10,
+            first_installment_date: new Date('2026-10-20T00:00:00.000Z'),
+          },
+        );
+      }),
       updateMany: jest
         .fn()
         .mockResolvedValue({ count: options.updateCount ?? 1 }),
@@ -2017,6 +2042,177 @@ describe('restrição de originação (AUREA-624)', () => {
         { userId: OWNER_ID, permissions: [PermissionKey.QUOTE_CREATE] },
         'quotes/draft',
       );
+    });
+  });
+});
+
+describe('idade x seguro prestamista na criação da proposta', () => {
+  // Cobertura = primeira parcela + prazo; o corte é 70 anos ao FIM dela.
+  const FIRST_INSTALLMENT = new Date('2026-10-20T00:00:00.000Z');
+
+  describe('createDraftFromSimulation', () => {
+    it('recusa com 400 e código estável quando o cliente passa de 70 anos ao fim da vigência', async () => {
+      const { service, createQuote } = await build({
+        simulation: {
+          ...simulation,
+          birth_date: new Date('1952-03-10T00:00:00.000Z'),
+          installment_numbers: 10,
+          first_installment_date: FIRST_INSTALLMENT,
+        },
+      });
+
+      const erro = await service
+        .createDraftFromSimulation(SIMULATION_ID, actor())
+        .catch((e: unknown) => e);
+
+      expect(erro).toBeInstanceOf(BadRequestException);
+      expect((erro as BadRequestException).getResponse()).toMatchObject({
+        statusCode: 400,
+        code: 'INSURANCE_AGE_INELIGIBLE',
+        reason: 'MAX_AGE_AT_CONTRACT_END',
+        message: expect.stringContaining('até 70 anos') as string,
+      });
+      expect(createQuote).not.toHaveBeenCalled();
+    });
+
+    it('orienta o prazo máximo que ainda cabe na regra', async () => {
+      // 70 anos hoje; com 9 parcelas termina em jul/2027 (ainda 70), com 10 em ago/2027 (71).
+      const { service } = await build({
+        simulation: {
+          ...simulation,
+          birth_date: new Date('1956-08-01T00:00:00.000Z'),
+          installment_numbers: 10,
+          first_installment_date: FIRST_INSTALLMENT,
+        },
+      });
+
+      await expect(
+        service.createDraftFromSimulation(SIMULATION_ID, actor()),
+      ).rejects.toMatchObject({
+        response: {
+          message: expect.stringContaining('até 9 parcelas') as string,
+        },
+      });
+    });
+
+    it('cliente dentro da regra cria a proposta normalmente', async () => {
+      const { service, createQuote } = await build({
+        simulation: {
+          ...simulation,
+          birth_date: new Date('1956-08-01T00:00:00.000Z'),
+          installment_numbers: 9,
+          first_installment_date: FIRST_INSTALLMENT,
+        },
+      });
+
+      await expect(
+        service.createDraftFromSimulation(SIMULATION_ID, actor()),
+      ).resolves.toMatchObject({ status: QuoteStatus.DRAFT });
+      expect(createQuote).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('QuoteDraftRegistrationService.save (mudança de data de nascimento)', () => {
+    it('recusa a data que torna o cliente inelegível ao seguro e não grava nada', async () => {
+      const { registrationService: service, tx } = await build();
+
+      const erro = await service
+        .save(QUOTE_ID, { ...registration, birthDate: '1952-03-10' }, actor())
+        .catch((e: unknown) => e);
+
+      expect(erro).toBeInstanceOf(BadRequestException);
+      expect((erro as BadRequestException).getResponse()).toMatchObject({
+        code: 'INSURANCE_AGE_INELIGIBLE',
+      });
+      expect(tx.quotes.updateMany).not.toHaveBeenCalled();
+      expect(tx.quote_draft_steps.upsert).not.toHaveBeenCalled();
+    });
+
+    it('data que mantém o cliente elegível salva como antes', async () => {
+      const { registrationService: service, tx } = await build();
+
+      await service.save(
+        QUOTE_ID,
+        { ...registration, birthDate: '1990-05-20' },
+        actor(),
+      );
+
+      expect(tx.quotes.updateMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('proposta de outro parceiro: responde 403 sem revelar a regra do seguro', async () => {
+      const { registrationService: service, tx } = await build({
+        draftOwnerId: OTHER_ID,
+        updateCount: 0,
+        quote: {
+          quote_status: QuoteStatus.DRAFT,
+          current_sales_agent_id: OTHER_ID,
+        },
+      });
+
+      const erro = await service
+        .save(QUOTE_ID, { ...registration, birthDate: '1952-03-10' }, actor())
+        .catch((e: unknown) => e);
+
+      expect(erro).toBeInstanceOf(ForbiddenException);
+      expect(tx.quotes.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            id: QUOTE_ID,
+            quote_status: QuoteStatus.DRAFT,
+            current_sales_agent_id: OWNER_ID,
+          }) as unknown,
+        }),
+      );
+    });
+
+    it('o dono da proposta continua recebendo o 400 da idade', async () => {
+      const { registrationService: service } = await build({
+        draftOwnerId: OWNER_ID,
+      });
+
+      const erro = await service
+        .save(QUOTE_ID, { ...registration, birthDate: '1952-03-10' }, actor())
+        .catch((e: unknown) => e);
+
+      expect(erro).toBeInstanceOf(BadRequestException);
+      expect((erro as BadRequestException).getResponse()).toMatchObject({
+        code: 'INSURANCE_AGE_INELIGIBLE',
+      });
+    });
+
+    it('ROLE_ADMIN em proposta de outro parceiro também passa pela regra da idade', async () => {
+      const { registrationService: service } = await build({
+        draftOwnerId: OTHER_ID,
+      });
+
+      const erro = await service
+        .save(
+          QUOTE_ID,
+          { ...registration, birthDate: '1952-03-10' },
+          actor(OWNER_ID, [PermissionKey.ROLE_ADMIN]),
+        )
+        .catch((e: unknown) => e);
+
+      expect(erro).toBeInstanceOf(BadRequestException);
+    });
+
+    it('rascunho sem simulação (caminho legado, sem seguro) não é barrado pela idade', async () => {
+      const { registrationService: service, tx } = await build({
+        draftTerm: {
+          simulation_id: null,
+          installment_numbers: 10,
+          first_installment_date: FIRST_INSTALLMENT,
+        },
+      });
+
+      await service.save(
+        QUOTE_ID,
+        { ...registration, birthDate: '1952-03-10' },
+        actor(),
+      );
+
+      expect(tx.quotes.updateMany).toHaveBeenCalledTimes(1);
     });
   });
 });
