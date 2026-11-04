@@ -312,6 +312,8 @@ export class QuotesService {
       const updatedAt = new Date();
       const isAdmin = actor.permissions.includes(PermissionKey.ROLE_ADMIN);
 
+      await this.lockRegistrationsForSubmit(tx, quoteId);
+
       const result = await tx.quotes.updateMany({
         where: {
           id: quoteId,
@@ -376,6 +378,34 @@ export class QuotesService {
       route,
     );
     if (restricted) throw new PartnerOriginationRestrictedException();
+  }
+
+  private async lockRegistrationsForSubmit(
+    tx: Prisma.TransactionClient,
+    quoteId: string,
+  ): Promise<void> {
+    const [quote] = await tx.$queryRaw<
+      Array<{ document: string | null; guarantor_document: string | null }>
+    >`
+      SELECT document, guarantor->>'document' AS guarantor_document
+      FROM public.quotes
+      WHERE id = ${quoteId}::uuid
+      FOR UPDATE
+    `;
+    const taxIds = [quote?.document, quote?.guarantor_document]
+      .map((document) => (document ?? '').replace(/\D/g, ''))
+      .filter(Boolean)
+      .sort();
+
+    for (const taxId of new Set(taxIds)) {
+      await tx.$queryRaw`
+        SELECT id
+        FROM public.clients
+        WHERE regexp_replace(tax_id, '[^0-9]', '', 'g') = ${taxId}
+        ORDER BY created_at ASC, id ASC
+        FOR UPDATE
+      `;
+    }
   }
 
   private async throwSubmitError(
