@@ -56,6 +56,15 @@ export class QuoteDraftSimulationService {
       installments: dto.installments,
       firstInstallmentDate: dto.firstInstallmentDate,
       birthDate: quote.birth_date,
+      // Mesmo produto: a proposta mantém a TAC e o piso com que foi feita.
+      // Produto diferente: valem as condições vigentes dele.
+      ownTac:
+        dto.productId === quote.finance_product_id
+          ? {
+              rate: Number(quote.tac_rate ?? quote.tac_amount ?? 0),
+              minAmount: Number(quote.tac_min_amount ?? 0),
+            }
+          : undefined,
     });
 
     const updatedAt = new Date();
@@ -80,6 +89,8 @@ export class QuoteDraftSimulationService {
           first_installment_date: preview.firstInstallmentDate,
           interest_rate: preview.interestRate,
           tac_amount: preview.tacRate,
+          tac_rate: preview.tacRate,
+          tac_min_amount: preview.tacMinAmount,
           simulation_result: simulationResult,
           insurance_premium: preview.insurance.premium,
           cabure_quote_id: preview.insurance.cabureQuoteId,
@@ -103,6 +114,8 @@ export class QuoteDraftSimulationService {
           finance_amount: preview.amount,
           interest_rate: preview.interestRate,
           tac_amount: preview.tacRate,
+          tac_rate: preview.tacRate,
+          tac_min_amount: preview.tacMinAmount,
           installment_numbers: preview.installments,
           first_installment_date: preview.firstInstallmentDate,
           installment_amount: preview.installmentAmount,
@@ -181,6 +194,10 @@ export class QuoteDraftSimulationService {
         simulation_id: true,
         birth_date: true,
         party_id: true,
+        finance_product_id: true,
+        tac_amount: true,
+        tac_rate: true,
+        tac_min_amount: true,
       },
     });
 

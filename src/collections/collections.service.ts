@@ -544,6 +544,7 @@ export class CollectionsService {
         quotes: {
           select: {
             tac_amount: true,
+            tac_rate: true,
             guarantor: true,
             finance_products: { select: { product_name: true } },
             trigo_users_quotes_current_sales_agent_idTotrigo_users: {
@@ -652,8 +653,9 @@ export class CollectionsService {
         iofAmount:
           contract.iof_amount !== null ? toNum(contract.iof_amount) : undefined,
         tacAmount:
-          quote?.tac_amount !== null && quote?.tac_amount !== undefined
-            ? toNum(quote.tac_amount)
+          (quote?.tac_rate ?? quote?.tac_amount) !== null &&
+          (quote?.tac_rate ?? quote?.tac_amount) !== undefined
+            ? toNum(quote?.tac_rate ?? quote?.tac_amount)
             : undefined,
         productName: quote?.finance_products.product_name ?? undefined,
         companyName: contract.companies?.name ?? undefined,

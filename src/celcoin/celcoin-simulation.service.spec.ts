@@ -140,6 +140,39 @@ describe('CelcoinSimulationService', () => {
     },
   );
 
+  it.each([
+    {
+      name: 'taxa rende mais que o piso: segue como taxa',
+      amount: 5000,
+      tac: { tac_rate: 0.065 },
+    },
+    {
+      name: 'taxa rende menos que o piso: vai o piso em valor',
+      amount: 1000,
+      tac: { tac_amount: 100 },
+    },
+  ])('TAC com piso de R$ 100: $name', async ({ amount, tac }) => {
+    const { service } = build();
+    mockResponse(result);
+
+    await service.simulateRequestedAmount({
+      ...input,
+      requestedAmount: amount,
+      tacRate: 0.065,
+      tacMinAmount: 100,
+    });
+
+    const [, request] = (global.fetch as jest.Mock).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    const body = JSON.parse(request.body as string) as Record<string, unknown>;
+    expect(body).toMatchObject(tac);
+    expect(
+      ['tac_rate', 'tac_amount'].filter((key) => key in body),
+    ).toHaveLength(1);
+  });
+
   it('envia insurance_amount quando o seguro é financiado junto', async () => {
     const { service } = build();
     mockResponse(result);
