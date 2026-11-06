@@ -51,6 +51,7 @@ const product = {
   min_interest_rate: 0.02,
   max_interest_rate: 0.0339,
   max_tac_rate: 0.03,
+  min_tac_amount: 0,
   enabled: true,
 };
 
@@ -280,6 +281,26 @@ describe('SimulationsService.simulate', () => {
     },
   );
 
+  it('aplica o piso da TAC do produto: manda à Celcoin e grava a taxa exata e o piso', async () => {
+    const { service, queryRaw, simulateRequestedAmount } = buildService({
+      product: { ...product, max_tac_rate: 0.065, min_tac_amount: 100 },
+    });
+    await service.simulate(actor, dto());
+
+    expect(simulateRequestedAmount).toHaveBeenCalledWith(
+      expect.objectContaining({ tacRate: 0.065, tacMinAmount: 100 }),
+    );
+    const insertCall = queryRaw.mock.calls.find((call) =>
+      call[0].join(' ').includes('INSERT INTO public.simulations'),
+    )!;
+    const insertSql = insertCall[0].join(' ');
+    // `tac_amount` (2 casas) é legado: a taxa exata vai também em `tac_rate`
+    expect(insertSql).toContain('tac_rate');
+    expect(insertSql).toContain('tac_min_amount');
+    expect(insertCall.filter((value) => value === 0.065)).toHaveLength(2);
+    expect(insertCall).toContain(100);
+  });
+
   it('não chama a Celcoin nem persiste quando o cliente é inelegível', async () => {
     const {
       service,
@@ -334,6 +355,7 @@ describe('SimulationsService.simulate — criação', () => {
       installments: 10,
       firstPaymentDate: futureDueDate(),
       tacRate: product.max_tac_rate,
+      tacMinAmount: 0,
     });
     expect(queryRaw.mock.calls[1]).toContain(JSON.stringify(celcoinResult));
     expect(queryRaw.mock.calls[1]).toContain('+5511987654321');
@@ -390,6 +412,7 @@ describe('SimulationsService.simulate — criação', () => {
       installments: 10,
       firstPaymentDate: futureDueDate(),
       tacRate: product.max_tac_rate,
+      tacMinAmount: 0,
       insuranceAmount: 189.9,
     });
 
@@ -563,6 +586,7 @@ describe('SimulationsService.simulate — atualização', () => {
       installments: 12,
       firstPaymentDate: futureDueDate(),
       tacRate: 0.07,
+      tacMinAmount: 0,
     });
     expect(resolveForSimulation).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -683,6 +707,27 @@ describe('SimulationsService.previewFinancialForDraft', () => {
     });
     expect(preview.product.id).toBe(PRODUCT_ID);
     expect(quoteMock).toHaveBeenCalledWith(5000, 10);
+  });
+
+  it('proposta no mesmo produto recalcula com a TAC dela, não com a vigente do produto', async () => {
+    const { service, simulateRequestedAmount } = buildService({
+      cabureQuote,
+      product: { ...product, max_tac_rate: 0.065, min_tac_amount: 100 },
+    });
+    simulateRequestedAmount
+      .mockResolvedValueOnce(celcoinResult)
+      .mockResolvedValueOnce(insuranceResult);
+
+    const preview = await service.previewFinancialForDraft(actor, {
+      ...input(),
+      ownTac: { rate: 0.03, minAmount: 0 },
+    });
+
+    expect(preview).toMatchObject({ tacRate: 0.03, tacMinAmount: 0 });
+    expect(simulateRequestedAmount).toHaveBeenCalledTimes(2);
+    for (const [call] of simulateRequestedAmount.mock.calls) {
+      expect(call).toMatchObject({ tacRate: 0.03, tacMinAmount: 0 });
+    }
   });
 
   it('barra o cliente inelegível ao seguro com código e motivo, sem seguir sem seguro', async () => {
