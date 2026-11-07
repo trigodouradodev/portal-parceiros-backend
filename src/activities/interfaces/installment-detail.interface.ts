@@ -56,6 +56,11 @@ export class TaskHistoryItem {
   @ApiProperty()
   id: string;
 
+  @ApiProperty({
+    description: 'Pendente elegível pelas regras atuais do contrato.',
+  })
+  isCollectible: boolean;
+
   @ApiProperty({ example: 'fpd' })
   segmentCode: string;
 
@@ -180,6 +185,8 @@ export class DetailInstallment {
 
 export class DetailClient {
   @ApiProperty()
+  isDeceased: boolean;
+  @ApiProperty()
   name: string;
 
   @ApiProperty()
@@ -198,6 +205,8 @@ export class DetailClient {
  * não há tabela de avalistas, e o vínculo é `contracts.quote_id → quotes.id`.
  */
 export class DetailGuarantor {
+  @ApiPropertyOptional()
+  isDeceased?: boolean;
   @ApiProperty()
   name: string;
 

@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { toNum } from '../common/query.util';
 import { ScopeService, ScopeViewer } from '../scope/scope.service';
 import { mapGuarantor } from '../activities/activities.mapper';
+import { collectibleTaskCondition } from '../activities/collection-eligibility.sql';
 import {
   ClientAddress,
   OverdueCollectionItem,
@@ -241,6 +242,7 @@ export class CollectionsService {
         FROM activity_tasks at
         LEFT JOIN activity_ruler_stages rs ON rs.id = at.ruler_stage_id
         WHERE at.installment_id = i.id
+          AND (at.status <> 'pending' OR ${collectibleTaskCondition()})
         ORDER BY at.created_at DESC
         LIMIT 1
       ) task ON true
