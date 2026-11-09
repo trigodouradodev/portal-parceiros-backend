@@ -3,6 +3,10 @@ import { Prisma } from '@prisma/client';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  isQuoteActivityBlockingTime,
+  QUOTE_ACTIVITY_GATES_BLOCKING_WINDOW_KEY,
+} from './quote-activity-gate-window';
+import {
   collectibleTaskCondition,
   COLLECTION_TODAY,
 } from './collection-eligibility.sql';
@@ -86,7 +90,16 @@ export class QuoteActivityPermissionsService {
       activationConfig?.value,
     );
 
-    if (Date.now() < activationTimestamp) {
+    const now = Date.now();
+    if (now < activationTimestamp) {
+      return { canSimulateQuote: true, canCreateQuote: true };
+    }
+
+    const windowConfig = await this.prisma.system_configs.findUnique({
+      where: { key: QUOTE_ACTIVITY_GATES_BLOCKING_WINDOW_KEY },
+      select: { value: true },
+    });
+    if (!isQuoteActivityBlockingTime(now, windowConfig?.value)) {
       return { canSimulateQuote: true, canCreateQuote: true };
     }
 
