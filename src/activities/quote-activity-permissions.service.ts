@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  collectibleTaskCondition,
+  COLLECTION_TODAY,
+} from './collection-eligibility.sql';
 
 const SIMULATION_BLOCKING_SEGMENTS = [
   'recent',
@@ -88,12 +92,12 @@ export class QuoteActivityPermissionsService {
 
     const tasks = await this.prisma.$queryRaw<{ segment_code: string }[]>(
       Prisma.sql`
-        SELECT segment_code
-        FROM activity_tasks
-        WHERE assigned_to = ${actor.userId}::uuid
-          AND status = 'pending'
-          AND expire_date <= CURRENT_DATE
-          AND segment_code IN (${Prisma.join(CREATE_QUOTE_BLOCKING_SEGMENTS)})
+        SELECT at.segment_code
+        FROM activity_tasks at
+        WHERE at.assigned_to = ${actor.userId}::uuid
+          AND at.expire_date <= ${COLLECTION_TODAY}
+          AND ${collectibleTaskCondition()}
+          AND at.segment_code IN (${Prisma.join(CREATE_QUOTE_BLOCKING_SEGMENTS)})
       `,
     );
     const blockingSegments = new Set(tasks.map((task) => task.segment_code));

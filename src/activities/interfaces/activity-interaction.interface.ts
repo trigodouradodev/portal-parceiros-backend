@@ -62,8 +62,18 @@ export class ActivityInteractionResponse {
 
 /** Resultado de registrar uma interação. Não cria próxima tarefa (só o job cria). */
 export class RegisterInteractionResult {
+  @ApiProperty()
+  message: string;
   @ApiProperty({ type: ActivityInteractionResponse })
   interaction: ActivityInteractionResponse;
+
+  @ApiPropertyOptional({
+    description: 'Ação pendente aberta/atualizada na mesma transação.',
+  })
+  pendingAction?: {
+    id: string;
+    type: 'renegotiation' | 'death_registration' | 'dispute';
+  };
 }
 
 /** Estado da tarefa após uma ação (postergar / reagendar). */

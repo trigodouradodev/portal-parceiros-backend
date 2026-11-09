@@ -4,6 +4,7 @@ import {
   IsEnum,
   IsLatitude,
   IsLongitude,
+  Matches,
   IsOptional,
   IsString,
   IsUUID,
@@ -117,6 +118,16 @@ export class RegisterInteractionDto {
   @IsOptional()
   @IsDateString()
   promiseDate?: string;
+
+  @ApiPropertyOptional({
+    format: 'date',
+    description:
+      'Data prevista para fechar a negociação: obrigatória em renegociação, entre amanhã e D+10.',
+  })
+  @IsOptional()
+  @IsDateString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  expectedAgreementDate?: string;
 
   @ApiPropertyOptional({
     description: 'Latitude da visita (junto com longitude).',

@@ -51,6 +51,7 @@ export interface LockedTaskRow {
   was_postponed: boolean;
   was_rescheduled: boolean;
   reschedule_count: number;
+  expire_date: string;
 }
 
 /** Linha retornada pelas ações de tarefa (postergar/reagendar). */

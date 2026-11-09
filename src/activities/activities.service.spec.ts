@@ -7,6 +7,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ActivitiesService } from './activities.service';
+import { ActivityCollectionGuard } from './activity-collection.guard';
+import { ContractPendingActionsService } from './pending-actions/contract-pending-actions.service';
+import type { CollectionContextRow } from './interfaces/collection-context.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScopeService } from '../scope/scope.service';
 import { FollowUpService } from '../follow-up/follow-up.service';
@@ -27,6 +30,34 @@ const USER_ID = 'user-1';
 const OTHER_USER_ID = 'user-2';
 const SUBORDINATE_USER_ID = 'subordinate-1';
 
+function collectionContext(
+  overrides: Partial<CollectionContextRow> = {},
+): CollectionContextRow {
+  return {
+    evaluated_at: new Date('2026-07-30T12:00:00Z'),
+    reference_date: '2026-07-30',
+    contract_status: 'disbursed',
+    uses_celcoin_integration: true,
+    current_assigned_to: USER_ID,
+    has_activity_gate_permission: true,
+    has_open_pending_action: false,
+    client_is_deceased: false,
+    has_living_guarantor: false,
+    reference_installment_id: 'installment-1',
+    reference_due_date: '2026-07-27',
+    days_overdue: 3,
+    overdue_installment_count: 1,
+    collection_blocked: false,
+    follow_up_completed: false,
+    last_result: null,
+    last_channel: null,
+    last_execution_date: null,
+    last_days_overdue: null,
+    promise_date: null,
+    ...overrides,
+  };
+}
+
 function lockedTask(overrides: Partial<LockedTaskRow> = {}): LockedTaskRow {
   return {
     id: TASK_ID,
@@ -39,6 +70,7 @@ function lockedTask(overrides: Partial<LockedTaskRow> = {}): LockedTaskRow {
     was_postponed: false,
     was_rescheduled: false,
     reschedule_count: 0,
+    expire_date: '2026-07-30',
     ...overrides,
   };
 }
@@ -73,6 +105,7 @@ const INTERACTION_ROW = {
 };
 
 interface TxOptions {
+  collection?: Partial<CollectionContextRow>;
   /** Linha devolvida pelo SELECT ... FOR UPDATE. `null` simula tarefa inexistente. */
   task?: LockedTaskRow | null;
   /**
@@ -103,29 +136,53 @@ function createTx(options: TxOptions = {}) {
   } = options;
 
   return {
-    $queryRaw: jest.fn((strings: TemplateStringsArray) => {
-      const sql = strings.join(' ');
-      if (sql.includes('FOR UPDATE')) {
-        return Promise.resolve(task ? [task] : []);
-      }
-      if (sql.includes('activity_ruler_stages')) {
-        // assertIsActiveTask agora verifica pertencimento ao segmento ativo
-        // (retorna alguma linha) em vez de comparar contra um id específico.
-        return Promise.resolve(
-          activeTaskId === TASK_ID ? [{ id: TASK_ID }] : [],
-        );
-      }
-      if (sql.includes('BETWEEN CURRENT_DATE')) {
-        return Promise.resolve([{ ok: windowOk }]);
-      }
-      if (sql.includes('UPDATE activity_tasks')) {
-        return Promise.resolve([ACTION_ROW]);
-      }
-      if (sql.includes('INSERT INTO activity_interactions')) {
-        return Promise.resolve([INTERACTION_ROW]);
-      }
-      throw new Error(`query não mapeada no mock: ${sql}`);
-    }),
+    $queryRaw: jest.fn(
+      (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sql = strings.join(' ');
+        if (
+          sql.trimStart().startsWith('SELECT to_jsonb(a)') &&
+          sql.includes('FROM contract_pending_actions')
+        )
+          return Promise.resolve([]);
+        if (sql.includes('INSERT INTO contract_pending_actions'))
+          return Promise.resolve([
+            { snapshot: { id: 'action-1', type: values[1], status: 'open' } },
+          ]);
+        if (sql.includes('FROM system_configs'))
+          return Promise.resolve([{ value: '10' }]);
+        if (sql.includes('FOR UPDATE OF c')) {
+          return Promise.resolve(task ? [{ id: task.contract_id }] : []);
+        }
+        if (sql.includes('FOR UPDATE OF i')) {
+          return Promise.resolve([]);
+        }
+        if (sql.includes('FOR UPDATE')) {
+          return Promise.resolve(task ? [task] : []);
+        }
+        if (sql.includes('WITH execution_clock')) {
+          return Promise.resolve([
+            { ...collectionContext(), ...options.collection },
+          ]);
+        }
+        if (sql.includes('activity_ruler_stages')) {
+          // assertIsActiveTask agora verifica pertencimento ao segmento ativo
+          // (retorna alguma linha) em vez de comparar contra um id específico.
+          return Promise.resolve(
+            activeTaskId === TASK_ID ? [{ id: TASK_ID }] : [],
+          );
+        }
+        if (sql.includes('BETWEEN')) {
+          return Promise.resolve([{ ok: windowOk }]);
+        }
+        if (sql.includes('UPDATE activity_tasks')) {
+          return Promise.resolve([ACTION_ROW]);
+        }
+        if (sql.includes('INSERT INTO activity_interactions')) {
+          return Promise.resolve([INTERACTION_ROW]);
+        }
+        throw new Error(`query não mapeada no mock: ${sql}`);
+      },
+    ),
     $executeRaw: jest.fn().mockResolvedValue(1),
   };
 }
@@ -135,6 +192,7 @@ type Tx = ReturnType<typeof createTx>;
 async function build(options: TxOptions = {}): Promise<{
   service: ActivitiesService;
   tx: Tx;
+  prisma: { $transaction: jest.Mock };
   followUpService: { createWithinTransaction: jest.Mock };
 }> {
   const tx = createTx(options);
@@ -146,12 +204,19 @@ async function build(options: TxOptions = {}): Promise<{
     providers: [
       PeopleScopeService,
       ActivitiesService,
+      ActivityCollectionGuard,
+      ContractPendingActionsService,
       { provide: PrismaService, useValue: prisma },
       { provide: ScopeService, useValue: {} },
       { provide: FollowUpService, useValue: followUpService },
     ],
   }).compile();
-  return { service: module.get(ActivitiesService), tx, followUpService };
+  return {
+    service: module.get(ActivitiesService),
+    tx,
+    followUpService,
+    prisma,
+  };
 }
 
 async function buildQueue(
@@ -170,6 +235,8 @@ async function buildQueue(
     providers: [
       PeopleScopeService,
       ActivitiesService,
+      ActivityCollectionGuard,
+      ContractPendingActionsService,
       { provide: PrismaService, useValue: prisma },
       { provide: ScopeService, useValue: scope },
       { provide: FollowUpService, useValue: {} },
@@ -189,6 +256,8 @@ async function buildInstallmentAccess(canView: boolean) {
     providers: [
       PeopleScopeService,
       ActivitiesService,
+      ActivityCollectionGuard,
+      ContractPendingActionsService,
       { provide: PrismaService, useValue: prisma },
       { provide: ScopeService, useValue: scope },
       { provide: FollowUpService, useValue: {} },
@@ -239,11 +308,15 @@ describe('getTodayQueue', () => {
     expect(scope.getViewerScopeIds).toHaveBeenCalledWith(USER_ID);
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(6);
     expect(prisma.$queryRaw.mock.calls[0]).toContainEqual(
-      expect.objectContaining({ values: [USER_ID, USER_ID] }),
+      expect.objectContaining({
+        values: expect.arrayContaining([USER_ID, USER_ID]) as unknown,
+      }),
     );
     for (const [, ...values] of prisma.$queryRaw.mock.calls.slice(1)) {
       expect(values).toContainEqual(
-        expect.objectContaining({ values: [USER_ID] }),
+        expect.objectContaining({
+          values: expect.arrayContaining([USER_ID]) as unknown,
+        }),
       );
     }
   });
@@ -282,7 +355,9 @@ describe('getTodayQueue', () => {
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(5);
     for (const [, ...values] of prisma.$queryRaw.mock.calls) {
       expect(values).toContainEqual(
-        expect.objectContaining({ values: [SUBORDINATE_USER_ID] }),
+        expect.objectContaining({
+          values: expect.arrayContaining([SUBORDINATE_USER_ID]) as unknown,
+        }),
       );
     }
   });
@@ -468,7 +543,7 @@ describe('assertIsActiveTask — tarefas agendadas', () => {
     const [strings] = guardCall;
     const sql = strings.join(' ');
     expect(sql).toContain('LEFT JOIN leader');
-    expect(sql).toContain('at.expire_date > CURRENT_DATE');
+    expect(sql).toContain('at.expire_date >');
     expect(sql).toContain('OR l.segment_code IS NOT NULL');
   });
 });
@@ -564,7 +639,7 @@ describe('reschedule', () => {
 
     const consultouJanela = tx.$queryRaw.mock.calls.some(
       ([strings]: [TemplateStringsArray]) =>
-        strings.join(' ').includes('BETWEEN CURRENT_DATE'),
+        strings.join(' ').includes('BETWEEN'),
     );
     expect(consultouJanela).toBe(false);
   });
@@ -791,7 +866,7 @@ describe('registerInteraction', () => {
 
       const consultouJanela = tx.$queryRaw.mock.calls.some(
         ([strings]: [TemplateStringsArray]) =>
-          strings.join(' ').includes('BETWEEN CURRENT_DATE'),
+          strings.join(' ').includes('BETWEEN'),
       );
       expect(consultouJanela).toBe(false);
     });
@@ -836,5 +911,376 @@ describe('registerInteraction', () => {
       expect(interaction.geolocation).toBeUndefined();
       expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe.each([
+  [
+    'registrar',
+    (service: ActivitiesService) =>
+      service.registerInteraction(
+        TASK_ID,
+        USER_ID,
+        interactionDto({
+          channel: ActivityChannel.VISIT,
+          result: ActivityInteractionResult.NOT_LOCATED,
+        }),
+      ),
+  ],
+  ['adiar', (service: ActivitiesService) => service.postpone(TASK_ID, USER_ID)],
+  [
+    'reagendar',
+    (service: ActivitiesService) =>
+      service.reschedule(TASK_ID, USER_ID, { date: '2026-08-03' }),
+  ],
+] as const)('%s — elegibilidade atual do contrato', (_command, run) => {
+  it.each([
+    [{ has_open_pending_action: true }, 'open_pending_action'],
+    [{ contract_status: 'error' }, 'contract_not_disbursed'],
+    [{ uses_celcoin_integration: false }, 'unsupported_company'],
+    [{ current_assigned_to: OTHER_USER_ID }, 'task_assignee_changed'],
+    [{ has_activity_gate_permission: false }, 'assignee_not_enabled'],
+    [{ client_is_deceased: true }, 'no_living_recipient'],
+    [
+      {
+        reference_installment_id: null,
+        reference_due_date: null,
+        days_overdue: null,
+        overdue_installment_count: 0,
+      },
+      'no_overdue_installments',
+    ],
+    [{ overdue_installment_count: 3 }, 'three_or_more_overdue_installments'],
+    [{ reference_installment_id: 'new-reference' }, 'reference_changed'],
+    [{ collection_blocked: true }, 'collection_blocked'],
+    [{ days_overdue: 31 }, 'outside_collection_window'],
+    [
+      { overdue_installment_count: 2, follow_up_completed: true },
+      'second_overdue_follow_up_completed',
+    ],
+    [
+      { last_result: 'payment_promise', promise_date: '2026-07-30' },
+      'active_payment_promise',
+    ],
+    [
+      {
+        last_result: 'other',
+        last_channel: 'visit',
+        last_execution_date: '2026-07-29',
+        last_days_overdue: 7,
+      },
+      'visit_interval',
+    ],
+    [{ last_execution_date: '2026-07-30' }, 'already_executed_today'],
+    [
+      {
+        reference_date: '2026-09-14',
+        reference_due_date: '2026-09-12',
+        days_overdue: 2,
+      },
+      'payment_grace_period',
+    ],
+  ] satisfies [Partial<CollectionContextRow>, string][])(
+    'recusa %j sem gravar resultado ou alterar a tarefa',
+    async (collection, reason) => {
+      const { service, tx, followUpService } = await build({
+        task: lockedTask({
+          task_type: ActivityTaskType.VISIT,
+          expire_date: '2026-12-31',
+        }),
+        collection,
+      });
+
+      await expect(run(service)).rejects.toMatchObject({
+        response: { message: 'task_not_collectible', reason },
+      });
+      expect(tx.$executeRaw).not.toHaveBeenCalled();
+      expect(followUpService.createWithinTransaction).not.toHaveBeenCalled();
+      expect(
+        tx.$queryRaw.mock.calls.some(([strings]) =>
+          /UPDATE activity_tasks|INSERT INTO activity_interactions/.test(
+            strings.join(' '),
+          ),
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it('mantém a pendente do dia anterior exigível até a manutenção pelo job', async () => {
+    const { service } = await build({
+      task: lockedTask({
+        expire_date: '2026-07-29',
+        task_type: ActivityTaskType.VISIT,
+      }),
+    });
+    await expect(run(service)).resolves.toBeDefined();
+  });
+
+  it('libera a pendente agendada quando a referência e a elegibilidade continuam válidas', async () => {
+    const { service } = await build({
+      task: lockedTask({
+        task_type: ActivityTaskType.VISIT,
+        expire_date: '2026-08-02',
+      }),
+    });
+    await expect(run(service)).resolves.toBeDefined();
+  });
+});
+
+describe('registerInteraction — contexto financeiro no instante da execução', () => {
+  it.each([1, 2])(
+    'salva a contagem atual de %i atrasadas junto com vencimento, atraso e instante',
+    async (count) => {
+      const { service, tx } = await build({
+        collection: { overdue_installment_count: count },
+      });
+      await service.registerInteraction(TASK_ID, USER_ID, interactionDto());
+      const insert = tx.$queryRaw.mock.calls.find(([strings]) =>
+        strings.join(' ').includes('INSERT INTO activity_interactions'),
+      )!;
+      expect(insert.slice(-4)).toEqual([
+        count,
+        '2026-07-27',
+        3,
+        new Date('2026-07-30T12:00:00Z'),
+      ]);
+    },
+  );
+
+  it('tarefa criada com duas atrasadas e executada com uma registra uma, mesmo com acompanhamento histórico', async () => {
+    const task = {
+      ...lockedTask(),
+      collection_mode: 'second_overdue_follow_up',
+    };
+    const { service, tx } = await build({
+      task,
+      collection: { overdue_installment_count: 1, follow_up_completed: true },
+    });
+    await service.registerInteraction(TASK_ID, USER_ID, interactionDto());
+    const insert = tx.$queryRaw.mock.calls.find(([strings]) =>
+      strings.join(' ').includes('INSERT INTO activity_interactions'),
+    )!;
+    expect(insert.slice(-4)).toEqual([
+      1,
+      '2026-07-27',
+      3,
+      new Date('2026-07-30T12:00:00Z'),
+    ]);
+  });
+
+  it('tarefa criada com uma atrasada e executada com duas registra duas', async () => {
+    const task = { ...lockedTask(), collection_mode: 'regular' };
+    const { service, tx } = await build({
+      task,
+      collection: { overdue_installment_count: 2 },
+    });
+    await service.registerInteraction(TASK_ID, USER_ID, interactionDto());
+    const insert = tx.$queryRaw.mock.calls.find(([strings]) =>
+      strings.join(' ').includes('INSERT INTO activity_interactions'),
+    )!;
+    expect(insert.slice(-4)[0]).toBe(2);
+  });
+
+  it.each([
+    ActivityInteractionResult.NO_RESPONSE,
+    ActivityInteractionResult.PAYMENT_PROMISE,
+    ActivityInteractionResult.RENEGOTIATION,
+    ActivityInteractionResult.DISPUTE,
+    ActivityInteractionResult.DECEASED,
+    ActivityInteractionResult.NO_FORECAST,
+    ActivityInteractionResult.OTHER,
+  ])('o resultado %s mantém o snapshot de duas atrasadas', async (result) => {
+    const { service, tx } = await build({
+      collection: { overdue_installment_count: 2 },
+    });
+    await service.registerInteraction(
+      TASK_ID,
+      USER_ID,
+      interactionDto({
+        result,
+        observation: 'Resultado informado',
+        promiseDate: '2026-08-05',
+        ...(result === ActivityInteractionResult.RENEGOTIATION
+          ? { expectedAgreementDate: '2026-08-05' }
+          : {}),
+      }),
+    );
+    const insert = tx.$queryRaw.mock.calls.find(([strings]) =>
+      strings.join(' ').includes('INSERT INTO activity_interactions'),
+    )!;
+    expect(insert.slice(-4)[0]).toBe(2);
+  });
+
+  it('mantém a ordem de locks por contrato, parcelas e tarefa antes da leitura financeira', async () => {
+    const { service, tx } = await build();
+    await service.registerInteraction(TASK_ID, USER_ID, interactionDto());
+    const queries = tx.$queryRaw.mock.calls.map(([strings]) =>
+      strings.join(' '),
+    );
+    expect(queries[0]).toContain('FOR UPDATE OF c');
+    expect(queries[1]).toContain('FOR UPDATE OF i');
+    expect(queries[2]).toContain('FOR UPDATE OF at');
+    expect(queries[3]).toContain('WITH execution_clock');
+  });
+
+  it('a falha ao gravar a interação rejeita a transação antes do follow-up', async () => {
+    const { service, tx, followUpService } = await build();
+    const original = tx.$queryRaw.getMockImplementation()!;
+    tx.$queryRaw.mockImplementation((strings) => {
+      if (strings.join(' ').includes('INSERT INTO activity_interactions'))
+        return Promise.reject(new Error('persist_failed'));
+      return original(strings);
+    });
+    await expect(
+      service.registerInteraction(TASK_ID, USER_ID, interactionDto()),
+    ).rejects.toThrow('persist_failed');
+    expect(followUpService.createWithinTransaction).not.toHaveBeenCalled();
+  });
+
+  it('para falecido com avalista vivo permite somente o avalista', async () => {
+    const { service, tx } = await build({
+      collection: { client_is_deceased: true, has_living_guarantor: true },
+    });
+    await expect(
+      service.registerInteraction(TASK_ID, USER_ID, interactionDto()),
+    ).rejects.toMatchObject({
+      response: { reason: 'recipient_must_be_guarantor' },
+    });
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
+    await expect(
+      service.registerInteraction(
+        TASK_ID,
+        USER_ID,
+        interactionDto({ recipientType: ActivityRecipientType.GUARANTOR }),
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it('rejeita avalista ausente ou falecido', async () => {
+    const { service } = await build({
+      collection: { has_living_guarantor: false },
+    });
+    await expect(
+      service.registerInteraction(
+        TASK_ID,
+        USER_ID,
+        interactionDto({ recipientType: ActivityRecipientType.GUARANTOR }),
+      ),
+    ).rejects.toMatchObject({ response: { reason: 'no_living_guarantor' } });
+  });
+});
+
+describe('revalidação das esperas', () => {
+  it('visita em 15/07 retorna exatamente em 30/07, sem depender da faixa atual', async () => {
+    const { service } = await build({
+      collection: {
+        reference_due_date: '2026-07-09',
+        days_overdue: 21,
+        last_result: 'not_located',
+        last_channel: 'visit',
+        last_execution_date: '2026-07-15',
+        last_days_overdue: 6,
+      },
+    });
+    await expect(service.postpone(TASK_ID, USER_ID)).resolves.toBeDefined();
+  });
+
+  it.each(['call', 'whatsapp'])(
+    'sem previsão por %s não inicia intervalo de visita',
+    async (last_channel) => {
+      const { service } = await build({
+        collection: {
+          last_result: 'no_forecast',
+          last_channel,
+          last_execution_date: '2026-07-29',
+          last_days_overdue: 7,
+        },
+      });
+      await expect(service.postpone(TASK_ID, USER_ID)).resolves.toBeDefined();
+    },
+  );
+
+  it('uma visita com apenas cinco dias de atraso não inicia intervalo', async () => {
+    const { service } = await build({
+      collection: {
+        last_result: 'other',
+        last_channel: 'visit',
+        last_execution_date: '2026-07-29',
+        last_days_overdue: 5,
+      },
+    });
+    await expect(service.postpone(TASK_ID, USER_ID)).resolves.toBeDefined();
+  });
+
+  it('uma promessa vencida permite agir novamente', async () => {
+    const { service } = await build({
+      collection: {
+        last_result: 'payment_promise',
+        promise_date: '2026-07-29',
+        last_execution_date: '2026-07-28',
+      },
+    });
+    await expect(service.postpone(TASK_ID, USER_ID)).resolves.toBeDefined();
+  });
+
+  it('passada a carência do feriado nacional, a tarefa pode ser executada', async () => {
+    const { service } = await build({
+      task: lockedTask({ expire_date: '2026-11-04' }),
+      collection: {
+        reference_date: '2026-11-04',
+        evaluated_at: new Date('2026-11-04T12:00:00Z'),
+        reference_due_date: '2026-11-02',
+        days_overdue: 2,
+      },
+    });
+    await expect(service.postpone(TASK_ID, USER_ID)).resolves.toBeDefined();
+  });
+});
+
+describe('conflitos de transação na cobrança', () => {
+  it.each([
+    { code: 'P2034' },
+    { code: 'P2010', meta: { code: '40P01' } },
+    { meta: { driverAdapterError: { cause: { originalCode: '40001' } } } },
+  ])('relê o contexto após aborto por conflito %j', async (error) => {
+    const { service, prisma } = await build();
+    prisma.$transaction.mockRejectedValueOnce(error);
+    await expect(service.postpone(TASK_ID, USER_ID)).resolves.toBeDefined();
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+  });
+
+  it('a nova tentativa pode descobrir que o contrato foi pago e recusar a execução', async () => {
+    const { service, prisma, tx } = await build({
+      collection: {
+        overdue_installment_count: 0,
+        reference_installment_id: null,
+        reference_due_date: null,
+        days_overdue: null,
+      },
+    });
+    prisma.$transaction.mockRejectedValueOnce({ code: 'P2034' });
+    await expect(
+      service.registerInteraction(TASK_ID, USER_ID, interactionDto()),
+    ).rejects.toMatchObject({
+      response: { reason: 'no_overdue_installments' },
+    });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
+  });
+
+  it('limita conflitos repetidos a três tentativas', async () => {
+    const { service, prisma } = await build();
+    const error = { code: 'P2034' };
+    prisma.$transaction.mockRejectedValue(error);
+    await expect(service.postpone(TASK_ID, USER_ID)).rejects.toBe(error);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(3);
+  });
+
+  it('não repete erros de negócio ou falhas de persistência sem aborto reconhecido', async () => {
+    const { service, prisma } = await build();
+    const error = new Error('database_unavailable');
+    prisma.$transaction.mockRejectedValue(error);
+    await expect(service.postpone(TASK_ID, USER_ID)).rejects.toBe(error);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
   });
 });
