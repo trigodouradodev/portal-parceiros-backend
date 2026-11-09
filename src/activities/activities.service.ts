@@ -46,7 +46,15 @@ import { InstallmentDetail } from './interfaces/installment-detail.interface';
 import { SubordinateOption } from './interfaces/subordinate-option.interface';
 import { ResponsibleType } from '../collections/interfaces/responsible.interface';
 import { toNum } from '../common/query.util';
-import { daysOverdue } from './activities.util';
+import { daysOverdue, onlyDigits } from './activities.util';
+import { ActivityCollectionGuard } from './activity-collection.guard';
+import { ContractPendingActionsService } from './pending-actions/contract-pending-actions.service';
+import {
+  collectibleTaskCondition,
+  COLLECTION_TODAY,
+} from './collection-eligibility.sql';
+import { interactionMessage } from './interaction-message';
+import type { ActionableCollectionTask } from './interfaces/collection-context.interface';
 import {
   mapAddress,
   mapCard,
@@ -62,6 +70,8 @@ export class ActivitiesService {
     private readonly scope: ScopeService,
     private readonly followUpService: FollowUpService,
     private readonly people: PeopleScopeService,
+    private readonly collectionGuard: ActivityCollectionGuard,
+    private readonly pendingActions: ContractPendingActionsService,
   ) {}
 
   /**
@@ -99,7 +109,7 @@ export class ActivitiesService {
       selectedAssigneeId,
     );
 
-    const pendingToday = Prisma.sql`at.status = 'pending' AND at.expire_date <= CURRENT_DATE`;
+    const pendingToday = Prisma.sql`at.expire_date <= ${COLLECTION_TODAY} AND ${collectibleTaskCondition()}`;
     const order = Prisma.sql`ORDER BY rs.priority ASC NULLS LAST, days_overdue DESC, at.created_at ASC`;
 
     // active = a #1 executável do viewer (maior prioridade `assigned_to` = ele).
@@ -143,13 +153,13 @@ export class ActivitiesService {
     // scheduled (postergadas/reagendadas) e completedToday — listas cheias por ora.
     const scheduledRows = await this.fetchCards(
       scopeClause,
-      Prisma.sql`AND at.status = 'pending' AND at.expire_date > CURRENT_DATE ${assigneeFilter}`,
+      Prisma.sql`AND at.expire_date > ${COLLECTION_TODAY} AND ${collectibleTaskCondition()} ${assigneeFilter}`,
       order,
       false,
     );
     const completedRows = await this.fetchCards(
       scopeClause,
-      Prisma.sql`AND at.status = 'completed' AND at.completed_at::date = CURRENT_DATE ${assigneeFilter}`,
+      Prisma.sql`AND at.status = 'completed' AND (at.completed_at AT TIME ZONE 'America/Sao_Paulo')::date = ${COLLECTION_TODAY} ${assigneeFilter}`,
       order,
       false,
     );
@@ -248,8 +258,34 @@ export class ActivitiesService {
         current_collection_agent_id: true,
         companies: { select: { name: true } },
         quotes: { select: { guarantor: true } },
+        parties_contracts_guarantor_party_idToparties: {
+          select: {
+            name: true,
+            tax_id: true,
+            phone: true,
+            email: true,
+            is_deceased: true,
+            addresses: {
+              select: {
+                street: true,
+                number: true,
+                complement: true,
+                neighborhood: true,
+                city: true,
+                state: true,
+                zip_code: true,
+              },
+              orderBy: [
+                { is_primary: { sort: 'desc', nulls: 'last' } },
+                { created_at: 'desc' },
+              ],
+              take: 1,
+            },
+          },
+        },
         clients: {
           select: {
+            is_deceased: true,
             name: true,
             tax_id: true,
             phone: true,
@@ -330,6 +366,32 @@ export class ActivitiesService {
     const assignee =
       latest?.trigo_users_activity_tasks_assigned_toTotrigo_users;
 
+    const eligibleRows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT at.id FROM activity_tasks at
+      WHERE at.contract_id = ${contractId}::uuid AND ${collectibleTaskCondition()}
+    `;
+    const eligibleIds = new Set(eligibleRows.map((row) => row.id));
+    const guarantorParty =
+      contract.parties_contracts_guarantor_party_idToparties;
+    const quoteGuarantor = mapGuarantor(contract.quotes?.guarantor);
+    const matchingQuote =
+      guarantorParty &&
+      quoteGuarantor &&
+      onlyDigits(guarantorParty.tax_id) === quoteGuarantor.taxId
+        ? quoteGuarantor
+        : null;
+    const guarantor = guarantorParty
+      ? {
+          name: guarantorParty.name,
+          taxId: onlyDigits(guarantorParty.tax_id),
+          phone: guarantorParty.phone ?? matchingQuote?.phone,
+          email: guarantorParty.email ?? matchingQuote?.email,
+          address:
+            mapAddress(guarantorParty.addresses[0]) ?? matchingQuote?.address,
+          isDeceased: guarantorParty.is_deceased,
+        }
+      : null;
+
     return {
       installment: {
         id: installmentId,
@@ -351,12 +413,13 @@ export class ActivitiesService {
         companyName: contract.companies?.name ?? undefined,
       },
       client: {
+        isDeceased: contract.clients.is_deceased,
         name: contract.clients.name,
         taxId: contract.clients.tax_id,
         phone: contract.clients.phone ?? undefined,
         address: mapAddress(contract.clients.addresses[0]),
       },
-      guarantor: mapGuarantor(contract.quotes?.guarantor),
+      guarantor,
       responsible: assignee
         ? {
             id: assignee.id,
@@ -369,6 +432,7 @@ export class ActivitiesService {
         : null,
       tasks: tasks.map((t) => ({
         id: t.id,
+        isCollectible: eligibleIds.has(t.id),
         segmentCode: t.segment_code,
         segmentBadgeLabel: t.activity_ruler_stages?.badge_label ?? undefined,
         priority: Number(t.activity_ruler_stages?.priority ?? 0),
@@ -435,7 +499,7 @@ export class ActivitiesService {
         at.expire_date, at.was_postponed, at.was_rescheduled, at.reschedule_count,
         rs.priority, rs.tone,
         i.id AS installment_id, i.installment_number, i.due_date,
-        (CURRENT_DATE - i.due_date)::int AS days_overdue,
+        (${COLLECTION_TODAY} - i.due_date)::int AS days_overdue,
         i.pending_amount, i.total_amount,
         c.id AS contract_id, c.contract_number, c.total_installments,
         comp.name AS company_name,
@@ -445,7 +509,7 @@ export class ActivitiesService {
       LEFT JOIN activity_ruler_stages rs ON rs.id = at.ruler_stage_id
       JOIN installments i ON i.id = at.installment_id
       JOIN contracts c ON c.id = at.contract_id
-      JOIN clients cl ON cl.id = c.client_id
+      JOIN parties cl ON cl.id = c.client_id
       LEFT JOIN companies comp ON comp.id = c.company_id
       LEFT JOIN trigo_users u ON u.id = at.assigned_to
       LEFT JOIN LATERAL (
@@ -493,14 +557,14 @@ export class ActivitiesService {
         LEFT JOIN activity_ruler_stages rs ON rs.id = at.ruler_stage_id
         JOIN installments i ON i.id = at.installment_id
         JOIN contracts c ON c.id = at.contract_id
-        WHERE ${scopeClause} AND at.status = 'pending' AND at.expire_date <= CURRENT_DATE ${assigneeFilter}
-        ORDER BY at.assigned_to, rs.priority ASC NULLS LAST, (CURRENT_DATE - i.due_date) DESC, at.created_at ASC
+        WHERE ${scopeClause} AND at.expire_date <= ${COLLECTION_TODAY} AND ${collectibleTaskCondition()} ${assigneeFilter}
+        ORDER BY at.assigned_to, rs.priority ASC NULLS LAST, (${COLLECTION_TODAY} - i.due_date) DESC, at.created_at ASC
       ),
       ranked AS (
         SELECT
           at.id AS task_id,
           rs.priority AS priority,
-          (CURRENT_DATE - i.due_date)::int AS days_overdue,
+        (${COLLECTION_TODAY} - i.due_date)::int AS days_overdue,
           at.created_at AS created_at,
           (at.segment_code = l.segment_code) AS is_active,
           (at.id = l.task_id) AS is_recommended
@@ -509,7 +573,7 @@ export class ActivitiesService {
         JOIN installments i ON i.id = at.installment_id
         JOIN contracts c ON c.id = at.contract_id
         JOIN leaders l ON l.assigned_to = at.assigned_to
-        WHERE ${scopeClause} AND at.status = 'pending' AND at.expire_date <= CURRENT_DATE ${assigneeFilter}
+        WHERE ${scopeClause} AND at.expire_date <= ${COLLECTION_TODAY} AND ${collectibleTaskCondition()} ${assigneeFilter}
       )
       SELECT
         at.id AS task_id, at.segment_code, at.task_type, at.status,
@@ -528,7 +592,7 @@ export class ActivitiesService {
       LEFT JOIN activity_ruler_stages rs ON rs.id = at.ruler_stage_id
       JOIN installments i ON i.id = at.installment_id
       JOIN contracts c ON c.id = at.contract_id
-      JOIN clients cl ON cl.id = c.client_id
+      JOIN parties cl ON cl.id = c.client_id
       LEFT JOIN companies comp ON comp.id = c.company_id
       LEFT JOIN trigo_users u ON u.id = at.assigned_to
       LEFT JOIN LATERAL (
@@ -590,22 +654,37 @@ export class ActivitiesService {
     userId: string,
     dto: RegisterInteractionDto,
   ): Promise<RegisterInteractionResult> {
-    return this.prisma.$transaction(async (tx) => {
-      const task = await this.loadActiveTaskForAction(tx, taskId, userId);
+    return this.runCollectionTransaction(async (tx) => {
+      const { task, collection } = await this.loadActiveTaskForAction(
+        tx,
+        taskId,
+        userId,
+      );
 
       const taskType = task.task_type as ActivityTaskType;
       this.validateChannelAndResult(taskType, dto);
+      this.collectionGuard.assertRecipient(collection, dto.recipientType);
+      const expectedAgreementDate =
+        this.pendingActions.validateExpectedAgreementDate(
+          dto.result,
+          dto.expectedAgreementDate,
+          collection.reference_date,
+        );
       if (
         dto.result === ActivityInteractionResult.OTHER &&
         !dto.observation?.trim()
       ) {
         throw new BadRequestException('observation_required');
       }
-      const promiseDate = await this.resolvePromiseDate(tx, dto);
+      const promiseDate = await this.resolvePromiseDate(
+        tx,
+        dto,
+        collection.reference_date,
+      );
 
       await tx.$executeRaw`
         UPDATE activity_tasks
-        SET status = 'completed', completed_at = NOW(), completed_by_user_id = ${userId}::uuid
+        SET status = 'completed', completed_at = ${collection.evaluated_at}, completed_by_user_id = ${userId}::uuid
         WHERE id = ${taskId}::uuid
       `;
 
@@ -613,13 +692,17 @@ export class ActivitiesService {
         INSERT INTO activity_interactions
           (task_id, installment_id, contract_id, task_type, channel, recipient_type,
            recipient_contact_id, result, promise_date, observation, user_id,
-           location_confirmation, manual_location_reason)
+           location_confirmation, manual_location_reason,
+           overdue_installment_count_at_execution, reference_due_date_at_execution,
+           days_overdue_at_execution, created_at)
         VALUES
           (${taskId}::uuid, ${task.installment_id}::uuid, ${task.contract_id}::uuid,
            ${task.task_type}, ${dto.channel}, ${dto.recipientType},
            ${dto.recipientContactId ?? null}::uuid, ${dto.result}, ${promiseDate}::date,
            ${dto.observation ?? null}, ${userId}::uuid,
-           ${dto.locationConfirmation ?? null}, ${dto.manualLocationReason ?? null})
+           ${dto.locationConfirmation ?? null}, ${dto.manualLocationReason ?? null},
+           ${collection.overdue_installment_count}::int, ${collection.reference_due_date}::date,
+           ${collection.days_overdue}::int, ${collection.evaluated_at})
         RETURNING id, task_id, installment_id, contract_id, task_type, channel, recipient_type,
                   recipient_contact_id, result, promise_date, observation, user_id, created_at
       `;
@@ -642,19 +725,40 @@ export class ActivitiesService {
         this.mapInteractionToFollowUp(task, dto, promiseDate),
       );
 
-      return { interaction };
+      const pendingAction = await this.pendingActions.openForInteraction(
+        tx,
+        collection,
+        {
+          contractId: task.contract_id,
+          interactionId: interaction.id,
+          userId,
+          result: dto.result,
+          recipientType: dto.recipientType,
+          observation: dto.observation,
+          expectedAgreementDate,
+        },
+      );
+      return {
+        interaction,
+        message: interactionMessage(dto.result, dto.channel, collection),
+        ...(pendingAction ? { pendingAction } : {}),
+      };
     });
   }
 
   /** Posterga a tarefa ativa para amanhã (1× por tarefa). */
   async postpone(taskId: string, userId: string): Promise<TaskActionResult> {
-    return this.prisma.$transaction(async (tx) => {
-      const task = await this.loadActiveTaskForAction(tx, taskId, userId);
+    return this.runCollectionTransaction(async (tx) => {
+      const { task, collection } = await this.loadActiveTaskForAction(
+        tx,
+        taskId,
+        userId,
+      );
       if (task.was_postponed) throw new ConflictException('already_postponed');
 
       const rows = await tx.$queryRaw<TaskActionRow[]>`
         UPDATE activity_tasks
-        SET expire_date = CURRENT_DATE + 1, was_postponed = TRUE
+        SET expire_date = ${collection.reference_date}::date + 1, was_postponed = TRUE
         WHERE id = ${taskId}::uuid
         RETURNING id, installment_id, contract_id, segment_code, task_type, status,
                   expire_date, was_postponed, was_rescheduled, reschedule_count
@@ -669,15 +773,23 @@ export class ActivitiesService {
     userId: string,
     dto: RescheduleTaskDto,
   ): Promise<TaskActionResult> {
-    return this.prisma.$transaction(async (tx) => {
-      const task = await this.loadActiveTaskForAction(tx, taskId, userId);
+    return this.runCollectionTransaction(async (tx) => {
+      const { task, collection } = await this.loadActiveTaskForAction(
+        tx,
+        taskId,
+        userId,
+      );
       if (task.task_type !== (ActivityTaskType.VISIT as string)) {
         throw new BadRequestException('reschedule_visit_only');
       }
       if (task.reschedule_count >= 2) {
         throw new ConflictException('reschedule_limit_reached');
       }
-      await this.assertWithinRescheduleWindow(tx, dto.date);
+      await this.assertWithinRescheduleWindow(
+        tx,
+        dto.date,
+        collection.reference_date,
+      );
 
       const rows = await tx.$queryRaw<TaskActionRow[]>`
         UPDATE activity_tasks
@@ -694,34 +806,64 @@ export class ActivitiesService {
 
   // ---- guards / carregamento -------------------------------------------------
 
+  /** Reexecuta somente transações abortadas por conflito/deadlock, relendo os fatos. */
+  private async runCollectionTransaction<T>(
+    operation: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(operation);
+      } catch (error) {
+        if (attempt >= 3 || !isCollectionTransactionConflict(error))
+          throw error;
+      }
+    }
+  }
+
   /**
    * Carrega a tarefa alvo de uma ação (registrar/postergar/reagendar) com lock e
-   * garante que está pending, pertence ao usuário e é a #1 ativa da fila. Preâmbulo
-   * comum aos 3 comandos.
+   * garante pendência, responsável, elegibilidade atual e segmento executável.
+   * Preâmbulo comum aos 3 comandos.
    */
   private async loadActiveTaskForAction(
     tx: Prisma.TransactionClient,
     taskId: string,
     userId: string,
-  ): Promise<LockedTaskRow> {
-    const task = await this.lockTask(tx, taskId);
+  ): Promise<ActionableCollectionTask> {
+    const contractId = await this.collectionGuard.lockContractAndInstallments(
+      tx,
+      taskId,
+    );
+    const task = await this.lockTask(tx, taskId, contractId);
     this.assertActionable(task, userId);
-    await this.assertIsActiveTask(tx, userId, taskId);
-    return task;
+    const collection = await this.collectionGuard.assertCollectible(
+      tx,
+      task,
+      userId,
+    );
+    await this.assertIsActiveTask(
+      tx,
+      userId,
+      taskId,
+      collection.reference_date,
+      collection.evaluated_at,
+    );
+    return { task, collection };
   }
 
   private async lockTask(
     tx: Prisma.TransactionClient,
     taskId: string,
+    contractId: string,
   ): Promise<LockedTaskRow> {
     const rows = await tx.$queryRaw<LockedTaskRow[]>`
       SELECT at.id, at.installment_id, i.installment_number, at.contract_id,
              at.task_type, at.status, at.assigned_to, at.was_postponed,
-             at.was_rescheduled, at.reschedule_count
+             at.was_rescheduled, at.reschedule_count, at.expire_date::text AS expire_date
       FROM activity_tasks at
       JOIN installments i ON i.id = at.installment_id
-      WHERE at.id = ${taskId}::uuid
-      FOR UPDATE
+      WHERE at.id = ${taskId}::uuid AND at.contract_id = ${contractId}::uuid
+      FOR UPDATE OF at
     `;
     const task = rows[0];
     if (!task) throw new NotFoundException('task_not_found');
@@ -748,6 +890,8 @@ export class ActivitiesService {
     tx: Prisma.TransactionClient,
     userId: string,
     taskId: string,
+    referenceDate: string,
+    instant: Date,
   ): Promise<void> {
     const rows = await tx.$queryRaw<{ id: string }[]>`
       WITH leader AS (
@@ -756,9 +900,9 @@ export class ActivitiesService {
         LEFT JOIN activity_ruler_stages rs ON rs.id = at.ruler_stage_id
         JOIN installments i ON i.id = at.installment_id
         WHERE at.assigned_to = ${userId}::uuid
-          AND at.status = 'pending'
-          AND at.expire_date <= CURRENT_DATE
-        ORDER BY rs.priority ASC NULLS LAST, (CURRENT_DATE - i.due_date) DESC, at.created_at ASC
+          AND at.expire_date <= ${referenceDate}::date
+          AND ${collectibleTaskCondition(Prisma.sql`${referenceDate}::date`, Prisma.sql`${instant}::timestamptz`)}
+        ORDER BY rs.priority ASC NULLS LAST, (${referenceDate}::date - i.due_date) DESC, at.created_at ASC
         LIMIT 1
       )
       SELECT at.id
@@ -768,7 +912,7 @@ export class ActivitiesService {
         AND at.assigned_to = ${userId}::uuid
         AND at.status = 'pending'
         AND (
-          at.expire_date > CURRENT_DATE
+          at.expire_date > ${referenceDate}::date
           OR l.segment_code IS NOT NULL
         )
     `;
@@ -858,19 +1002,20 @@ export class ActivitiesService {
 
   /**
    * Promessa de pagamento: obrigatória quando result=payment_promise e ≤ D+10
-   * (validado contra CURRENT_DATE do banco). Para outros resultados, ignora.
+   * (validado contra a data civil da execução). Para outros resultados, ignora.
    * Retorna a data (ISO) ou null.
    */
   private async resolvePromiseDate(
     tx: Prisma.TransactionClient,
     dto: RegisterInteractionDto,
+    referenceDate: string,
   ): Promise<string | null> {
     if (dto.result !== ActivityInteractionResult.PAYMENT_PROMISE) return null;
     if (!dto.promiseDate)
       throw new BadRequestException('promise_date_required');
 
     const [row] = await tx.$queryRaw<{ ok: boolean }[]>`
-      SELECT (${dto.promiseDate}::date BETWEEN CURRENT_DATE AND CURRENT_DATE + ${PROMISE_MAX_DAYS}::int)
+      SELECT (${dto.promiseDate}::date BETWEEN ${referenceDate}::date AND ${referenceDate}::date + ${PROMISE_MAX_DAYS}::int)
              AS ok
     `;
     if (!row?.ok) throw new BadRequestException('promise_date_out_of_window');
@@ -880,11 +1025,27 @@ export class ActivitiesService {
   private async assertWithinRescheduleWindow(
     tx: Prisma.TransactionClient,
     date: string,
+    referenceDate: string,
   ): Promise<void> {
     const [row] = await tx.$queryRaw<{ ok: boolean }[]>`
-      SELECT (${date}::date BETWEEN CURRENT_DATE + ${RESCHEDULE_MIN_DAYS}::int
-              AND CURRENT_DATE + ${RESCHEDULE_MAX_DAYS}::int) AS ok
+      SELECT (${date}::date BETWEEN ${referenceDate}::date + ${RESCHEDULE_MIN_DAYS}::int
+              AND ${referenceDate}::date + ${RESCHEDULE_MAX_DAYS}::int) AS ok
     `;
     if (!row?.ok) throw new BadRequestException('reschedule_out_of_window');
   }
+}
+
+function isCollectionTransactionConflict(error: unknown, depth = 0): boolean {
+  if (!error || typeof error !== 'object' || depth > 4) return false;
+  const fields = error as Record<string, unknown>;
+  if (
+    [fields.code, fields.originalCode].some(
+      (code) => code === 'P2034' || code === '40P01' || code === '40001',
+    )
+  )
+    return true;
+  // Prisma raw (meta.code) e adapter-pg (driverAdapterError.cause.originalCode).
+  return ['meta', 'cause', 'driverAdapterError'].some((key) =>
+    isCollectionTransactionConflict(fields[key], depth + 1),
+  );
 }

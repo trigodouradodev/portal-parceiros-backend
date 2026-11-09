@@ -41,6 +41,7 @@ function queueRow(overrides: Partial<QueueRow> = {}): QueueRow {
     task_type: 'call',
     status: 'pending',
     is_active: true,
+    is_recommended: true,
     assigned_to_id: 'user-1',
     assigned_to_name: 'Maria Souza',
     expire_date: new Date('2026-08-01T00:00:00Z'),
