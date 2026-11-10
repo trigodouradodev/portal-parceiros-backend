@@ -56,16 +56,17 @@ antigas `death` são preservadas e exibidas como Falecimento pelos frontends.
 
 ## Publicação
 
-Gerar o Prisma Client com o schema atualizado. As migrations pertencem ao
-trigo-connector: manter `20261110120000_add_no_forecast_reason.ts` e aplicar
-`20261110140000_rename_no_forecast_reason_to_overdue_reason.ts` pela esteira normal.
-A segunda renomeia as colunas sem apagar dados e amplia os CHECKs.
+Gerar o Prisma Client com o schema atualizado. Aplicar a migration única do
+trigo-connector `20261110120000_add_overdue_reason.ts` pela esteira normal antes
+dos backends. Ela cria diretamente `overdue_reason` nas duas tabelas, anulável
+para o histórico, com CHECKs dos resultados aplicáveis e dos 24 motivos ativos.
+`death` não é aceito em novas escritas, inclusive pelo banco.
 
-Coordenar os dois backends e frontends: a coluna é renomeada e o campo anterior
-`noForecastReason` não faz parte do novo contrato. Evitar gravações durante a
-atualização conjunta. Não há backfill nem script manual de transição.
-O rollback da segunda migration é impedido se existirem motivos com resultados
-que o CHECK antigo não aceita; não remove nem reclassifica dados para forçá-lo.
+Coordenar a publicação dos dois backends e frontends: os formulários anteriores
+não enviam o motivo obrigatório. Não há backfill nem script de transição.
+O rollback remove as colunas e seus motivos; reverter os produtores/leitores
+antes de executá-lo. A consolidação em uma migration foi feita após confirmação
+de que nenhuma versão anterior havia sido executada nos ambientes.
 
 ## Verificação em 10/11/2026
 
