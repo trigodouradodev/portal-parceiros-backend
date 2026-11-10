@@ -12,7 +12,7 @@ const BANDS_KEY = 'CREDIT_RISK_BANDS';
 
 export const DEFAULT_CREDIT_RISK_BANDS: CreditRiskBands = {
   highBelow: 400,
-  lowAbove: 600,
+  lowAbove: 700,
 };
 
 /**
@@ -32,7 +32,7 @@ export class CreditRiskConfigService {
   }
 
   /**
-   * `CREDIT_RISK_BANDS` = `{"highBelow":400,"lowAbove":600}`. Ausente usa o
+   * `CREDIT_RISK_BANDS` = `{"highBelow":400,"lowAbove":700}`. Ausente usa o
    * padrão. Inválida devolve `null` (sem faixa): mostrar uma faixa calculada
    * com limite quebrado é pior do que não mostrar.
    */

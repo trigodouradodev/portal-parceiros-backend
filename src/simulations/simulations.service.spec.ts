@@ -872,7 +872,7 @@ describe('SimulationsService.listSimulations', () => {
   it('na listagem classifica pela faixa atual e não expõe o score', async () => {
     const rows = [
       simulationRow({ id: 'a', serasa_score: 350 }),
-      simulationRow({ id: 'b', serasa_score: 700 }),
+      simulationRow({ id: 'b', serasa_score: 750 }),
       simulationRow({ id: 'c', serasa_score: null }),
     ].map((row) => ({ ...row, product_name: 'CRÉDITO PESSOAL' }));
     const { service } = listService(rows);
@@ -998,8 +998,8 @@ describe('SimulationsService — risco de crédito (Serasa)', () => {
   it.each([
     [399, CreditRiskBand.HIGH],
     [400, CreditRiskBand.MEDIUM],
-    [600, CreditRiskBand.MEDIUM],
-    [601, CreditRiskBand.LOW],
+    [700, CreditRiskBand.MEDIUM],
+    [701, CreditRiskBand.LOW],
   ])('score %i vira a faixa %s com as faixas padrão', async (score, band) => {
     const { service } = buildService({
       serasaScore: score,

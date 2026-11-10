@@ -8,9 +8,10 @@ describe('classifyCreditRisk', () => {
     [399, CreditRiskBand.HIGH],
     [400, CreditRiskBand.MEDIUM],
     [600, CreditRiskBand.MEDIUM],
-    [601, CreditRiskBand.LOW],
+    [700, CreditRiskBand.MEDIUM],
+    [701, CreditRiskBand.LOW],
     [1000, CreditRiskBand.LOW],
-  ])('score %i com o padrão 400/600 é %s', (score, band) => {
+  ])('score %i com o padrão 400/700 é %s', (score, band) => {
     expect(classifyCreditRisk(score, DEFAULT_CREDIT_RISK_BANDS)).toBe(band);
   });
 

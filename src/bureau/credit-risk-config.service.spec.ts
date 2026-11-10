@@ -25,7 +25,7 @@ afterEach(() => {
 });
 
 describe('CreditRiskConfigService.getBands', () => {
-  it('usa 400/600 quando a chave não existe', async () => {
+  it('usa 400/700 quando a chave não existe', async () => {
     await expect(build({}).getBands()).resolves.toEqual(
       DEFAULT_CREDIT_RISK_BANDS,
     );
