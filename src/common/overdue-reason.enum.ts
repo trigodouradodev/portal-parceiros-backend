@@ -1,5 +1,5 @@
 /** Espelha o catálogo da migration 20261110120000 do trigo-connector. */
-export enum NoForecastReason {
+export enum OverdueReason {
   INDEBTEDNESS = 'indebtedness',
   SALES_DECLINE = 'sales_decline',
   CREDIT_DIVERSION = 'credit_diversion',
@@ -10,7 +10,6 @@ export enum NoForecastReason {
   JOB_LOSS = 'job_loss',
   SCAM_OR_FRAUD_VICTIM = 'scam_or_fraud_victim',
   ADDICTION = 'addiction',
-  DEATH = 'death',
   CONTRACT_NOT_CEDED = 'contract_not_ceded',
   BENEFIT_CUT = 'benefit_cut',
   AWAITING_MUNICIPAL_PAYMENT = 'awaiting_municipal_payment',

@@ -31,7 +31,7 @@ export function mapInteraction(
     recipientType: row.recipient_type,
     recipientContactId: row.recipient_contact_id ?? undefined,
     result: row.result,
-    noForecastReason: row.no_forecast_reason ?? undefined,
+    overdueReason: row.overdue_reason ?? undefined,
     promiseDate: row.promise_date ?? undefined,
     observation: row.observation ?? undefined,
     userId: row.user_id,
@@ -99,7 +99,7 @@ export function mapCard(row: QueueRow, position: number): QueueTaskCard {
     },
     lastInteraction: row.last_result
       ? {
-          noForecastReason: row.last_no_forecast_reason ?? undefined,
+          overdueReason: row.last_overdue_reason ?? undefined,
           result: row.last_result,
           channel: row.last_channel ?? '',
           createdAt: row.last_created_at as Date,

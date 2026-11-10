@@ -10,6 +10,7 @@ import {
   FollowUpStatus,
   FollowUpType,
 } from './enums/follow-up.enums';
+import { OverdueReason } from '../common/overdue-reason.enum';
 import { FollowUpService } from './follow-up.service';
 
 const CONTRACT_ID = '11111111-1111-1111-1111-111111111111';
@@ -58,6 +59,7 @@ describe('FollowUpService.create — modelo estruturado', () => {
         followUpType: FollowUpType.CALL,
         party: FollowUpParty.CLIENT,
         expectedResult: FollowUpExpectedResult.WILL_PAY_ON_DATE,
+        overdueReason: OverdueReason.OTHER,
         paymentForecast: '2026-08-25T00:00:00.000Z',
       }),
     );
@@ -72,7 +74,7 @@ describe('FollowUpService.create — modelo estruturado', () => {
         party: FollowUpParty.CLIENT,
         automatic_action: null,
         expected_result: FollowUpExpectedResult.WILL_PAY_ON_DATE,
-        no_forecast_reason: null,
+        overdue_reason: 'other',
         payment_forecast: new Date('2026-08-25T00:00:00.000Z'),
         user_id: USER_ID,
       },
@@ -171,7 +173,10 @@ describe('FollowUpService.create — modelo estruturado', () => {
 
     await service.create(
       USER_ID,
-      dto({ status: FollowUpStatus.PROMISE_TO_PAY }),
+      dto({
+        status: FollowUpStatus.PROMISE_TO_PAY,
+        overdueReason: OverdueReason.OTHER,
+      }),
     );
 
     expect(tx.installment_followups.create).toHaveBeenCalledWith(

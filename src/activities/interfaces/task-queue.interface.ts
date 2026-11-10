@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { NoForecastReason } from '../../common/no-forecast-reason.enum';
+import { OverdueReason } from '../../common/overdue-reason.enum';
 
 export class QueueClient {
   @ApiProperty()
@@ -63,8 +63,12 @@ export class QueueLastInteraction {
   @ApiProperty({ example: 'no_response' })
   result: string;
 
-  @ApiPropertyOptional({ enum: NoForecastReason })
-  noForecastReason?: string;
+  @ApiPropertyOptional({
+    enum: [...Object.values(OverdueReason), 'death'],
+    description:
+      'Classificação do atraso. death é somente leitura de registros históricos.',
+  })
+  overdueReason?: string;
 
   @ApiProperty({ example: 'call' })
   channel: string;

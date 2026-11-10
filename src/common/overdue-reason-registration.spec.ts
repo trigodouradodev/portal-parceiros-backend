@@ -11,7 +11,7 @@ import { CreateFollowUpDto } from '../follow-up/dto/create-follow-up.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScopeService } from '../scope/scope.service';
 import { PeopleScopeService } from '../scope/people-scope.service';
-import { NoForecastReason } from './no-forecast-reason.enum';
+import { OverdueReason } from './overdue-reason.enum';
 
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 const CONTRACT_ID = '22222222-2222-4222-8222-222222222222';
@@ -90,6 +90,27 @@ async function build(taskType: 'contact' | 'visit' = 'contact') {
             },
           ]);
         }
+        if (
+          sql.includes(
+            'SELECT to_jsonb(a) AS snapshot FROM contract_pending_actions',
+          )
+        )
+          return Promise.resolve([]);
+        if (sql.includes('SELECT value FROM system_configs'))
+          return Promise.resolve([{ value: '3' }]);
+        if (sql.includes('INSERT INTO contract_pending_actions'))
+          return Promise.resolve([
+            {
+              snapshot: {
+                id: 'action-1',
+                contract_id: CONTRACT_ID,
+                type: 'renegotiation',
+                status: 'open',
+              },
+            },
+          ]);
+        if (sql.includes('::date BETWEEN'))
+          return Promise.resolve([{ ok: true }]);
         throw new Error(`Query inesperada: ${sql}`);
       },
     ),
@@ -162,27 +183,27 @@ describe.each(['contact', 'visit'] as const)(
       result: 'no_forecast',
     };
 
-    it.each(Object.values(NoForecastReason))(
+    it.each(Object.values(OverdueReason))(
       'persiste %s na interação e no Follow-up da mesma transação',
       async (reason) => {
         const app = await build(taskType);
         const result = await interaction(app, {
           ...base,
-          noForecastReason: reason,
+          overdueReason: reason,
         });
-        expect(result.interaction.noForecastReason).toBe(reason);
+        expect(result.interaction.overdueReason).toBe(reason);
         expect(result.interaction.result).toBe('no_forecast');
         expect(result.pendingAction).toBeUndefined();
         expect(app.prisma.$transaction).toHaveBeenCalledTimes(1);
         expect(app.tx.installment_followups.create).toHaveBeenCalledWith({
           data: expect.objectContaining({
-            no_forecast_reason: reason,
+            overdue_reason: reason,
             expected_result: 'no_forecast',
             party: 'guarantor',
           }) as unknown,
         });
         // O único execute é a conclusão da tarefa, inclusive nas categorias
-        // Falecimento, Contrato não cedido e Vítima de golpe/fraude.
+        // Contrato não cedido e Vítima de golpe/fraude.
         expect(app.tx.$executeRaw).toHaveBeenCalledTimes(1);
         const insert = app.tx.$queryRaw.mock.calls.find(([strings]) =>
           strings.join(' ').includes('INSERT INTO activity_interactions'),
@@ -197,6 +218,7 @@ describe.each(['contact', 'visit'] as const)(
       '',
       ' ',
       'unknown',
+      'death',
       'Endividamento',
       1,
       ['other'],
@@ -206,7 +228,7 @@ describe.each(['contact', 'visit'] as const)(
       async (reason) => {
         const app = await build(taskType);
         await expect(
-          interaction(app, { ...base, noForecastReason: reason }),
+          interaction(app, { ...base, overdueReason: reason }),
         ).rejects.toThrow(BadRequestException);
         expect(app.tx.$executeRaw).not.toHaveBeenCalled();
         expect(app.tx.installment_followups.create).not.toHaveBeenCalled();
@@ -220,9 +242,9 @@ describe.each(['contact', 'visit'] as const)(
           ...base,
           result: 'other',
           observation: 'Observação',
-          noForecastReason: 'other',
+          overdueReason: 'other',
         }),
-      ).rejects.toThrow('no_forecast_reason_not_allowed');
+      ).rejects.toThrow('overdue_reason_not_allowed');
       expect(app.tx.$executeRaw).not.toHaveBeenCalled();
     });
   },
@@ -240,14 +262,14 @@ describe.each(['estruturado', 'legado'] as const)(
           }
         : { status: 'no_forecast' };
 
-    it.each(Object.values(NoForecastReason))(
+    it.each(Object.values(OverdueReason))(
       'salva %s como classificação, sem exigir observação adicional',
       async (reason) => {
         const app = await build();
-        await followup(app, { ...base, noForecastReason: reason });
+        await followup(app, { ...base, overdueReason: reason });
         expect(app.tx.installment_followups.create).toHaveBeenCalledWith({
           data: expect.objectContaining({
-            no_forecast_reason: reason,
+            overdue_reason: reason,
             note: null,
             status:
               model === 'estruturado' ? 'whatsapp_message' : 'no_forecast',
@@ -258,12 +280,12 @@ describe.each(['estruturado', 'legado'] as const)(
       },
     );
 
-    it.each([undefined, null, '', ' ', 'unknown', 1, ['other'], {}])(
+    it.each([undefined, null, '', ' ', 'unknown', 'death', 1, ['other'], {}])(
       'recusa motivo inválido (%j) sem gravar',
       async (reason) => {
         const app = await build();
         await expect(
-          followup(app, { ...base, noForecastReason: reason }),
+          followup(app, { ...base, overdueReason: reason }),
         ).rejects.toThrow(BadRequestException);
         expect(app.tx.installment_followups.create).not.toHaveBeenCalled();
         expect(app.prisma.$transaction).not.toHaveBeenCalled();
@@ -277,10 +299,10 @@ it('o resultado esperado prevalece sobre o status legado no Follow-up', async ()
   await expect(
     followup(app, {
       status: 'no_forecast',
-      expectedResult: 'no_return',
-      noForecastReason: 'other',
+      expectedResult: 'other',
+      overdueReason: 'other',
     }),
-  ).rejects.toThrow('no_forecast_reason_not_allowed');
+  ).rejects.toThrow('overdue_reason_not_allowed');
   expect(app.tx.installment_followups.create).not.toHaveBeenCalled();
 });
 
@@ -294,8 +316,85 @@ it('a falha ao gravar o Follow-up rejeita a transação da execução', async ()
       channel: 'call',
       recipientType: 'client',
       result: 'no_forecast',
-      noForecastReason: 'other',
+      overdueReason: 'other',
     }),
   ).rejects.toThrow('database write failed');
   expect(app.prisma.$transaction).toHaveBeenCalledTimes(1);
 });
+
+describe.each(['contact', 'visit'] as const)(
+  'Motivo do atraso em %s',
+  (taskType) => {
+    const results = [
+      taskType === 'contact' ? 'no_response' : 'not_located',
+      'payment_promise',
+      'dispute',
+      'renegotiation',
+      'no_forecast',
+    ];
+    it.each(results)(
+      'exige motivo para %s e preserva as datas',
+      async (result) => {
+        const app = await build(taskType);
+        const body = {
+          channel: taskType === 'visit' ? 'visit' : 'call',
+          recipientType: 'client',
+          result,
+          ...(result === 'payment_promise'
+            ? { promiseDate: '2026-11-15' }
+            : {}),
+          ...(result === 'renegotiation'
+            ? { expectedAgreementDate: '2026-11-15' }
+            : {}),
+        };
+        await expect(interaction(app, body)).rejects.toThrow(
+          'overdue_reason_required',
+        );
+        expect(app.tx.installment_followups.create).not.toHaveBeenCalled();
+        const saved = await interaction(app, {
+          ...body,
+          overdueReason: 'other',
+        });
+        expect(saved.interaction.overdueReason).toBe('other');
+        expect(app.tx.installment_followups.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({ overdue_reason: 'other' }) as unknown,
+        });
+      },
+    );
+  },
+);
+it.each([
+  'will_pay_on_date',
+  'no_return',
+  'requested_extension',
+  'dispute',
+  'wants_renegotiation',
+  'not_located',
+])('Follow-up %s exige motivo', async (expectedResult) => {
+  const app = await build();
+  const body = {
+    followUpType: 'call',
+    party: 'client',
+    expectedResult,
+    paymentForecast: '2026-11-15',
+  };
+  await expect(followup(app, body)).rejects.toThrow('overdue_reason_required');
+  await followup(app, { ...body, overdueReason: 'other' });
+  expect(app.tx.installment_followups.create).toHaveBeenCalledWith({
+    data: expect.objectContaining({ overdue_reason: 'other' }) as unknown,
+  });
+});
+it.each(['deceased', 'other'])(
+  'Follow-up %s não exige motivo',
+  async (expectedResult) => {
+    const app = await build();
+    await followup(app, {
+      followUpType: 'call',
+      party: 'client',
+      expectedResult,
+    });
+    expect(app.tx.installment_followups.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ overdue_reason: null }) as unknown,
+    });
+  },
+);

@@ -584,13 +584,13 @@ describe('getDetail — campos expandidos do contrato (AUREA-346)', () => {
       contract: contractDetailRow(),
       installment: detailInstallmentRow(),
       followUps: [
-        { ...row, id: 'new-followup', no_forecast_reason: 'job_loss' },
-        { ...row, id: 'legacy-followup', no_forecast_reason: null },
+        { ...row, id: 'new-followup', overdue_reason: 'job_loss' },
+        { ...row, id: 'legacy-followup', overdue_reason: null },
       ],
     });
     const detail = await service.getDetail(VIEWER, CONTRACT_ID, 3);
-    expect(detail.followups[0].noForecastReason).toBe('job_loss');
-    expect(detail.followups[1].noForecastReason).toBeUndefined();
+    expect(detail.followups[0].overdueReason).toBe('job_loss');
+    expect(detail.followups[1].overdueReason).toBeUndefined();
   });
 
   it('mapeia o histórico de mudanças de status', async () => {

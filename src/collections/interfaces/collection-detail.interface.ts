@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { NoForecastReason } from '../../common/no-forecast-reason.enum';
+import { OverdueReason } from '../../common/overdue-reason.enum';
 import { DetailGuarantor } from '../../activities/interfaces/installment-detail.interface';
 import { ClientInfo } from './overdue-collection.interface';
 import { ContractResponsible } from './responsible.interface';
@@ -48,8 +48,12 @@ export class FollowUpHistoryItem {
   })
   expectedResult?: string;
 
-  @ApiPropertyOptional({ enum: NoForecastReason })
-  noForecastReason?: string;
+  @ApiPropertyOptional({
+    enum: [...Object.values(OverdueReason), 'death'],
+    description:
+      'Classificação do atraso. death é somente leitura de registros históricos.',
+  })
+  overdueReason?: string;
 
   @ApiPropertyOptional({
     type: String,

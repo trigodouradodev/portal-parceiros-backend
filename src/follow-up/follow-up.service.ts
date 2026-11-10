@@ -4,8 +4,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { NoForecastReason } from '../common/no-forecast-reason.enum';
-import { validateNoForecastReason } from '../common/no-forecast-reason.util';
+import { OverdueReason } from '../common/overdue-reason.enum';
+import { validateOverdueReason } from '../common/overdue-reason.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateFollowUpDto } from './dto/create-follow-up.dto';
 import {
@@ -16,7 +16,7 @@ import {
 } from './enums/follow-up.enums';
 
 interface NormalizedFollowUp {
-  noForecastReason: NoForecastReason | null;
+  overdueReason: OverdueReason | null;
   status: FollowUpStatus;
   followupType: FollowUpType | null;
   party: FollowUpParty | null;
@@ -78,7 +78,7 @@ export class FollowUpService {
         party: normalized.party,
         automatic_action: normalized.automaticAction,
         expected_result: dto.expectedResult ?? null,
-        no_forecast_reason: normalized.noForecastReason,
+        overdue_reason: normalized.overdueReason,
         payment_forecast: dto.paymentForecast
           ? new Date(dto.paymentForecast)
           : null,
@@ -100,9 +100,9 @@ export class FollowUpService {
   }
 
   private normalize(dto: CreateFollowUpDto): NormalizedFollowUp {
-    const noForecastReason = validateNoForecastReason(
+    const overdueReason = validateOverdueReason(
       dto.expectedResult ?? dto.status,
-      dto.noForecastReason,
+      dto.overdueReason,
     );
     const hasStructuredField = dto.party != null || dto.automaticAction != null;
 
@@ -116,7 +116,7 @@ export class FollowUpService {
         throw new BadRequestException('Status é obrigatório no modelo legado.');
       }
       return {
-        noForecastReason,
+        overdueReason,
         status: dto.status,
         followupType: null,
         party: null,
@@ -161,7 +161,7 @@ export class FollowUpService {
     }
 
     return {
-      noForecastReason,
+      overdueReason,
       status: this.deriveLegacyStatus(
         followUpType,
         dto.party,

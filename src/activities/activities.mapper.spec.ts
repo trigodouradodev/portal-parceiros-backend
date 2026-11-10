@@ -26,7 +26,7 @@ function interactionRow(
     recipient_type: 'client',
     recipient_contact_id: 'contact-1',
     result: 'promise_to_pay',
-    no_forecast_reason: null,
+    overdue_reason: null,
     promise_date: new Date('2026-08-10T00:00:00Z'),
     observation: 'cliente pediu prazo',
     user_id: 'user-1',
@@ -65,7 +65,7 @@ function queueRow(overrides: Partial<QueueRow> = {}): QueueRow {
     client_tax_id: '12345678909',
     client_phone: '11987654321',
     last_result: 'no_answer',
-    last_no_forecast_reason: null,
+    last_overdue_reason: null,
     last_channel: 'phone',
     last_created_at: new Date('2026-07-28T09:00:00Z'),
     ...overrides,
@@ -91,13 +91,13 @@ describe('mapInteraction', () => {
       mapInteraction(
         interactionRow({
           result: 'no_forecast',
-          no_forecast_reason: 'job_loss',
+          overdue_reason: 'job_loss',
           observation: 'Detalhes do contato',
         }),
       ),
     ).toMatchObject({
       result: 'no_forecast',
-      noForecastReason: 'job_loss',
+      overdueReason: 'job_loss',
       observation: 'Detalhes do contato',
     });
   });
@@ -139,14 +139,14 @@ it('retorna o motivo da última interação na fila e mantém legado sem motivo'
     mapCard(
       queueRow({
         last_result: 'no_forecast',
-        last_no_forecast_reason: 'other',
+        last_overdue_reason: 'other',
       }),
       1,
     ).lastInteraction,
-  ).toMatchObject({ result: 'no_forecast', noForecastReason: 'other' });
+  ).toMatchObject({ result: 'no_forecast', overdueReason: 'other' });
   expect(
     mapCard(queueRow({ last_result: 'no_forecast' }), 1).lastInteraction
-      ?.noForecastReason,
+      ?.overdueReason,
   ).toBeUndefined();
 });
 

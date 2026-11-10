@@ -79,7 +79,7 @@ export interface InteractionRow {
   recipient_type: string;
   recipient_contact_id: string | null;
   result: string;
-  no_forecast_reason: string | null;
+  overdue_reason: string | null;
   promise_date: Date | null;
   observation: string | null;
   user_id: string;
@@ -116,7 +116,7 @@ export interface QueueRow {
   client_tax_id: string;
   client_phone: string | null;
   last_result: string | null;
-  last_no_forecast_reason: string | null;
+  last_overdue_reason: string | null;
   last_channel: string | null;
   last_created_at: Date | null;
 }

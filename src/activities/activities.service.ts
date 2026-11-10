@@ -11,7 +11,7 @@ import { ScopeService, ScopeViewer } from '../scope/scope.service';
 import { PeopleScopeService } from '../scope/people-scope.service';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { RegisterInteractionDto } from './dto/register-interaction.dto';
-import { validateNoForecastReason } from '../common/no-forecast-reason.util';
+import { validateOverdueReason } from '../common/overdue-reason.util';
 import { RescheduleTaskDto } from './dto/reschedule-task.dto';
 import { CreateFollowUpDto } from '../follow-up/dto/create-follow-up.dto';
 import { FollowUpService } from '../follow-up/follow-up.service';
@@ -350,7 +350,7 @@ export class ActivitiesService {
             channel: true,
             recipient_type: true,
             result: true,
-            no_forecast_reason: true,
+            overdue_reason: true,
             promise_date: true,
             observation: true,
             created_at: true,
@@ -457,8 +457,8 @@ export class ActivitiesService {
               channel: t.activity_interactions.channel,
               recipientType: t.activity_interactions.recipient_type,
               result: t.activity_interactions.result,
-              noForecastReason:
-                t.activity_interactions.no_forecast_reason ?? undefined,
+              overdueReason:
+                t.activity_interactions.overdue_reason ?? undefined,
               promiseDate: t.activity_interactions.promise_date ?? undefined,
               observation: t.activity_interactions.observation ?? undefined,
               createdAt: t.activity_interactions.created_at,
@@ -508,7 +508,7 @@ export class ActivitiesService {
         c.id AS contract_id, c.contract_number, c.total_installments,
         comp.name AS company_name,
         cl.name AS client_name, cl.tax_id AS client_tax_id, cl.phone AS client_phone,
-        li.result AS last_result, li.no_forecast_reason AS last_no_forecast_reason,
+        li.result AS last_result, li.overdue_reason AS last_overdue_reason,
         li.channel AS last_channel, li.created_at AS last_created_at
       FROM activity_tasks at
       LEFT JOIN activity_ruler_stages rs ON rs.id = at.ruler_stage_id
@@ -518,7 +518,7 @@ export class ActivitiesService {
       LEFT JOIN companies comp ON comp.id = c.company_id
       LEFT JOIN trigo_users u ON u.id = at.assigned_to
       LEFT JOIN LATERAL (
-        SELECT ai.result, ai.no_forecast_reason, ai.channel, ai.created_at
+        SELECT ai.result, ai.overdue_reason, ai.channel, ai.created_at
         FROM activity_interactions ai
         WHERE ai.installment_id = at.installment_id
         ORDER BY ai.created_at DESC
@@ -591,7 +591,7 @@ export class ActivitiesService {
         c.id AS contract_id, c.contract_number, c.total_installments,
         comp.name AS company_name,
         cl.name AS client_name, cl.tax_id AS client_tax_id, cl.phone AS client_phone,
-        li.result AS last_result, li.no_forecast_reason AS last_no_forecast_reason,
+        li.result AS last_result, li.overdue_reason AS last_overdue_reason,
         li.channel AS last_channel, li.created_at AS last_created_at
       FROM ranked r
       JOIN activity_tasks at ON at.id = r.task_id
@@ -602,7 +602,7 @@ export class ActivitiesService {
       LEFT JOIN companies comp ON comp.id = c.company_id
       LEFT JOIN trigo_users u ON u.id = at.assigned_to
       LEFT JOIN LATERAL (
-        SELECT ai.result, ai.no_forecast_reason, ai.channel, ai.created_at
+        SELECT ai.result, ai.overdue_reason, ai.channel, ai.created_at
         FROM activity_interactions ai
         WHERE ai.installment_id = at.installment_id
         ORDER BY ai.created_at DESC
@@ -669,9 +669,9 @@ export class ActivitiesService {
 
       const taskType = task.task_type as ActivityTaskType;
       this.validateChannelAndResult(taskType, dto);
-      const noForecastReason = validateNoForecastReason(
+      const overdueReason = validateOverdueReason(
         dto.result,
-        dto.noForecastReason,
+        dto.overdueReason,
       );
       this.collectionGuard.assertRecipient(collection, dto.recipientType);
       const expectedAgreementDate =
@@ -701,20 +701,20 @@ export class ActivitiesService {
       const rows = await tx.$queryRaw<InteractionRow[]>`
         INSERT INTO activity_interactions
           (task_id, installment_id, contract_id, task_type, channel, recipient_type,
-           recipient_contact_id, result, no_forecast_reason, promise_date, observation, user_id,
+           recipient_contact_id, result, overdue_reason, promise_date, observation, user_id,
            location_confirmation, manual_location_reason,
            overdue_installment_count_at_execution, reference_due_date_at_execution,
            days_overdue_at_execution, created_at)
         VALUES
           (${taskId}::uuid, ${task.installment_id}::uuid, ${task.contract_id}::uuid,
            ${task.task_type}, ${dto.channel}, ${dto.recipientType},
-           ${dto.recipientContactId ?? null}::uuid, ${dto.result}, ${noForecastReason}, ${promiseDate}::date,
+           ${dto.recipientContactId ?? null}::uuid, ${dto.result}, ${overdueReason}, ${promiseDate}::date,
            ${dto.observation ?? null}, ${userId}::uuid,
            ${dto.locationConfirmation ?? null}, ${dto.manualLocationReason ?? null},
            ${collection.overdue_installment_count}::int, ${collection.reference_due_date}::date,
            ${collection.days_overdue}::int, ${collection.evaluated_at})
         RETURNING id, task_id, installment_id, contract_id, task_type, channel, recipient_type,
-                  recipient_contact_id, result, no_forecast_reason, promise_date, observation, user_id, created_at
+                  recipient_contact_id, result, overdue_reason, promise_date, observation, user_id, created_at
       `;
       const interaction = mapInteraction(rows[0]);
 
@@ -956,7 +956,7 @@ export class ActivitiesService {
       followUpType: this.mapChannelToFollowUpType(dto.channel),
       party: this.mapRecipientToFollowUpParty(dto.recipientType),
       expectedResult: this.mapResultToExpectedResult(dto.result),
-      noForecastReason: dto.noForecastReason,
+      overdueReason: dto.overdueReason,
       paymentForecast: promiseDate ?? undefined,
       note: dto.observation,
       latitude: dto.latitude,
