@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { OverdueReason } from '../../common/overdue-reason.enum';
 import {
   IsDateString,
   IsEnum,
@@ -80,6 +81,15 @@ export class CreateFollowUpDto {
   @IsOptional()
   @IsEnum(FollowUpExpectedResult)
   expectedResult?: FollowUpExpectedResult;
+
+  @ApiPropertyOptional({
+    enum: OverdueReason,
+    description:
+      'Motivo do atraso obrigatório nos resultados aplicáveis, exceto deceased e other. Aceita o modelo estruturado e os resultados equivalentes do legado.',
+  })
+  @IsOptional()
+  @IsEnum(OverdueReason)
+  overdueReason?: OverdueReason;
 
   @ApiPropertyOptional({
     format: 'date-time',

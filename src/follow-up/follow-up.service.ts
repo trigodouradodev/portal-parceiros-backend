@@ -4,6 +4,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { OverdueReason } from '../common/overdue-reason.enum';
+import { validateOverdueReason } from '../common/overdue-reason.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateFollowUpDto } from './dto/create-follow-up.dto';
 import {
@@ -14,6 +16,7 @@ import {
 } from './enums/follow-up.enums';
 
 interface NormalizedFollowUp {
+  overdueReason: OverdueReason | null;
   status: FollowUpStatus;
   followupType: FollowUpType | null;
   party: FollowUpParty | null;
@@ -75,6 +78,7 @@ export class FollowUpService {
         party: normalized.party,
         automatic_action: normalized.automaticAction,
         expected_result: dto.expectedResult ?? null,
+        overdue_reason: normalized.overdueReason,
         payment_forecast: dto.paymentForecast
           ? new Date(dto.paymentForecast)
           : null,
@@ -96,6 +100,10 @@ export class FollowUpService {
   }
 
   private normalize(dto: CreateFollowUpDto): NormalizedFollowUp {
+    const overdueReason = validateOverdueReason(
+      dto.expectedResult ?? dto.status,
+      dto.overdueReason,
+    );
     const hasStructuredField = dto.party != null || dto.automaticAction != null;
 
     if (dto.followUpType == null) {
@@ -108,6 +116,7 @@ export class FollowUpService {
         throw new BadRequestException('Status é obrigatório no modelo legado.');
       }
       return {
+        overdueReason,
         status: dto.status,
         followupType: null,
         party: null,
@@ -152,6 +161,7 @@ export class FollowUpService {
     }
 
     return {
+      overdueReason,
       status: this.deriveLegacyStatus(
         followUpType,
         dto.party,
