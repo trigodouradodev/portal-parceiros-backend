@@ -59,8 +59,9 @@ antigas `death` são preservadas e exibidas como Falecimento pelos frontends.
 Gerar o Prisma Client com o schema atualizado. Aplicar a migration única do
 trigo-connector `20261110120000_add_overdue_reason.ts` pela esteira normal antes
 dos backends. Ela cria diretamente `overdue_reason` nas duas tabelas, anulável
-para o histórico, com CHECKs dos resultados aplicáveis e dos 24 motivos ativos.
-`death` não é aceito em novas escritas, inclusive pelo banco.
+para o histórico e sem CHECKs de negócio. Os dois backends validam os 24 motivos,
+a obrigatoriedade e a relação com o resultado. `death` não é aceito pelas APIs em
+novas escritas. SQL direto não passa pelas validações da aplicação.
 
 Coordenar a publicação dos dois backends e frontends: os formulários anteriores
 não enviam o motivo obrigatório. Não há backfill nem script de transição.
@@ -73,5 +74,5 @@ de que nenhuma versão anterior havia sido executada nos ambientes.
 Build e suíte completa aprovados (1.175 testes). A cobertura inclui todos os
 resultados de tarefa aplicáveis em contato/visita, os 24 motivos, validações de
 entrada, datas de promessa/negociação e a cópia para Follow-up na transação.
-As expressões da migration foram verificadas com SELECTs no banco local; nenhuma
+O SQL de criação/remoção das colunas foi compilado sem executar DDL; nenhuma
 migration foi aplicada nesta revisão. Detalhes em `trigo-connector/docs/overdue-reasons.md`.

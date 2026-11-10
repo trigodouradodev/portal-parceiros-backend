@@ -1,4 +1,4 @@
-/** Espelha o catálogo da migration 20261110120000 do trigo-connector. */
+/** Espelha trigo-connector/src/types/overdueReason.ts; catálogo validado na aplicação. */
 export enum OverdueReason {
   INDEBTEDNESS = 'indebtedness',
   SALES_DECLINE = 'sales_decline',
