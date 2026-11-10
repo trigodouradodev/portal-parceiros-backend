@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { NoForecastReason } from '../../common/no-forecast-reason.enum';
 import { DetailGuarantor } from '../../activities/interfaces/installment-detail.interface';
 import { ClientInfo } from './overdue-collection.interface';
 import { ContractResponsible } from './responsible.interface';
@@ -46,6 +47,9 @@ export class FollowUpHistoryItem {
     description: 'Resultado esperado do contato.',
   })
   expectedResult?: string;
+
+  @ApiPropertyOptional({ enum: NoForecastReason })
+  noForecastReason?: string;
 
   @ApiPropertyOptional({
     type: String,

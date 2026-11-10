@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { NoForecastReason } from '../../common/no-forecast-reason.enum';
 
 export class QueueClient {
   @ApiProperty()
@@ -61,6 +62,9 @@ export class QueueInstallment {
 export class QueueLastInteraction {
   @ApiProperty({ example: 'no_response' })
   result: string;
+
+  @ApiPropertyOptional({ enum: NoForecastReason })
+  noForecastReason?: string;
 
   @ApiProperty({ example: 'call' })
   channel: string;

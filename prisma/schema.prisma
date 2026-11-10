@@ -19,6 +19,7 @@ model activity_interactions {
   recipient_type       String         @db.VarChar(255)
   recipient_contact_id String?        @db.Uuid
   result               String         @db.VarChar(255)
+  no_forecast_reason   String?        @db.VarChar(64)
   promise_date         DateTime?      @db.Date
   observation          String?
   location_confirmation  String?      @db.VarChar(20)
@@ -935,6 +936,7 @@ model installment_followups {
   updated_at         DateTime      @default(now()) @db.Timestamptz(6)
   payment_forecast   DateTime?     @db.Timestamp(6)
   expected_result    String?
+  no_forecast_reason String?        @db.VarChar(64)
   followup_type      String?
   party              String?
   automatic_action   String?

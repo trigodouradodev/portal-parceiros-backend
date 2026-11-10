@@ -72,6 +72,7 @@ describe('FollowUpService.create — modelo estruturado', () => {
         party: FollowUpParty.CLIENT,
         automatic_action: null,
         expected_result: FollowUpExpectedResult.WILL_PAY_ON_DATE,
+        no_forecast_reason: null,
         payment_forecast: new Date('2026-08-25T00:00:00.000Z'),
         user_id: USER_ID,
       },

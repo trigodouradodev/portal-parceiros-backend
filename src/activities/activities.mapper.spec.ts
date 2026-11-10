@@ -26,6 +26,7 @@ function interactionRow(
     recipient_type: 'client',
     recipient_contact_id: 'contact-1',
     result: 'promise_to_pay',
+    no_forecast_reason: null,
     promise_date: new Date('2026-08-10T00:00:00Z'),
     observation: 'cliente pediu prazo',
     user_id: 'user-1',
@@ -64,6 +65,7 @@ function queueRow(overrides: Partial<QueueRow> = {}): QueueRow {
     client_tax_id: '12345678909',
     client_phone: '11987654321',
     last_result: 'no_answer',
+    last_no_forecast_reason: null,
     last_channel: 'phone',
     last_created_at: new Date('2026-07-28T09:00:00Z'),
     ...overrides,
@@ -84,6 +86,21 @@ function addressRow(overrides: Partial<RawAddress> = {}): RawAddress {
 }
 
 describe('mapInteraction', () => {
+  it('retorna o motivo estruturado sem incorporá-lo às observações', () => {
+    expect(
+      mapInteraction(
+        interactionRow({
+          result: 'no_forecast',
+          no_forecast_reason: 'job_loss',
+          observation: 'Detalhes do contato',
+        }),
+      ),
+    ).toMatchObject({
+      result: 'no_forecast',
+      noForecastReason: 'job_loss',
+      observation: 'Detalhes do contato',
+    });
+  });
   it('converte a linha do INSERT no DTO de resposta', () => {
     expect(mapInteraction(interactionRow())).toEqual({
       id: 'interaction-1',
@@ -115,6 +132,22 @@ describe('mapInteraction', () => {
     expect(result.promiseDate).toBeUndefined();
     expect(result.observation).toBeUndefined();
   });
+});
+
+it('retorna o motivo da última interação na fila e mantém legado sem motivo', () => {
+  expect(
+    mapCard(
+      queueRow({
+        last_result: 'no_forecast',
+        last_no_forecast_reason: 'other',
+      }),
+      1,
+    ).lastInteraction,
+  ).toMatchObject({ result: 'no_forecast', noForecastReason: 'other' });
+  expect(
+    mapCard(queueRow({ last_result: 'no_forecast' }), 1).lastInteraction
+      ?.noForecastReason,
+  ).toBeUndefined();
 });
 
 describe('mapTaskAction', () => {

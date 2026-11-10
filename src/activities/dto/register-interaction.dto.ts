@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { NoForecastReason } from '../../common/no-forecast-reason.enum';
 import {
   IsDateString,
   IsEnum,
@@ -100,6 +101,14 @@ export class RegisterInteractionDto {
   })
   @IsEnum(ActivityInteractionResult)
   result: ActivityInteractionResult;
+
+  @ApiPropertyOptional({
+    enum: NoForecastReason,
+    description: 'Motivo obrigatório quando result=no_forecast.',
+  })
+  @IsOptional()
+  @IsEnum(NoForecastReason)
+  noForecastReason?: NoForecastReason;
 
   @ApiPropertyOptional({
     maxLength: 2000,

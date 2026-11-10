@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { NoForecastReason } from '../../common/no-forecast-reason.enum';
 
 /** Ponto de geolocalização capturado numa visita. */
 export class InteractionGeolocation {
@@ -43,6 +44,9 @@ export class ActivityInteractionResponse {
 
   @ApiProperty({ example: 'payment_promise' })
   result: string;
+
+  @ApiPropertyOptional({ enum: NoForecastReason })
+  noForecastReason?: string;
 
   @ApiPropertyOptional({ type: String, format: 'date' })
   promiseDate?: Date;

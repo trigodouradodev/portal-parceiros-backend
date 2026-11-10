@@ -572,6 +572,27 @@ describe('getDetail — campos expandidos do contrato (AUREA-346)', () => {
     ]);
   });
 
+  it('retorna o motivo no histórico e mantém Sem previsão legado sem classificação', async () => {
+    const row = {
+      status: 'client_call',
+      expected_result: 'no_forecast',
+      created_at: new Date('2026-11-10T14:00:00Z'),
+      trigo_users: { id: 'user-1', full_name: 'Maria Souza' },
+      geolocations: null,
+    };
+    const { service } = await buildService({
+      contract: contractDetailRow(),
+      installment: detailInstallmentRow(),
+      followUps: [
+        { ...row, id: 'new-followup', no_forecast_reason: 'job_loss' },
+        { ...row, id: 'legacy-followup', no_forecast_reason: null },
+      ],
+    });
+    const detail = await service.getDetail(VIEWER, CONTRACT_ID, 3);
+    expect(detail.followups[0].noForecastReason).toBe('job_loss');
+    expect(detail.followups[1].noForecastReason).toBeUndefined();
+  });
+
   it('mapeia o histórico de mudanças de status', async () => {
     const { service } = await buildService({
       contract: contractDetailRow(),

@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { NoForecastReason } from '../../common/no-forecast-reason.enum';
 import {
   IsDateString,
   IsEnum,
@@ -80,6 +81,15 @@ export class CreateFollowUpDto {
   @IsOptional()
   @IsEnum(FollowUpExpectedResult)
   expectedResult?: FollowUpExpectedResult;
+
+  @ApiPropertyOptional({
+    enum: NoForecastReason,
+    description:
+      'Motivo obrigatório para Sem previsão, tanto no modelo estruturado quanto no legado.',
+  })
+  @IsOptional()
+  @IsEnum(NoForecastReason)
+  noForecastReason?: NoForecastReason;
 
   @ApiPropertyOptional({
     format: 'date-time',

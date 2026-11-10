@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { NoForecastReason } from '../../common/no-forecast-reason.enum';
 import { ClientAddress } from '../../collections/interfaces/overdue-collection.interface';
 import { ContractResponsible } from '../../collections/interfaces/responsible.interface';
 
@@ -34,6 +35,9 @@ export class TaskInteraction {
 
   @ApiProperty({ example: 'payment_promise' })
   result: string;
+
+  @ApiPropertyOptional({ enum: NoForecastReason })
+  noForecastReason?: string;
 
   @ApiPropertyOptional({ type: String, format: 'date' })
   promiseDate?: Date;
