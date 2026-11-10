@@ -2258,6 +2258,7 @@ model simulations {
   installment_amount_with_insurance  Decimal?         @db.Decimal(15, 2)
   simulation_result_with_insurance   Json?
   insurance_product_code             String?          @db.VarChar(60)
+  serasa_score                       Int?
   created_at                         DateTime         @default(now()) @db.Timestamptz(6)
   updated_at                         DateTime         @default(now()) @db.Timestamptz(6)
   finance_products                   finance_products @relation(fields: [finance_product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "simulations_finance_product_id_foreign")

@@ -9,6 +9,13 @@ import {
 import { Prisma } from '@prisma/client';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
+import { BureauService } from '../bureau/bureau.service';
+import {
+  CreditRiskBands,
+  CreditRiskConfigService,
+  DEFAULT_CREDIT_RISK_BANDS,
+} from '../bureau/credit-risk-config.service';
+import { CreditRiskBand } from '../bureau/enums/credit-risk-band.enum';
 import { CabureService } from '../cabure/cabure.service';
 import { CelcoinSimulationService } from '../celcoin/celcoin-simulation.service';
 import { CelcoinSimulationResult } from '../celcoin/interfaces/celcoin-simulation.interface';
@@ -101,6 +108,7 @@ function simulationRow(overrides: Record<string, unknown> = {}) {
     simulation_result: celcoinResult,
     insurance_premium: null as number | null,
     installment_amount_with_insurance: null as number | null,
+    serasa_score: null as number | null,
     created_at: new Date('2026-08-26T12:00:00.000Z'),
     status: SimulationStatus.AVAILABLE,
     ...overrides,
@@ -116,6 +124,8 @@ function buildService(options?: {
   celcoinResult?: CelcoinSimulationResult;
   eligible?: boolean;
   cabureQuote?: { id: string; premium: number } | Error;
+  serasaScore?: number | null;
+  bands?: CreditRiskBands | null;
 }) {
   const queryRaw = jest.fn((strings: TemplateStringsArray) => {
     const sql = strings.join(' ');
@@ -192,6 +202,16 @@ function buildService(options?: {
     return Promise.reject(new Error('Caburé indisponível (padrão de teste)'));
   });
   const cabureService = { quote } as unknown as CabureService;
+  const lookupSerasaScore = jest
+    .fn()
+    .mockResolvedValue(options?.serasaScore ?? null);
+  const bureauService = { lookupSerasaScore } as unknown as BureauService;
+  const getBands = jest
+    .fn()
+    .mockResolvedValue(
+      options && 'bands' in options ? options.bands : DEFAULT_CREDIT_RISK_BANDS,
+    );
+  const creditRiskConfig = { getBands } as unknown as CreditRiskConfigService;
 
   return {
     service: new SimulationsService(
@@ -201,7 +221,10 @@ function buildService(options?: {
       celcoinSimulation,
       eligibilityService,
       cabureService,
+      bureauService,
+      creditRiskConfig,
     ),
+    lookupSerasaScore,
     queryRaw,
     quoteActivityPermissions,
     getPermissions,
@@ -794,7 +817,10 @@ describe('SimulationsService.previewFinancialForDraft', () => {
 });
 
 describe('SimulationsService.listSimulations', () => {
-  function listService(rows: Record<string, unknown>[] = []) {
+  function listService(
+    rows: Record<string, unknown>[] = [],
+    bands: CreditRiskBands | null = DEFAULT_CREDIT_RISK_BANDS,
+  ) {
     const queryRaw = jest.fn().mockResolvedValue(rows);
     const prisma = { $queryRaw: queryRaw } as unknown as PrismaService;
     const quoteActivityPermissions = {
@@ -812,6 +838,12 @@ describe('SimulationsService.listSimulations', () => {
     const cabureService = {
       quote: jest.fn(),
     } as unknown as CabureService;
+    const bureauService = {
+      lookupSerasaScore: jest.fn(),
+    } as unknown as BureauService;
+    const creditRiskConfig = {
+      getBands: jest.fn().mockResolvedValue(bands),
+    } as unknown as CreditRiskConfigService;
     return {
       service: new SimulationsService(
         prisma,
@@ -820,6 +852,8 @@ describe('SimulationsService.listSimulations', () => {
         celcoinSimulation,
         eligibilityService,
         cabureService,
+        bureauService,
+        creditRiskConfig,
       ),
       queryRaw,
     };
@@ -834,6 +868,24 @@ describe('SimulationsService.listSimulations', () => {
     ];
     return where;
   }
+
+  it('na listagem classifica pela faixa atual e não expõe o score', async () => {
+    const rows = [
+      simulationRow({ id: 'a', serasa_score: 350 }),
+      simulationRow({ id: 'b', serasa_score: 700 }),
+      simulationRow({ id: 'c', serasa_score: null }),
+    ].map((row) => ({ ...row, product_name: 'CRÉDITO PESSOAL' }));
+    const { service } = listService(rows);
+
+    const list = await service.listSimulations(USER_ID);
+
+    expect(list.map((item) => item.creditRiskBand)).toEqual([
+      CreditRiskBand.HIGH,
+      CreditRiskBand.LOW,
+      undefined,
+    ]);
+    expect(JSON.stringify(list)).not.toContain('serasa');
+  });
 
   it('lista só as simulações do usuário autenticado, mais recente primeiro', async () => {
     const { service, queryRaw } = listService();
@@ -915,5 +967,131 @@ describe('SimulationsService.listSimulations', () => {
     expect(where.values).toEqual(
       expect.arrayContaining([USER_ID, '%Maria%', '%52998224725%']),
     );
+  });
+});
+
+describe('SimulationsService — risco de crédito (Serasa)', () => {
+  it('consulta o Serasa com o CPF só em dígitos, grava o score e devolve só a faixa', async () => {
+    const { service, queryRaw, lookupSerasaScore } = buildService({
+      serasaScore: 450,
+      inserted: simulationRow({ id: 'sim-1', serasa_score: 450 }),
+    });
+
+    const result = await service.simulate(actor, dto());
+    const simulation = result.simulation!;
+
+    expect(lookupSerasaScore).toHaveBeenCalledWith(
+      '52998224725',
+      `portal-parceiros:${USER_ID}`,
+    );
+    const insertCall = queryRaw.mock.calls.find((call) =>
+      call[0].join(' ').includes('INSERT INTO public.simulations'),
+    )!;
+    expect(insertCall[0].join(' ')).toContain('serasa_score');
+    expect(insertCall).toContain(450);
+    expect(simulation.creditRiskBand).toBe(CreditRiskBand.MEDIUM);
+    expect(simulation).not.toHaveProperty('serasaScore');
+    expect(simulation).not.toHaveProperty('serasa_score');
+    expect(JSON.stringify(simulation)).not.toContain('450');
+  });
+
+  it.each([
+    [399, CreditRiskBand.HIGH],
+    [400, CreditRiskBand.MEDIUM],
+    [600, CreditRiskBand.MEDIUM],
+    [601, CreditRiskBand.LOW],
+  ])('score %i vira a faixa %s com as faixas padrão', async (score, band) => {
+    const { service } = buildService({
+      serasaScore: score,
+      inserted: simulationRow({ id: 'sim-1', serasa_score: score }),
+    });
+
+    const result = await service.simulate(actor, dto());
+
+    expect(result.simulation!.creditRiskBand).toBe(band);
+  });
+
+  it('usa as faixas configuradas em system_configs', async () => {
+    const { service } = buildService({
+      serasaScore: 450,
+      bands: { highBelow: 500, lowAbove: 700 },
+      inserted: simulationRow({ id: 'sim-1', serasa_score: 450 }),
+    });
+
+    const result = await service.simulate(actor, dto());
+
+    expect(result.simulation!.creditRiskBand).toBe(CreditRiskBand.HIGH);
+  });
+
+  it('cria a simulação sem faixa quando o Serasa não traz score', async () => {
+    const { service } = buildService({ serasaScore: null });
+
+    const result = await service.simulate(actor, dto());
+
+    expect(result.eligible).toBe(true);
+    expect(result.simulation).not.toHaveProperty('creditRiskBand');
+  });
+
+  it('não mostra faixa quando a configuração das faixas é inválida', async () => {
+    const { service } = buildService({
+      serasaScore: 450,
+      bands: null,
+      inserted: simulationRow({ id: 'sim-1', serasa_score: 450 }),
+    });
+
+    const result = await service.simulate(actor, dto());
+
+    expect(result.simulation).not.toHaveProperty('creditRiskBand');
+  });
+
+  it('não consulta o Serasa quando o cliente é inelegível', async () => {
+    const { service, lookupSerasaScore } = buildService({
+      eligible: false,
+      serasaScore: 450,
+    });
+
+    await service.simulate(actor, dto());
+
+    expect(lookupSerasaScore).not.toHaveBeenCalled();
+  });
+
+  it('não consulta o Serasa quando a fila de cobrança impede simular', async () => {
+    const { service, lookupSerasaScore } = buildService({
+      canSimulateQuote: false,
+      serasaScore: 450,
+    });
+
+    await expect(service.simulate(actor, dto())).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(lookupSerasaScore).not.toHaveBeenCalled();
+  });
+
+  it('na atualização mantém o score anterior quando a nova consulta falha', async () => {
+    const { service, queryRaw } = buildService({ serasaScore: null });
+
+    await service.simulate(actor, dto({ simulationId: SIMULATION_ID }));
+
+    const updateSql = queryRaw.mock.calls
+      .map((call) => call[0].join(' '))
+      .find((sql) => sql.includes('UPDATE public.simulations'))!;
+    expect(updateSql).toContain('serasa_score = COALESCE(');
+    expect(updateSql).toContain('s.serasa_score)');
+  });
+
+  it('não consulta o Serasa ao recalcular a parte financeira de um rascunho', async () => {
+    const { service, lookupSerasaScore } = buildService({
+      cabureQuote: { id: 'cabure-quote-1', premium: 225 },
+    });
+
+    await service.previewFinancialForDraft(actor, {
+      productId: PRODUCT_ID,
+      amount: 5000,
+      installments: 10,
+      firstInstallmentDate: futureDueDate(),
+      birthDate: new Date('1990-05-20T00:00:00.000Z'),
+    });
+
+    expect(lookupSerasaScore).not.toHaveBeenCalled();
   });
 });

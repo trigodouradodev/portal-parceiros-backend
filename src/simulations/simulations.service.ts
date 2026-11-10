@@ -10,6 +10,12 @@ import {
 import { Prisma } from '@prisma/client';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
+import { BureauService } from '../bureau/bureau.service';
+import { classifyCreditRisk } from '../bureau/credit-risk-band';
+import {
+  CreditRiskBands,
+  CreditRiskConfigService,
+} from '../bureau/credit-risk-config.service';
 import { normalizeCpf } from '../common/cpf.util';
 import { normalizeBrazilianPhone } from '../common/phone.util';
 import { CabureService } from '../cabure/cabure.service';
@@ -57,6 +63,7 @@ interface SimulationRow {
   installment_amount: Prisma.Decimal | number | string;
   insurance_premium: Prisma.Decimal | number | string | null;
   installment_amount_with_insurance: Prisma.Decimal | number | string | null;
+  serasa_score?: number | null;
   created_at: Date;
   status?: string;
 }
@@ -83,6 +90,8 @@ interface PreparedSimulation {
   installmentAmount: number;
   simulationResult: CelcoinSimulationResult;
   insurance: InsurancePreview;
+  /** Score do Serasa; `null` quando a consulta não trouxe dado. */
+  serasaScore: number | null;
 }
 
 /**
@@ -156,6 +165,8 @@ export class SimulationsService {
     private readonly celcoinSimulation: CelcoinSimulationService,
     private readonly eligibilityService: EligibilityService,
     private readonly cabureService: CabureService,
+    private readonly bureauService: BureauService,
+    private readonly creditRiskConfig: CreditRiskConfigService,
   ) {}
 
   async listSimulations(
@@ -179,6 +190,7 @@ export class SimulationsService {
         s.installment_amount,
         s.insurance_premium,
         s.installment_amount_with_insurance,
+        s.serasa_score,
         s.created_at,
         CASE
           WHEN EXISTS (
@@ -194,7 +206,8 @@ export class SimulationsService {
       ORDER BY s.created_at DESC, s.id DESC
     `;
 
-    return rows.map((row) => this.toSnapshot(row));
+    const bands = await this.creditRiskConfig.getBands();
+    return rows.map((row) => this.toSnapshot(row, bands));
   }
 
   async simulate(user: JwtPayload, dto: SimulateDto): Promise<SimulateResult> {
@@ -313,7 +326,8 @@ export class SimulationsService {
         cabure_quote_id,
         installment_amount_with_insurance,
         simulation_result_with_insurance,
-        insurance_product_code
+        insurance_product_code,
+        serasa_score
       )
       VALUES (
         ${user.sub}::uuid,
@@ -341,7 +355,8 @@ export class SimulationsService {
             ? null
             : JSON.stringify(prepared.insurance.simulationResult)
         }::jsonb,
-        ${prepared.insurance.productCode}
+        ${prepared.insurance.productCode},
+        ${prepared.serasaScore}::integer
       )
       RETURNING
         id,
@@ -357,6 +372,7 @@ export class SimulationsService {
         installment_amount,
         insurance_premium,
         installment_amount_with_insurance,
+        serasa_score,
         created_at,
         ${SimulationStatus.AVAILABLE} AS status
       `;
@@ -368,10 +384,10 @@ export class SimulationsService {
       throw new BadRequestException('Não foi possível persistir a simulação.');
     }
 
-    return this.toSnapshot({
-      ...row,
-      product_name: prepared.product.product_name,
-    });
+    return this.toSnapshot(
+      { ...row, product_name: prepared.product.product_name },
+      await this.creditRiskConfig.getBands(),
+    );
   }
 
   private async updateSimulation(
@@ -421,6 +437,7 @@ export class SimulationsService {
               : JSON.stringify(prepared.insurance.simulationResult)
           }::jsonb,
           insurance_product_code = ${prepared.insurance.productCode},
+          serasa_score = COALESCE(${prepared.serasaScore}::integer, s.serasa_score),
           updated_at = NOW()
         WHERE s.id = ${id}::uuid
           AND s.user_id = ${user.sub}::uuid
@@ -443,6 +460,7 @@ export class SimulationsService {
           installment_amount,
           insurance_premium,
           installment_amount_with_insurance,
+          serasa_score,
           created_at,
           ${SimulationStatus.AVAILABLE} AS status
       `;
@@ -456,10 +474,10 @@ export class SimulationsService {
       );
     }
 
-    return this.toSnapshot({
-      ...row,
-      product_name: prepared.product.product_name,
-    });
+    return this.toSnapshot(
+      { ...row, product_name: prepared.product.product_name },
+      await this.creditRiskConfig.getBands(),
+    );
   }
 
   private async prepareSimulation(
@@ -475,14 +493,23 @@ export class SimulationsService {
     const telephone = normalizeBrazilianPhone(dto.telephone);
     const birthDate = this.parseDateOnly(dto.birthDate, 'Data de nascimento');
     this.assertAdultAge(birthDate);
-    const financial = await this.prepareFinancialPreview(user, {
-      productId: dto.productId,
-      amount: dto.amount,
-      installments: dto.installments,
-      firstInstallmentDate: dto.firstInstallmentDate,
-      interestRate: dto.interestRate,
-      birthDate,
-    });
+    // O Serasa roda junto com a Celcoin e a Caburé para não somar latência.
+    // `lookupSerasaScore` nunca rejeita, então não há falha solta se a parte
+    // financeira lançar antes.
+    const [financial, serasaScore] = await Promise.all([
+      this.prepareFinancialPreview(user, {
+        productId: dto.productId,
+        amount: dto.amount,
+        installments: dto.installments,
+        firstInstallmentDate: dto.firstInstallmentDate,
+        interestRate: dto.interestRate,
+        birthDate,
+      }),
+      this.bureauService.lookupSerasaScore(
+        document,
+        `portal-parceiros:${user.sub}`,
+      ),
+    ]);
 
     return {
       name,
@@ -500,6 +527,7 @@ export class SimulationsService {
       installmentAmount: financial.installmentAmount,
       simulationResult: financial.simulationResult,
       insurance: financial.insurance,
+      serasaScore,
     };
   }
 
@@ -736,7 +764,11 @@ export class SimulationsService {
     return product;
   }
 
-  private toSnapshot(row: SimulationRow): SimulationSnapshot {
+  private toSnapshot(
+    row: SimulationRow,
+    bands: CreditRiskBands | null,
+  ): SimulationSnapshot {
+    const creditRiskBand = classifyCreditRisk(row.serasa_score ?? null, bands);
     const createdAt = new Date(row.created_at);
     const firstInstallmentDate = new Date(row.first_installment_date);
 
@@ -768,6 +800,8 @@ export class SimulationsService {
               row.installment_amount_with_insurance,
             ),
           }),
+      // Só a faixa sai daqui: o score fica gravado, mas não é exposto.
+      ...(creditRiskBand === null ? {} : { creditRiskBand }),
     };
   }
 
