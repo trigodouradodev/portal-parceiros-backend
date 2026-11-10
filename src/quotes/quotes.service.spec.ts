@@ -1889,6 +1889,44 @@ describe('QuotesService.submitDraftForClientReview', () => {
     });
   });
 
+  it('trava a proposta e os cadastros do cliente e do avalista antes de mudar o status', async () => {
+    const { service, tx } = await build();
+    const calls: string[] = [];
+    tx.$queryRaw.mockImplementation(
+      (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sql = strings.join('?');
+        if (sql.includes('FROM public.quotes')) {
+          calls.push('quote');
+          return Promise.resolve([
+            {
+              document: '987.654.321-00',
+              guarantor_document: '123.456.789-09',
+            },
+          ] as unknown as Array<{ id: string }>);
+        }
+        calls.push(`clients:${String(values[0])}`);
+        return Promise.resolve([]);
+      },
+    );
+    tx.quotes.updateMany.mockImplementation(() => {
+      calls.push('update');
+      return Promise.resolve({ count: 1 });
+    });
+
+    await service.submitDraftForClientReview(QUOTE_ID, actor());
+
+    expect(calls).toEqual([
+      'quote',
+      'clients:12345678909',
+      'clients:98765432100',
+      'update',
+    ]);
+    const sql = tx.$queryRaw.mock.calls
+      .map(([strings]) => strings.join('?'))
+      .join('\n');
+    expect(sql.match(/FOR UPDATE/g)).toHaveLength(3);
+  });
+
   it('permite que ROLE_ADMIN finalize qualquer draft', async () => {
     const { service, tx } = await build();
 
