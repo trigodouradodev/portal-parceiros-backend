@@ -26,11 +26,16 @@ com esses filtros. Por padrão, o parceiro é `user.sub`; quando informado, o UU
 em `partnerId` é autorizado pelo mesmo escopo da Home. Nunca há agregação da equipe.
 
 A carga do BI atualiza a competência corrente quase em tempo real como `Aberto`
-e preserva a foto final das competências `Fechado`. O fechamento depende de existir
-snapshot de parcelas do último dia do mês. No levantamento de 22/10/2026, outubro
-tinha 94 parceiros, carga às 04h de Brasília e parcelas de 21/10 (D-1). Setembro
-tinha 95 parceiros, situação `Fechado` e parcelas de 30/09. A data da gravação de
-um mês fechado pode ser posterior à competência; não é a referência das parcelas.
+e preserva a foto final das competências `Fechado`. O portal lê a posição
+persistida disponível na consulta, sem aplicar corte D-1. O fechamento depende
+de existir snapshot de parcelas do último dia do mês. A data da gravação de um
+mês fechado pode ser posterior à competência; não é a referência das parcelas.
+
+Registro histórico de 22/10/2026, anterior à atualização quase em tempo real:
+naquele levantamento, outubro tinha 94 parceiros, carga às 04h de Brasília e
+parcelas de 21/10 (D-1). Setembro tinha 95 parceiros, situação `Fechado` e parcelas
+de 30/09. Esses horários, quantidades e referências descrevem somente a coleta
+daquela data e não definem a cadência nem o corte atuais.
 
 O contrato da API e o frontend são preservados na troca da fonte. O backend
 continua sem calcular originação, percentuais, bônus ou remuneração total.
@@ -327,8 +332,10 @@ Não exige migration, mudança de conexão ou alteração dos cálculos do BI.
 
 - Confirmar que o usuário da conexão tem `USAGE` no schema `analytics` e `SELECT` na
   tabela `analytics.tbl_snapshot_remuneracao_parceiro_mes`.
-- Confirmar o mês atual com corte D-1 e comparar os indicadores da API, da tabela e
-  do relatório para o mesmo parceiro e competência.
+- Comparar os indicadores do mês atual na API, na tabela e no relatório para o
+  mesmo parceiro e competência, usando a mesma posição persistida e registrando
+  o instante da coleta. Considerar atualizações do BI entre as consultas, sem
+  exigir corte D-1.
 - Validar categorias, zeros, nulos e ausência de mês sem inferir falta de inscrição.
 - Medir latência das consultas de competências e indicadores com filtros por parceiro;
   confirmar o ganho de tempo na consulta aos valores persistidos.
@@ -338,5 +345,7 @@ Não exige migration, mudança de conexão ou alteração dos cálculos do BI.
 
 - Validar gerente sem consolidado, parceiro sem equipe e titular com integrantes.
 - Comparar "Consolidado", próprio titular e integrante com a linha correspondente
-  de cada snapshot e sua referência de carteira.
+  de cada snapshot, para os mesmos identificadores e competência.
+- Confirmar que a API não retorna `portfolioReference` e que a tela não exibe a
+  referência da carteira nem a legenda D-1.
 - Confirmar o caso sem detalhamento: zeros informados, sem remuneração herdada.
