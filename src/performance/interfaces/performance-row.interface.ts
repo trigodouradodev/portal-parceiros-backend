@@ -13,7 +13,6 @@ export interface PerformanceRow {
   requested_month: string;
   id_consultor: string | null;
   nivel: string | null;
-  data_snapshot_parcelas?: string | null;
   valor_originado_mes: PerformanceNumeric;
   meta_originacao_mensal: PerformanceNumeric;
   pct_meta_atingido: PerformanceNumeric;
@@ -52,5 +51,4 @@ export interface PerformanceTeamRow {
   valor_carteira_ativa: PerformanceNumeric;
   valor_inadimplencia_desconsiderada: PerformanceNumeric;
   valor_reembolso_mes: PerformanceNumeric;
-  data_snapshot_parcelas: string | null;
 }

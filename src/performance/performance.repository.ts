@@ -39,7 +39,6 @@ export class PerformanceRepository {
         reference.requested_month,
         s.id_consultor,
         s.nivel,
-        to_char(s.data_snapshot_parcelas, 'YYYY-MM-DD') AS data_snapshot_parcelas,
         s.valor_originado_mes,
         s.meta_originacao_mensal,
         s.pct_meta_atingido,
@@ -116,8 +115,7 @@ export class PerformanceRepository {
       SELECT to_char(e.data_competencia, 'YYYY-MM') AS requested_month,
         e.id_pessoa_equipe, e.valor_originado, e.qtd_contratos, e.taxa_media,
         e.valor_inadimplencia, e.valor_carteira_ativa,
-        e.valor_inadimplencia_desconsiderada, e.valor_reembolso_mes,
-        to_char(e.data_snapshot_parcelas, 'YYYY-MM-DD') AS data_snapshot_parcelas
+        e.valor_inadimplencia_desconsiderada, e.valor_reembolso_mes
       FROM analytics.tbl_snapshot_remuneracao_equipe_mes e
       WHERE e.id_parceiro = ${partnerId}::uuid
         AND e.id_pessoa_equipe = ${memberId}::uuid

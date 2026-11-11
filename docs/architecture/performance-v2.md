@@ -25,8 +25,8 @@ mês). A chave primária informada é `(id_consultor, data_competencia)`, compat
 com esses filtros. Por padrão, o parceiro é `user.sub`; quando informado, o UUID
 em `partnerId` é autorizado pelo mesmo escopo da Home. Nunca há agregação da equipe.
 
-A carga do BI atualiza diariamente a competência corrente como `Aberto` e
-preserva a foto final das competências `Fechado`. O fechamento depende de existir
+A carga do BI atualiza a competência corrente quase em tempo real como `Aberto`
+e preserva a foto final das competências `Fechado`. O fechamento depende de existir
 snapshot de parcelas do último dia do mês. No levantamento de 22/10/2026, outubro
 tinha 94 parceiros, carga às 04h de Brasília e parcelas de 21/10 (D-1). Setembro
 tinha 95 parceiros, situação `Fechado` e parcelas de 30/09. A data da gravação de
@@ -302,18 +302,15 @@ réguas vigentes em outra tabela. Os cards não afirmam uma faixa ou bônus infe
 
 ## Períodos, atualização e compatibilidade
 
-A resposta disponível inclui `view.mode` (`CONSOLIDATED` ou `INDIVIDUAL`),
-`view.portfolioReference` e `view.missingDetails`. A referência da carteira vem de
-`data_snapshot_parcelas` do snapshot que forneceu os indicadores selecionados.
-A tela exibe essa data, pois consolidado e equipe podem estar em cargas diferentes.
-Um integrante sem detalhamento não recebe a data da carteira do consolidado.
+A resposta disponível inclui `view.mode` (`CONSOLIDATED` ou `INDIVIDUAL`) e
+`view.missingDetails`. Os indicadores são atualizados quase em tempo real; a API
+não consulta nem expõe a data de referência da carteira e a tela não exibe a
+legenda D-1. Um integrante sem detalhamento mantém a indicação de ausência de
+dados.
 
-`data_foto` e `data_hora_foto` representam a gravação da carga e não são usados
-como referência da carteira. A situação oficial de fechamento continua fora do
-contrato. O mês corrente é identificado como "Prévia", e anteriores como "Mês
-completo", pelo calendário do backend. A antiga legenda D-1 é apenas fallback
-para respostas consolidadas que ainda não tragam referência; a visão individual
-usa a referência real ou a indicação de ausência de detalhamento.
+`data_foto` e `data_hora_foto` representam a gravação da carga. A situação oficial
+de fechamento continua fora do contrato. O mês corrente é identificado como
+"Prévia", e anteriores como "Mês completo", pelo calendário do backend.
 
 As consultas do frontend têm cache de um minuto com chave por usuário autenticado,
 parceiro, integrante e competência,
