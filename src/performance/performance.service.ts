@@ -76,7 +76,6 @@ export class PerformanceService {
         ...response,
         view: {
           mode: 'CONSOLIDATED',
-          portfolioReference: row.data_snapshot_parcelas ?? null,
           missingDetails: false,
         },
       };

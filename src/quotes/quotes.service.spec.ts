@@ -452,6 +452,33 @@ describe('QuotesService.createDraftFromSimulation', () => {
     },
   );
 
+  it('copia a taxa exata e o piso da TAC: tac_amount tem 2 casas e não comporta 6,5%', async () => {
+    const tacRate = new Prisma.Decimal('0.065');
+    const tacMinAmount = new Prisma.Decimal('100');
+    const { service, tx, createQuote } = await build({
+      simulation: {
+        ...simulation,
+        tac_amount: new Prisma.Decimal('0.07'),
+        tac_rate: tacRate,
+        tac_min_amount: tacMinAmount,
+      },
+    });
+    await service.createDraftFromSimulation(SIMULATION_ID, actor());
+
+    expect(tx.simulations.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          tac_rate: true,
+          tac_min_amount: true,
+        }) as unknown,
+      }),
+    );
+    expect(createQuote.mock.calls[0][0].data.tac_rate).toEqual(tacRate);
+    expect(createQuote.mock.calls[0][0].data.tac_min_amount).toEqual(
+      tacMinAmount,
+    );
+  });
+
   it('grava a origem time_comercial explicitamente na proposta', async () => {
     const { service, createQuote } = await build();
 

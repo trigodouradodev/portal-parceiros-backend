@@ -23,6 +23,9 @@ model activity_interactions {
   observation          String?
   location_confirmation  String?      @db.VarChar(20)
   manual_location_reason String?      @db.VarChar(40)
+  overdue_installment_count_at_execution Int?
+  reference_due_date_at_execution DateTime? @db.Date
+  days_overdue_at_execution Int?
   user_id              String         @db.Uuid
   created_at           DateTime       @default(now()) @db.Timestamptz(6)
   contracts            contracts      @relation(fields: [contract_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_interactions_contract_id_foreign")
@@ -59,8 +62,8 @@ model activity_ruler_stages {
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model activity_tasks {
   id                                                           String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  installment_id                                               String                 @unique(map: "idx_activity_tasks_one_pending_per_installment", where: raw("((status)::text = 'pending'::text)")) @db.Uuid
-  contract_id                                                  String                 @db.Uuid
+  installment_id                                               String                 @db.Uuid
+  contract_id                                                  String                 @unique(map: "idx_activity_tasks_one_pending_per_contract", where: raw("((status)::text = 'pending'::text)")) @db.Uuid
   ruler_stage_id                                               String?                @db.Uuid
   segment_code                                                 String                 @db.VarChar(255)
   task_type                                                    String                 @db.VarChar(255)
@@ -79,6 +82,8 @@ model activity_tasks {
   cancellation_reason                                          String?                @db.VarChar(255)
   parent_task_id                                               String?                @db.Uuid
   reschedule_count                                             Int                    @default(0)
+  collection_mode                                              String?                @db.VarChar(30)
+  recipient_type                                               String?                @db.VarChar(20)
   activity_interactions                                        activity_interactions?
   trigo_users_activity_tasks_assigned_toTotrigo_users          trigo_users?           @relation("activity_tasks_assigned_toTotrigo_users", fields: [assigned_to], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_assigned_to_foreign")
   trigo_users_activity_tasks_completed_by_user_idTotrigo_users trigo_users?           @relation("activity_tasks_completed_by_user_idTotrigo_users", fields: [completed_by_user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "activity_tasks_completed_by_user_id_foreign")
@@ -726,6 +731,7 @@ model finance_products {
   max_interest_rate           Decimal                       @default(0) @db.Decimal
   min_tac_rate                Decimal                       @default(0) @db.Decimal
   max_tac_rate                Decimal                       @default(0) @db.Decimal
+  min_tac_amount              Decimal                       @default(0) @db.Decimal(15, 2)
   min_insurance_rate          Decimal                       @default(0) @db.Decimal
   max_insurance_rate          Decimal                       @default(0) @db.Decimal
   created_at                  DateTime?                     @default(now()) @db.Timestamp(6)
@@ -991,7 +997,7 @@ model installments {
   cobransaas_installment_id                                                 String?                      @unique(map: "installments_cobransaas_installment_id_ux") @db.VarChar(255)
   cobransaas_agreement_id                                                   String?                      @db.VarChar(255)
   activity_interactions                                                     activity_interactions[]
-  activity_tasks                                                            activity_tasks?
+  activity_tasks                                                            activity_tasks[]
   installment_boletos                                                       installment_boletos[]
   installment_qr_codes_installment_qr_codes_installment_idToinstallments    installment_qr_codes[]       @relation("installment_qr_codes_installment_idToinstallments")
   installment_qr_codes_installments_active_qr_code_idToinstallment_qr_codes installment_qr_codes?        @relation("installments_active_qr_code_idToinstallment_qr_codes", fields: [active_qr_code_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "installments_active_qr_code_id_foreign")
@@ -1448,6 +1454,8 @@ model quotes {
   vaas_result                                                 Json?
   finance_product_id                                          String                       @db.Uuid
   tac_amount                                                  Decimal?                     @default(0) @db.Decimal(15, 2)
+  tac_rate                                                    Decimal?                     @db.Decimal(7, 5)
+  tac_min_amount                                              Decimal?                     @db.Decimal(15, 2)
   lemit_result_borrower                                       Json?
   lemit_result_guarantor                                      Json?
   lemit_validation_borrower                                   Json?
@@ -2173,6 +2181,7 @@ model contract_credits {
 model parties {
   id                                              String                       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   name                                            String                       @db.VarChar(255)
+  is_deceased                                     Boolean                      @default(false)
   tax_id                                          String                       @unique @db.VarChar(255)
   email                                           String?                      @db.VarChar(255)
   phone                                           String?                      @db.VarChar(255)
@@ -2236,6 +2245,8 @@ model simulations {
   finance_amount                     Decimal          @db.Decimal(15, 2)
   interest_rate                      Decimal          @db.Decimal(12, 8)
   tac_amount                         Decimal          @default(0) @db.Decimal(15, 2)
+  tac_rate                           Decimal?         @db.Decimal(7, 5)
+  tac_min_amount                     Decimal?         @db.Decimal(15, 2)
   installment_numbers                Int
   first_installment_date             DateTime         @db.Date
   installment_amount                 Decimal          @db.Decimal(15, 2)

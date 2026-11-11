@@ -372,11 +372,9 @@ describe('Contribuição individual', () => {
       valor_carteira_ativa: '222058.82',
       valor_inadimplencia_desconsiderada: '2246.13',
       valor_reembolso_mes: '22832.11',
-      data_snapshot_parcelas: '2026-10-20',
     });
     expect(result.view).toEqual({
       mode: 'INDIVIDUAL',
-      portfolioReference: '2026-10-20',
       missingDetails: false,
     });
     expect(result.data!.indicators.origination).toMatchObject({
@@ -411,7 +409,6 @@ describe('Contribuição individual', () => {
         valor_carteira_ativa: null,
         valor_inadimplencia_desconsiderada: null,
         valor_reembolso_mes: null,
-        data_snapshot_parcelas: null,
       });
       expect(result.data!.contractsCount).toBe(count);
       expect(result.view!.missingDetails).toBe(false);

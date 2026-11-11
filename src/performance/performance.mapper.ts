@@ -193,7 +193,6 @@ export function mapIndividualPerformance(
     availability: PerformanceAvailability.AVAILABLE,
     view: {
       mode: 'INDIVIDUAL',
-      portfolioReference: row?.data_snapshot_parcelas ?? null,
       missingDetails: !row,
     },
     data: {

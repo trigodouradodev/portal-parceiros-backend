@@ -206,9 +206,6 @@ export class PerformanceViewDto {
   @ApiProperty({ enum: ['CONSOLIDATED', 'INDIVIDUAL'] }) mode:
     | 'CONSOLIDATED'
     | 'INDIVIDUAL';
-  @ApiProperty({ type: String, nullable: true }) portfolioReference:
-    | string
-    | null;
   @ApiProperty() missingDetails: boolean;
 }
 
