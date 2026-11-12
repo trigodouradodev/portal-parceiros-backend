@@ -871,7 +871,7 @@ describe('SimulationsService.listSimulations', () => {
 
   it('na listagem classifica pela faixa atual e não expõe o score', async () => {
     const rows = [
-      simulationRow({ id: 'a', serasa_score: 350 }),
+      simulationRow({ id: 'a', serasa_score: 300 }),
       simulationRow({ id: 'b', serasa_score: 750 }),
       simulationRow({ id: 'c', serasa_score: null }),
       simulationRow({ id: 'd', serasa_score: 450 }),
@@ -998,8 +998,8 @@ describe('SimulationsService — risco de crédito (Serasa)', () => {
   });
 
   it.each([
-    [399, CreditRiskBand.INELIGIBLE],
-    [400, CreditRiskBand.HIGH],
+    [349, CreditRiskBand.INELIGIBLE],
+    [350, CreditRiskBand.HIGH],
     [499, CreditRiskBand.HIGH],
     [500, CreditRiskBand.MEDIUM],
     [650, CreditRiskBand.MEDIUM],

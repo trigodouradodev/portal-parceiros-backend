@@ -16,7 +16,7 @@ const LOOKUP_ENABLED_KEY = 'CREDIT_RISK_LOOKUP_ENABLED';
 const BANDS_KEY = 'CREDIT_RISK_BANDS';
 
 export const DEFAULT_CREDIT_RISK_BANDS: CreditRiskBands = {
-  ineligibleBelow: 400,
+  ineligibleBelow: 350,
   highBelow: 500,
   lowAbove: 650,
 };
@@ -38,7 +38,7 @@ export class CreditRiskConfigService {
   }
 
   /**
-   * `CREDIT_RISK_BANDS` = `{"ineligibleBelow":400,"highBelow":500,"lowAbove":650}`. Ausente usa o
+   * `CREDIT_RISK_BANDS` = `{"ineligibleBelow":350,"highBelow":500,"lowAbove":650}`. Ausente usa o
    * padrão. Inválida devolve `null` (sem faixa): mostrar uma faixa calculada
    * com limite quebrado é pior do que não mostrar.
    */

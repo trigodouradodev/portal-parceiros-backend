@@ -5,14 +5,14 @@ import { CreditRiskBand } from './enums/credit-risk-band.enum';
 describe('classifyCreditRisk', () => {
   it.each([
     [0, CreditRiskBand.INELIGIBLE],
-    [399, CreditRiskBand.INELIGIBLE],
-    [400, CreditRiskBand.HIGH],
+    [349, CreditRiskBand.INELIGIBLE],
+    [350, CreditRiskBand.HIGH],
     [499, CreditRiskBand.HIGH],
     [500, CreditRiskBand.MEDIUM],
     [650, CreditRiskBand.MEDIUM],
     [651, CreditRiskBand.LOW],
     [1000, CreditRiskBand.LOW],
-  ])('score %i com o padrão 400/500/650 é %s', (score, band) => {
+  ])('score %i com o padrão 350/500/650 é %s', (score, band) => {
     expect(classifyCreditRisk(score, DEFAULT_CREDIT_RISK_BANDS)).toBe(band);
   });
 

@@ -25,7 +25,7 @@ afterEach(() => {
 });
 
 describe('CreditRiskConfigService.getBands', () => {
-  it('usa 400/500/650 quando a chave não existe', async () => {
+  it('usa 350/500/650 quando a chave não existe', async () => {
     await expect(build({}).getBands()).resolves.toEqual(
       DEFAULT_CREDIT_RISK_BANDS,
     );
@@ -49,11 +49,11 @@ describe('CreditRiskConfigService.getBands', () => {
     ['formato antigo, de dois limites', '{"highBelow":400,"lowAbove":700}'],
     [
       'texto no lugar do número',
-      '{"ineligibleBelow":"400","highBelow":500,"lowAbove":650}',
+      '{"ineligibleBelow":"350","highBelow":500,"lowAbove":650}',
     ],
     [
       'limites invertidos',
-      '{"ineligibleBelow":400,"highBelow":700,"lowAbove":600}',
+      '{"ineligibleBelow":350,"highBelow":700,"lowAbove":600}',
     ],
     [
       'inelegível acima do alto risco',
