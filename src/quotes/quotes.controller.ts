@@ -32,6 +32,7 @@ import {
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
 import { CreateDraftQuoteDto } from './dto/create-draft-quote.dto';
+import { DeclineDraftQuoteDto } from './dto/decline-draft-quote.dto';
 import { ListQuotesQueryDto } from './dto/list-quotes-query.dto';
 import { UpdateDraftSimulationDto } from './dto/update-draft-simulation.dto';
 import { SaveQuoteAddressDto } from './dto/save-quote-address.dto';
@@ -312,5 +313,29 @@ export class QuotesController {
     @Param('quoteId', ParseUUIDPipe) quoteId: string,
   ): Promise<QuoteStatusResponse> {
     return this.quotesService.submitDraftForClientReview(quoteId, user);
+  }
+  @ApiOperation({
+    summary: 'Recusa um rascunho criado pela Canal Digital.',
+    description:
+      'Só o parceiro responsável (ou ROLE_ADMIN) e só rascunhos da Canal Digital. A proposta vira `declined` (terminal) e o motivo fica registrado no histórico.',
+  })
+  @ApiOkResponse({ type: QuoteStatusResponse })
+  @ApiBadRequestResponse({
+    description: 'Motivo inválido, ou "other" sem observação.',
+  })
+  @ApiNotFoundResponse({ description: 'Proposta não encontrada.' })
+  @ApiConflictResponse({
+    description:
+      'A proposta não está mais em rascunho, ou não foi criada pela Canal Digital.',
+  })
+  @RequirePermissions(PermissionKey.QUOTE_CREATE)
+  @Put('draft/:quoteId/decline')
+  @HttpCode(HttpStatus.OK)
+  declineDraft(
+    @CurrentUser() user: JwtPayload,
+    @Param('quoteId', ParseUUIDPipe) quoteId: string,
+    @Body() dto: DeclineDraftQuoteDto,
+  ): Promise<QuoteStatusResponse> {
+    return this.quotesService.declineDraft(quoteId, dto, user);
   }
 }

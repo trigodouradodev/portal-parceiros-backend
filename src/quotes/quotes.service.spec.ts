@@ -13,13 +13,16 @@ import { BrazilState } from '../common/brazil-state.enum';
 import { PrismaService } from '../prisma/prisma.service';
 import { QuoteEventType } from '../quote-events/enums/quote-event-type.enum';
 import { QuoteEventsService } from '../quote-events/quote-events.service';
+import { DeclineDraftQuoteDto } from './dto/decline-draft-quote.dto';
 import { SaveQuoteAddressDto } from './dto/save-quote-address.dto';
 import { SaveQuoteFinancialDto } from './dto/save-quote-financial.dto';
 import { SaveQuoteGuarantorDto } from './dto/save-quote-guarantor.dto';
 import { SaveQuoteIncomeDto } from './dto/save-quote-income.dto';
 import { SaveQuotePartnerOpinionDto } from './dto/save-quote-partner-opinion.dto';
 import { SaveQuoteRegistrationDto } from './dto/save-quote-registration.dto';
+import { QuoteDeclineReason } from './enums/quote-decline-reason.enum';
 import { QuoteDraftStep } from './enums/quote-draft-step.enum';
+import { QuoteOrigin } from './enums/quote-origin.enum';
 import {
   ExpenseCategory,
   LoanCategory,
@@ -248,6 +251,7 @@ interface BuildOptions {
   quote?: {
     quote_status: string;
     current_sales_agent_id: string;
+    origin?: string;
   } | null;
   simulation?: typeof simulation | null;
   existingDraft?: { id: string } | null;
@@ -1998,5 +2002,193 @@ describe('QuotesService.submitDraftForClientReview', () => {
     await expect(
       service.submitDraftForClientReview(QUOTE_ID, actor()),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+describe('QuotesService.declineDraft (recusar proposta da Canal Digital)', () => {
+  const dto = (overrides: Partial<DeclineDraftQuoteDto> = {}) => ({
+    reason: QuoteDeclineReason.NO_CONTACT,
+    ...overrides,
+  });
+
+  it('recusa o rascunho da Canal Digital do parceiro, vira declined e registra o motivo', async () => {
+    const { service, quoteEvents, tx } = await build();
+
+    await expect(
+      service.declineDraft(QUOTE_ID, dto(), actor()),
+    ).resolves.toEqual({
+      id: QUOTE_ID,
+      status: QuoteStatus.DECLINED,
+      updatedAt: expect.any(Date) as unknown,
+    });
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: QUOTE_ID,
+        quote_status: QuoteStatus.DRAFT,
+        origin: QuoteOrigin.DIGITAL_CHANNEL,
+        current_sales_agent_id: OWNER_ID,
+      },
+      data: {
+        quote_status: QuoteStatus.DECLINED,
+        updated_at: expect.any(Date) as unknown,
+      },
+    });
+    expect(quoteEvents.createWithinTransaction).toHaveBeenCalledWith(tx, {
+      quoteId: QUOTE_ID,
+      actorUserId: OWNER_ID,
+      type: QuoteEventType.DRAFT_DECLINED,
+      metadata: {
+        reasonCode: QuoteDeclineReason.NO_CONTACT,
+        previousStatus: QuoteStatus.DRAFT,
+        newStatus: QuoteStatus.DECLINED,
+      },
+    });
+  });
+
+  it('grava a observação aparada e ignora observação em branco', async () => {
+    const withNote = await build();
+    await withNote.service.declineDraft(
+      QUOTE_ID,
+      dto({
+        reason: QuoteDeclineReason.CLIENT_GAVE_UP,
+        note: '  Cliente desistiu hoje  ',
+      }),
+      actor(),
+    );
+    expect(withNote.quoteEvents.createWithinTransaction).toHaveBeenCalledWith(
+      withNote.tx,
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          reasonCode: QuoteDeclineReason.CLIENT_GAVE_UP,
+          reasonText: 'Cliente desistiu hoje',
+        }) as unknown,
+      }),
+    );
+
+    const blank = await build();
+    await blank.service.declineDraft(QUOTE_ID, dto({ note: '   ' }), actor());
+    expect(blank.quoteEvents.createWithinTransaction).toHaveBeenCalledWith(
+      blank.tx,
+      expect.objectContaining({
+        metadata: {
+          reasonCode: QuoteDeclineReason.NO_CONTACT,
+          previousStatus: QuoteStatus.DRAFT,
+          newStatus: QuoteStatus.DECLINED,
+        },
+      }),
+    );
+  });
+
+  it('exige a observação quando o motivo é "outro"', async () => {
+    const { service, prisma } = await build();
+
+    await expect(
+      service.declineDraft(
+        QUOTE_ID,
+        dto({ reason: QuoteDeclineReason.OTHER }),
+        actor(),
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.declineDraft(
+        QUOTE_ID,
+        dto({ reason: QuoteDeclineReason.OTHER, note: ' a ' }),
+        actor(),
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('aceita "outro" com observação', async () => {
+    const { service } = await build();
+
+    await expect(
+      service.declineDraft(
+        QUOTE_ID,
+        dto({
+          reason: QuoteDeclineReason.OTHER,
+          note: 'Cliente mudou de cidade',
+        }),
+        actor(),
+      ),
+    ).resolves.toMatchObject({ status: QuoteStatus.DECLINED });
+  });
+
+  it('permite que ROLE_ADMIN recuse o rascunho de qualquer parceiro', async () => {
+    const { service, tx } = await build();
+
+    await service.declineDraft(
+      QUOTE_ID,
+      dto(),
+      actor(OTHER_ID, [PermissionKey.ROLE_ADMIN]),
+    );
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: QUOTE_ID,
+          quote_status: QuoteStatus.DRAFT,
+          origin: QuoteOrigin.DIGITAL_CHANNEL,
+        },
+      }),
+    );
+  });
+
+  it('devolve 404 quando a proposta não existe', async () => {
+    const { service, quoteEvents } = await build({
+      updateCount: 0,
+      quote: null,
+    });
+
+    await expect(
+      service.declineDraft(QUOTE_ID, dto(), actor()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(quoteEvents.createWithinTransaction).not.toHaveBeenCalled();
+  });
+
+  it('devolve 403 quando a proposta é de outro parceiro', async () => {
+    const { service } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OTHER_ID,
+        origin: QuoteOrigin.DIGITAL_CHANNEL,
+      },
+    });
+
+    await expect(
+      service.declineDraft(QUOTE_ID, dto(), actor()),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('devolve 409 quando a proposta já saiu de rascunho', async () => {
+    const { service, quoteEvents } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.CLIENT_REVIEW,
+        current_sales_agent_id: OWNER_ID,
+        origin: QuoteOrigin.DIGITAL_CHANNEL,
+      },
+    });
+
+    await expect(
+      service.declineDraft(QUOTE_ID, dto(), actor()),
+    ).rejects.toThrow('a partir do status client_review');
+    expect(quoteEvents.createWithinTransaction).not.toHaveBeenCalled();
+  });
+
+  it('devolve 409 quando o rascunho não é da Canal Digital', async () => {
+    const { service } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OWNER_ID,
+        origin: QuoteOrigin.COMMERCIAL_TEAM,
+      },
+    });
+
+    await expect(
+      service.declineDraft(QUOTE_ID, dto(), actor()),
+    ).rejects.toThrow('Canal Digital');
   });
 });
