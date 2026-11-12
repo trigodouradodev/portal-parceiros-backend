@@ -126,6 +126,8 @@ function buildService(options?: {
   cabureQuote?: { id: string; premium: number } | Error;
   serasaScore?: number | null;
   bands?: CreditRiskBands | null;
+  /** Cliente com contrato desembolsado ou quitado (renovação). Padrão: cliente novo. */
+  returningClient?: boolean | Error;
 }) {
   const queryRaw = jest.fn((strings: TemplateStringsArray) => {
     const sql = strings.join(' ');
@@ -171,8 +173,14 @@ function buildService(options?: {
     getPermissions,
   } as unknown as QuoteActivityPermissionsService;
   const resolveForSimulation = jest.fn().mockResolvedValue(PARTY_ID);
+  const hasDisbursedContract = jest.fn(() =>
+    options?.returningClient instanceof Error
+      ? Promise.reject(options.returningClient)
+      : Promise.resolve(options?.returningClient === true),
+  );
   const partiesService = {
     resolveForSimulation,
+    hasDisbursedContract,
   } as unknown as PartiesService;
   const simulateRequestedAmount = jest
     .fn()
@@ -230,6 +238,7 @@ function buildService(options?: {
     getPermissions,
     partiesService,
     resolveForSimulation,
+    hasDisbursedContract,
     simulateRequestedAmount,
     evaluateEligibility,
     cabureQuote: quote,
@@ -1045,6 +1054,47 @@ describe('SimulationsService — risco de crédito (Serasa)', () => {
 
     const result = await service.simulate(actor, dto());
 
+    expect(result.simulation).not.toHaveProperty('creditRiskBand');
+  });
+
+  it('consulta o Serasa só de cliente novo: confere o CPF só em dígitos', async () => {
+    const { service, hasDisbursedContract } = buildService({
+      serasaScore: 500,
+    });
+
+    await service.simulate(actor, dto());
+
+    expect(hasDisbursedContract).toHaveBeenCalledWith('52998224725');
+  });
+
+  it('não consulta o Serasa de cliente que renova contrato e simula sem faixa', async () => {
+    const { service, lookupSerasaScore, queryRaw } = buildService({
+      returningClient: true,
+      serasaScore: 300,
+      inserted: simulationRow({ id: 'sim-1', serasa_score: null }),
+    });
+
+    const result = await service.simulate(actor, dto());
+
+    expect(result.eligible).toBe(true);
+    expect(lookupSerasaScore).not.toHaveBeenCalled();
+    expect(result.simulation).not.toHaveProperty('creditRiskBand');
+    const insertCall = queryRaw.mock.calls.find((call) =>
+      call[0].join(' ').includes('INSERT INTO public.simulations'),
+    )!;
+    expect(insertCall).not.toContain(300);
+  });
+
+  it('se não conseguir checar contrato anterior, não consulta e a simulação segue', async () => {
+    const { service, lookupSerasaScore } = buildService({
+      returningClient: new Error('banco indisponível'),
+      serasaScore: 300,
+    });
+
+    const result = await service.simulate(actor, dto());
+
+    expect(result.eligible).toBe(true);
+    expect(lookupSerasaScore).not.toHaveBeenCalled();
     expect(result.simulation).not.toHaveProperty('creditRiskBand');
   });
 

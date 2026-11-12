@@ -505,10 +505,7 @@ export class SimulationsService {
         interestRate: dto.interestRate,
         birthDate,
       }),
-      this.bureauService.lookupSerasaScore(
-        document,
-        `portal-parceiros:${user.sub}`,
-      ),
+      this.lookupSerasaScoreForNewClient(document, user.sub),
     ]);
 
     return {
@@ -529,6 +526,31 @@ export class SimulationsService {
       insurance: financial.insurance,
       serasaScore,
     };
+  }
+
+  /**
+   * O risco de crédito é só para cliente novo: quem já tem contrato desembolsado
+   * ou quitado (renovação) não é consultado, nem paga consulta. Nunca rejeita:
+   * se a checagem falhar, não consulta e a simulação segue sem faixa.
+   */
+  private async lookupSerasaScoreForNewClient(
+    document: string,
+    userId: string,
+  ): Promise<number | null> {
+    try {
+      if (await this.partiesService.hasDisbursedContract(document)) {
+        return null;
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Não foi possível checar contrato anterior do cliente; consulta de risco ignorada: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
+    return this.bureauService.lookupSerasaScore(
+      document,
+      `portal-parceiros:${userId}`,
+    );
   }
 
   private async prepareFinancialPreview(

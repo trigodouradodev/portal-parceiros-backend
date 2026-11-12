@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { normalizeCpf } from '../common/cpf.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { PartyFormData } from './interfaces/party-form-lookup-response.interface';
@@ -34,6 +34,12 @@ interface PartyFormRow extends PartyRow {
 
 type PartyQueryClient = PrismaService | Prisma.TransactionClient;
 
+/**
+ * Contrato que já foi desembolsado (vigente ou quitado). Mesma definição de
+ * renovação do pré-preenchimento da proposta (`QuoteRenewalPrefillService`).
+ */
+const RETURNING_CLIENT_CONTRACT_STATUSES = ['disbursed', 'closed'] as const;
+
 @Injectable()
 export class PartiesService {
   constructor(private readonly prisma: PrismaService) {}
@@ -51,6 +57,25 @@ export class PartiesService {
       email: party.email,
       telephone: party.phone,
     };
+  }
+
+  /**
+   * `true` quando o CPF já tem contrato desembolsado ou quitado, ou seja, não
+   * é cliente novo (renovação). O CPF é comparado sem pontuação, como no resto
+   * deste serviço.
+   */
+  async hasDisbursedContract(value: string): Promise<boolean> {
+    const document = normalizeCpf(value);
+    const [row] = await this.prisma.$queryRaw<{ has_contract: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1
+        FROM public.contracts c
+        JOIN public.parties p ON p.id = c.client_id
+        WHERE regexp_replace(p.tax_id, '\\D', '', 'g') = ${document}
+          AND c.status IN (${Prisma.join([...RETURNING_CLIENT_CONTRACT_STATUSES])})
+      ) AS has_contract
+    `;
+    return row?.has_contract === true;
   }
 
   async findFormDataByCpf(value: string): Promise<PartyFormData | null> {
