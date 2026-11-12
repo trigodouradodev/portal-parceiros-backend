@@ -1,8 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SystemConfigsService } from '../system-configs/system-configs.service';
 
-/** Limites das faixas: abaixo de `highBelow` é alto; acima de `lowAbove`, baixo. */
+/**
+ * Limites das faixas: abaixo de `ineligibleBelow` é não elegível; até antes de
+ * `highBelow`, alto; acima de `lowAbove`, baixo; entre `highBelow` e
+ * `lowAbove`, médio.
+ */
 export interface CreditRiskBands {
+  ineligibleBelow: number;
   highBelow: number;
   lowAbove: number;
 }
@@ -11,8 +16,9 @@ const LOOKUP_ENABLED_KEY = 'CREDIT_RISK_LOOKUP_ENABLED';
 const BANDS_KEY = 'CREDIT_RISK_BANDS';
 
 export const DEFAULT_CREDIT_RISK_BANDS: CreditRiskBands = {
-  highBelow: 400,
-  lowAbove: 700,
+  ineligibleBelow: 400,
+  highBelow: 500,
+  lowAbove: 650,
 };
 
 /**
@@ -32,7 +38,7 @@ export class CreditRiskConfigService {
   }
 
   /**
-   * `CREDIT_RISK_BANDS` = `{"highBelow":400,"lowAbove":700}`. Ausente usa o
+   * `CREDIT_RISK_BANDS` = `{"ineligibleBelow":400,"highBelow":500,"lowAbove":650}`. Ausente usa o
    * padrão. Inválida devolve `null` (sem faixa): mostrar uma faixa calculada
    * com limite quebrado é pior do que não mostrar.
    */
@@ -53,13 +59,19 @@ export class CreditRiskConfigService {
 
 function isCreditRiskBands(value: unknown): value is CreditRiskBands {
   if (!value || typeof value !== 'object') return false;
-  const { highBelow, lowAbove } = value as Record<string, unknown>;
+  const { ineligibleBelow, highBelow, lowAbove } = value as Record<
+    string,
+    unknown
+  >;
   return (
+    typeof ineligibleBelow === 'number' &&
     typeof highBelow === 'number' &&
     typeof lowAbove === 'number' &&
+    Number.isFinite(ineligibleBelow) &&
     Number.isFinite(highBelow) &&
     Number.isFinite(lowAbove) &&
-    highBelow >= 0 &&
+    ineligibleBelow >= 0 &&
+    ineligibleBelow <= highBelow &&
     highBelow <= lowAbove
   );
 }

@@ -2,7 +2,8 @@ import { CreditRiskBand } from './enums/credit-risk-band.enum';
 import { CreditRiskBands } from './credit-risk-config.service';
 
 /**
- * Abaixo de `highBelow` é alto risco; de `highBelow` a `lowAbove`, inclusive,
+ * Abaixo de `ineligibleBelow` é não elegível (reprovação automática); daí até
+ * antes de `highBelow`, alto risco; de `highBelow` a `lowAbove`, inclusive,
  * médio; acima de `lowAbove`, baixo. Sem score ou sem faixas, sem indicativo.
  */
 export function classifyCreditRisk(
@@ -10,6 +11,7 @@ export function classifyCreditRisk(
   bands: CreditRiskBands | null,
 ): CreditRiskBand | null {
   if (score === null || bands === null) return null;
+  if (score < bands.ineligibleBelow) return CreditRiskBand.INELIGIBLE;
   if (score < bands.highBelow) return CreditRiskBand.HIGH;
   if (score > bands.lowAbove) return CreditRiskBand.LOW;
   return CreditRiskBand.MEDIUM;

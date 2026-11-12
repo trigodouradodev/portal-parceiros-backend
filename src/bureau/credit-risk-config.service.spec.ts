@@ -25,7 +25,7 @@ afterEach(() => {
 });
 
 describe('CreditRiskConfigService.getBands', () => {
-  it('usa 400/700 quando a chave não existe', async () => {
+  it('usa 400/500/650 quando a chave não existe', async () => {
     await expect(build({}).getBands()).resolves.toEqual(
       DEFAULT_CREDIT_RISK_BANDS,
     );
@@ -33,9 +33,11 @@ describe('CreditRiskConfigService.getBands', () => {
 
   it('lê os limites de CREDIT_RISK_BANDS', async () => {
     const service = build({
-      CREDIT_RISK_BANDS: '{"highBelow":450,"lowAbove":720}',
+      CREDIT_RISK_BANDS:
+        '{"ineligibleBelow":420,"highBelow":450,"lowAbove":720}',
     });
     await expect(service.getBands()).resolves.toEqual({
+      ineligibleBelow: 420,
       highBelow: 450,
       lowAbove: 720,
     });
@@ -43,11 +45,25 @@ describe('CreditRiskConfigService.getBands', () => {
 
   it.each([
     ['JSON quebrado', '{highBelow'],
-    ['campo ausente', '{"highBelow":400}'],
-    ['texto no lugar do número', '{"highBelow":"400","lowAbove":600}'],
-    ['limites invertidos', '{"highBelow":700,"lowAbove":600}'],
-    ['limite negativo', '{"highBelow":-1,"lowAbove":600}'],
-    ['lista', '[400,600]'],
+    ['campo ausente', '{"highBelow":500,"lowAbove":650}'],
+    ['formato antigo, de dois limites', '{"highBelow":400,"lowAbove":700}'],
+    [
+      'texto no lugar do número',
+      '{"ineligibleBelow":"400","highBelow":500,"lowAbove":650}',
+    ],
+    [
+      'limites invertidos',
+      '{"ineligibleBelow":400,"highBelow":700,"lowAbove":600}',
+    ],
+    [
+      'inelegível acima do alto risco',
+      '{"ineligibleBelow":600,"highBelow":500,"lowAbove":650}',
+    ],
+    [
+      'limite negativo',
+      '{"ineligibleBelow":-1,"highBelow":500,"lowAbove":650}',
+    ],
+    ['lista', '[400,500,650]'],
   ])('devolve null e loga erro com %s', async (_label, raw) => {
     const service = build({ CREDIT_RISK_BANDS: raw });
     await expect(service.getBands()).resolves.toBeNull();

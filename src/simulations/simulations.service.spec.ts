@@ -874,15 +874,17 @@ describe('SimulationsService.listSimulations', () => {
       simulationRow({ id: 'a', serasa_score: 350 }),
       simulationRow({ id: 'b', serasa_score: 750 }),
       simulationRow({ id: 'c', serasa_score: null }),
+      simulationRow({ id: 'd', serasa_score: 450 }),
     ].map((row) => ({ ...row, product_name: 'CRÉDITO PESSOAL' }));
     const { service } = listService(rows);
 
     const list = await service.listSimulations(USER_ID);
 
     expect(list.map((item) => item.creditRiskBand)).toEqual([
-      CreditRiskBand.HIGH,
+      CreditRiskBand.INELIGIBLE,
       CreditRiskBand.LOW,
       undefined,
+      CreditRiskBand.HIGH,
     ]);
     expect(JSON.stringify(list)).not.toContain('serasa');
   });
@@ -989,17 +991,19 @@ describe('SimulationsService — risco de crédito (Serasa)', () => {
     )!;
     expect(insertCall[0].join(' ')).toContain('serasa_score');
     expect(insertCall).toContain(450);
-    expect(simulation.creditRiskBand).toBe(CreditRiskBand.MEDIUM);
+    expect(simulation.creditRiskBand).toBe(CreditRiskBand.HIGH);
     expect(simulation).not.toHaveProperty('serasaScore');
     expect(simulation).not.toHaveProperty('serasa_score');
     expect(JSON.stringify(simulation)).not.toContain('450');
   });
 
   it.each([
-    [399, CreditRiskBand.HIGH],
-    [400, CreditRiskBand.MEDIUM],
-    [700, CreditRiskBand.MEDIUM],
-    [701, CreditRiskBand.LOW],
+    [399, CreditRiskBand.INELIGIBLE],
+    [400, CreditRiskBand.HIGH],
+    [499, CreditRiskBand.HIGH],
+    [500, CreditRiskBand.MEDIUM],
+    [650, CreditRiskBand.MEDIUM],
+    [651, CreditRiskBand.LOW],
   ])('score %i vira a faixa %s com as faixas padrão', async (score, band) => {
     const { service } = buildService({
       serasaScore: score,
@@ -1013,9 +1017,9 @@ describe('SimulationsService — risco de crédito (Serasa)', () => {
 
   it('usa as faixas configuradas em system_configs', async () => {
     const { service } = buildService({
-      serasaScore: 450,
-      bands: { highBelow: 500, lowAbove: 700 },
-      inserted: simulationRow({ id: 'sim-1', serasa_score: 450 }),
+      serasaScore: 520,
+      bands: { ineligibleBelow: 450, highBelow: 550, lowAbove: 700 },
+      inserted: simulationRow({ id: 'sim-1', serasa_score: 520 }),
     });
 
     const result = await service.simulate(actor, dto());
