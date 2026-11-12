@@ -10,6 +10,9 @@ import type { Prisma } from '@prisma/client';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
+import { classifyCreditRisk } from '../bureau/credit-risk-band';
+import { CreditRiskConfigService } from '../bureau/credit-risk-config.service';
+import { CreditRiskBand } from '../bureau/enums/credit-risk-band.enum';
 import { PrismaService } from '../prisma/prisma.service';
 import { QuoteEventType } from '../quote-events/enums/quote-event-type.enum';
 import { QuoteEventsService } from '../quote-events/quote-events.service';
@@ -40,6 +43,7 @@ export class QuotesService {
     private readonly quoteEvents: QuoteEventsService,
     private readonly quoteActivityPermissions: QuoteActivityPermissionsService,
     private readonly documentation: QuoteDraftDocumentationService,
+    private readonly creditRiskConfig: CreditRiskConfigService,
   ) {}
 
   /**
@@ -59,6 +63,9 @@ export class QuotesService {
         'Você possui ações de cobrança pendentes que impedem iniciar uma proposta.',
       );
     }
+
+    // Lidas fora da transação: é uma leitura de configuração com cache.
+    const creditRiskBands = await this.creditRiskConfig.getBands();
 
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -115,6 +122,32 @@ export class QuotesService {
           throw new NotFoundException(
             'Simulação não encontrada para o parceiro autenticado.',
           );
+        }
+
+        // Score do Serasa abaixo do mínimo: reprovação automática, sem proposta.
+        // Sem score (consulta sem dado, falha ou desligada) não há o que
+        // classificar, e a proposta segue para a análise de crédito normal.
+        // Lido por SQL, e não pelo modelo do Prisma, para que o campo novo não
+        // entre em toda leitura de `simulations` antes da migration.
+        const [scoreRow] = await tx.$queryRaw<
+          { serasa_score: number | null }[]
+        >`
+          SELECT serasa_score
+          FROM public.simulations
+          WHERE id = ${simulationId}::uuid
+        `;
+        if (
+          classifyCreditRisk(
+            scoreRow?.serasa_score ?? null,
+            creditRiskBands,
+          ) === CreditRiskBand.INELIGIBLE
+        ) {
+          throw new BadRequestException({
+            statusCode: 400,
+            code: 'CREDIT_RISK_INELIGIBLE',
+            message:
+              'Cliente não elegível pelo score de crédito (reprovação automática): não é possível gerar proposta.',
+          });
         }
 
         const existing = await tx.quotes.findUnique({

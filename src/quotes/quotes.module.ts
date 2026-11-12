@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ActivitiesModule } from '../activities/activities.module';
+import { BureauModule } from '../bureau/bureau.module';
 import { QuoteEventsModule } from '../quote-events/quote-events.module';
 import { ScopeModule } from '../scope/scope.module';
 import { SimulationsModule } from '../simulations/simulations.module';
@@ -23,6 +24,7 @@ import { QuoteRenewalPrefillService } from './services/quote-renewal-prefill.ser
 @Module({
   imports: [
     ActivitiesModule,
+    BureauModule,
     QuoteEventsModule,
     ScopeModule,
     SimulationsModule,
