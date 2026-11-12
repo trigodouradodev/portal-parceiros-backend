@@ -1834,6 +1834,7 @@ model trigo_users {
   is_deleted                                                                     Boolean                        @default(false)
   profile_picture_id                                                             String?                        @db.Uuid
   company_id                                                                     String?                        @db.Uuid
+  is_exclusive                                                                   Boolean                        @default(false)
   activity_interactions                                                          activity_interactions[]
   activity_tasks_activity_tasks_assigned_toTotrigo_users                         activity_tasks[]               @relation("activity_tasks_assigned_toTotrigo_users")
   activity_tasks_activity_tasks_completed_by_user_idTotrigo_users                activity_tasks[]               @relation("activity_tasks_completed_by_user_idTotrigo_users")

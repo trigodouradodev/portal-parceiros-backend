@@ -505,7 +505,7 @@ export class SimulationsService {
         interestRate: dto.interestRate,
         birthDate,
       }),
-      this.lookupSerasaScoreForNewClient(document, user.sub),
+      this.lookupSerasaScoreWhenAllowed(document, user.sub),
     ]);
 
     return {
@@ -529,21 +529,22 @@ export class SimulationsService {
   }
 
   /**
-   * O risco de crédito é só para cliente novo: quem já tem contrato desembolsado
-   * ou quitado (renovação) não é consultado, nem paga consulta. Nunca rejeita:
-   * se a checagem falhar, não consulta e a simulação segue sem faixa.
+   * A consulta de risco (paga) é restrita: só roda para consultor marcado como
+   * exclusivo (`trigo_users.is_exclusive`) e só para cliente novo. Quem já tem
+   * contrato desembolsado ou quitado (renovação) não é consultado. Nunca
+   * rejeita: se alguma checagem falhar, não consulta e a simulação segue sem
+   * faixa.
    */
-  private async lookupSerasaScoreForNewClient(
+  private async lookupSerasaScoreWhenAllowed(
     document: string,
     userId: string,
   ): Promise<number | null> {
     try {
-      if (await this.partiesService.hasDisbursedContract(document)) {
-        return null;
-      }
+      if (!(await this.isExclusiveConsultant(userId))) return null;
+      if (await this.partiesService.hasDisbursedContract(document)) return null;
     } catch (error) {
       this.logger.warn(
-        `Não foi possível checar contrato anterior do cliente; consulta de risco ignorada: ${error instanceof Error ? error.message : String(error)}`,
+        `Não foi possível checar se a consulta de risco se aplica; consulta ignorada: ${error instanceof Error ? error.message : String(error)}`,
       );
       return null;
     }
@@ -551,6 +552,14 @@ export class SimulationsService {
       document,
       `portal-parceiros:${userId}`,
     );
+  }
+
+  private async isExclusiveConsultant(userId: string): Promise<boolean> {
+    const user = await this.prisma.trigo_users.findFirst({
+      where: { id: userId, is_active: true, is_deleted: false },
+      select: { is_exclusive: true },
+    });
+    return user?.is_exclusive === true;
   }
 
   private async prepareFinancialPreview(

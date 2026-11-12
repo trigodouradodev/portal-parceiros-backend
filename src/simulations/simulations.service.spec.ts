@@ -128,6 +128,8 @@ function buildService(options?: {
   bands?: CreditRiskBands | null;
   /** Cliente com contrato desembolsado ou quitado (renovação). Padrão: cliente novo. */
   returningClient?: boolean | Error;
+  /** Consultor marcado como exclusivo em `trigo_users`. Padrão: exclusivo. */
+  exclusiveConsultant?: boolean | Error;
 }) {
   const queryRaw = jest.fn((strings: TemplateStringsArray) => {
     const sql = strings.join(' ');
@@ -159,8 +161,16 @@ function buildService(options?: {
     return [];
   });
 
+  const findUser = jest.fn(() =>
+    options?.exclusiveConsultant instanceof Error
+      ? Promise.reject(options.exclusiveConsultant)
+      : Promise.resolve({
+          is_exclusive: options?.exclusiveConsultant !== false,
+        }),
+  );
   const prisma = {
     $queryRaw: queryRaw,
+    trigo_users: { findFirst: findUser },
     $transaction: jest.fn((callback: (tx: PrismaService) => Promise<unknown>) =>
       callback(prisma),
     ),
@@ -239,6 +249,7 @@ function buildService(options?: {
     partiesService,
     resolveForSimulation,
     hasDisbursedContract,
+    findUser,
     simulateRequestedAmount,
     evaluateEligibility,
     cabureQuote: quote,
@@ -1065,6 +1076,50 @@ describe('SimulationsService — risco de crédito (Serasa)', () => {
     await service.simulate(actor, dto());
 
     expect(hasDisbursedContract).toHaveBeenCalledWith('52998224725');
+  });
+
+  it('consulta o Serasa só de consultor exclusivo ativo: confere o usuário que simula', async () => {
+    const { service, findUser } = buildService({ serasaScore: 500 });
+
+    await service.simulate(actor, dto());
+
+    expect(findUser).toHaveBeenCalledWith({
+      where: { id: USER_ID, is_active: true, is_deleted: false },
+      select: { is_exclusive: true },
+    });
+  });
+
+  it('não consulta o Serasa de quem não é consultor exclusivo e simula sem faixa', async () => {
+    const { service, lookupSerasaScore, hasDisbursedContract, queryRaw } =
+      buildService({
+        exclusiveConsultant: false,
+        serasaScore: 300,
+        inserted: simulationRow({ id: 'sim-1', serasa_score: null }),
+      });
+
+    const result = await service.simulate(actor, dto());
+
+    expect(result.eligible).toBe(true);
+    expect(lookupSerasaScore).not.toHaveBeenCalled();
+    expect(hasDisbursedContract).not.toHaveBeenCalled();
+    expect(result.simulation).not.toHaveProperty('creditRiskBand');
+    const insertCall = queryRaw.mock.calls.find((call) =>
+      call[0].join(' ').includes('INSERT INTO public.simulations'),
+    )!;
+    expect(insertCall).not.toContain(300);
+  });
+
+  it('se não conseguir checar o consultor, não consulta e a simulação segue', async () => {
+    const { service, lookupSerasaScore } = buildService({
+      exclusiveConsultant: new Error('banco indisponível'),
+      serasaScore: 300,
+    });
+
+    const result = await service.simulate(actor, dto());
+
+    expect(result.eligible).toBe(true);
+    expect(lookupSerasaScore).not.toHaveBeenCalled();
+    expect(result.simulation).not.toHaveProperty('creditRiskBand');
   });
 
   it('não consulta o Serasa de cliente que renova contrato e simula sem faixa', async () => {
