@@ -1202,6 +1202,49 @@ describe('SimulationsService — risco de crédito (Serasa)', () => {
     expect(updateSql).toContain('s.serasa_score)');
   });
 
+  it.each([
+    ['produto não vinculado ao parceiro', { product: null }, {}],
+    ['prazo acima do máximo do produto', {}, { installments: 13 }],
+    ['prazo abaixo do mínimo do produto', {}, { installments: 1 }],
+    ['taxa de juros acima do máximo do produto', {}, { interestRate: 0.05 }],
+    ['taxa de juros abaixo do mínimo do produto', {}, { interestRate: 0.01 }],
+    [
+      'data da 1ª parcela fora do permitido',
+      {},
+      { firstInstallmentDate: '2020-01-10' },
+    ],
+  ])(
+    'simulação recusada por %s não gera custo: nem Serasa, nem Celcoin, nem Caburé',
+    async (_name, options, overrides) => {
+      const {
+        service,
+        lookupSerasaScore,
+        simulateRequestedAmount,
+        cabureQuote,
+      } = buildService({ serasaScore: 450, ...options });
+
+      await expect(
+        service.simulate(actor, dto(overrides)),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(lookupSerasaScore).not.toHaveBeenCalled();
+      expect(simulateRequestedAmount).not.toHaveBeenCalled();
+      expect(cabureQuote).not.toHaveBeenCalled();
+    },
+  );
+
+  it('simulação válida consulta o Serasa e a Celcoin (a validação antes não tira a consulta)', async () => {
+    const { service, lookupSerasaScore, simulateRequestedAmount } =
+      buildService({
+        serasaScore: 450,
+      });
+
+    await service.simulate(actor, dto());
+
+    expect(lookupSerasaScore).toHaveBeenCalledTimes(1);
+    expect(simulateRequestedAmount).toHaveBeenCalled();
+  });
+
   it('não consulta o Serasa ao recalcular a parte financeira de um rascunho', async () => {
     const { service, lookupSerasaScore } = buildService({
       cabureQuote: { id: 'cabure-quote-1', premium: 225 },

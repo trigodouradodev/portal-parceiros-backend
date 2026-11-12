@@ -138,6 +138,17 @@ export interface DraftFinancialPreview {
   };
 }
 
+/** Resultado da validação de entrada da simulação, antes de chamar a Celcoin e a Caburé. */
+interface ValidatedFinancialInput {
+  firstInstallmentDate: Date;
+  product: LinkedProduct;
+  interestRate: number;
+}
+
+type FinancialPreview = Omit<DraftFinancialPreview, 'insurance'> & {
+  insurance: InsurancePreview;
+};
+
 export type FinancialSimulationInput = Pick<
   SimulateDto,
   | 'productId'
@@ -493,18 +504,23 @@ export class SimulationsService {
     const telephone = normalizeBrazilianPhone(dto.telephone);
     const birthDate = this.parseDateOnly(dto.birthDate, 'Data de nascimento');
     this.assertAdultAge(birthDate);
+    const financialInput: FinancialSimulationInput = {
+      productId: dto.productId,
+      amount: dto.amount,
+      installments: dto.installments,
+      firstInstallmentDate: dto.firstInstallmentDate,
+      interestRate: dto.interestRate,
+      birthDate,
+    };
+    // Produto, prazo, taxa e data da 1ª parcela são validados ANTES de qualquer
+    // chamada externa: uma simulação que vai ser recusada não pode gerar custo
+    // com o Serasa (consulta paga), a Celcoin ou a Caburé.
+    const validated = await this.validateFinancialInput(user, financialInput);
     // O Serasa roda junto com a Celcoin e a Caburé para não somar latência.
     // `lookupSerasaScore` nunca rejeita, então não há falha solta se a parte
     // financeira lançar antes.
     const [financial, serasaScore] = await Promise.all([
-      this.prepareFinancialPreview(user, {
-        productId: dto.productId,
-        amount: dto.amount,
-        installments: dto.installments,
-        firstInstallmentDate: dto.firstInstallmentDate,
-        interestRate: dto.interestRate,
-        birthDate,
-      }),
+      this.quoteFinancialPreview(validated, financialInput),
       this.lookupSerasaScoreWhenAllowed(document, user.sub),
     ]);
 
@@ -571,21 +587,14 @@ export class SimulationsService {
     return user?.is_exclusive === true;
   }
 
-  private async prepareFinancialPreview(
+  /**
+   * Valida o que dá para recusar sem sair do banco: data da 1ª parcela, produto
+   * vinculado ao parceiro, prazo e taxa. Nenhuma chamada externa.
+   */
+  private async validateFinancialInput(
     user: JwtPayload,
     dto: FinancialSimulationInput,
-  ): Promise<{
-    product: LinkedProduct;
-    amount: number;
-    installments: number;
-    interestRate: number;
-    tacRate: number;
-    tacMinAmount: number;
-    firstInstallmentDate: Date;
-    installmentAmount: number;
-    simulationResult: CelcoinSimulationResult;
-    insurance: InsurancePreview;
-  }> {
+  ): Promise<ValidatedFinancialInput> {
     const firstInstallmentDate = this.parseDateOnly(
       dto.firstInstallmentDate,
       'Data da primeira parcela',
@@ -617,6 +626,22 @@ export class SimulationsService {
       );
     }
 
+    return { firstInstallmentDate, product, interestRate };
+  }
+
+  private async prepareFinancialPreview(
+    user: JwtPayload,
+    dto: FinancialSimulationInput,
+  ): Promise<FinancialPreview> {
+    const validated = await this.validateFinancialInput(user, dto);
+    return this.quoteFinancialPreview(validated, dto);
+  }
+
+  /** Parte que chama a Celcoin e a Caburé. Recebe a entrada já validada. */
+  private async quoteFinancialPreview(
+    { firstInstallmentDate, product, interestRate }: ValidatedFinancialInput,
+    dto: FinancialSimulationInput,
+  ): Promise<FinancialPreview> {
     const tacRate = dto.ownTac?.rate ?? (toNum(product.max_tac_rate) || 0);
     const tacMinAmount =
       dto.ownTac?.minAmount ?? (toNum(product.min_tac_amount) || 0);
