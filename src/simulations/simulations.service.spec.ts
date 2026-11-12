@@ -131,6 +131,13 @@ function buildService(options?: {
   /** Consultor marcado como exclusivo em `trigo_users`. Padrão: exclusivo. */
   exclusiveConsultant?: boolean | Error;
 }) {
+  const findUser = jest.fn(() =>
+    options?.exclusiveConsultant instanceof Error
+      ? Promise.reject(options.exclusiveConsultant)
+      : Promise.resolve([
+          { is_exclusive: options?.exclusiveConsultant !== false },
+        ]),
+  );
   const queryRaw = jest.fn((strings: TemplateStringsArray) => {
     const sql = strings.join(' ');
     if (sql.includes('FROM public.consultant_finance_products')) {
@@ -149,6 +156,9 @@ function buildService(options?: {
         },
       ];
     }
+    if (sql.includes('FROM public.trigo_users')) {
+      return findUser();
+    }
     if (sql.includes('INSERT INTO public.simulations')) {
       return [options?.inserted ?? simulationRow({ id: 'sim-1' })];
     }
@@ -161,16 +171,8 @@ function buildService(options?: {
     return [];
   });
 
-  const findUser = jest.fn(() =>
-    options?.exclusiveConsultant instanceof Error
-      ? Promise.reject(options.exclusiveConsultant)
-      : Promise.resolve({
-          is_exclusive: options?.exclusiveConsultant !== false,
-        }),
-  );
   const prisma = {
     $queryRaw: queryRaw,
-    trigo_users: { findFirst: findUser },
     $transaction: jest.fn((callback: (tx: PrismaService) => Promise<unknown>) =>
       callback(prisma),
     ),
@@ -263,6 +265,15 @@ beforeEach(() => {
 afterEach(() => {
   jest.restoreAllMocks();
 });
+
+type SqlCall = [TemplateStringsArray, ...unknown[]];
+
+/** Chamadas SQL do serviço, sem a leitura da marca de consultor exclusivo. */
+function sqlCalls(queryRaw: jest.Mock): SqlCall[] {
+  return (queryRaw.mock.calls as SqlCall[]).filter(
+    (call) => !call[0].join(' ').includes('FROM public.trigo_users'),
+  );
+}
 
 describe('SimulationsService.simulate', () => {
   it('avalia a elegibilidade e cria uma simulação quando não recebe UUID', async () => {
@@ -386,12 +397,12 @@ describe('SimulationsService.simulate — criação', () => {
     expect(simulation.createdAt).toBe('2026-08-26T12:00:00.000Z');
     expect(simulation.status).toBe(SimulationStatus.AVAILABLE);
 
-    const insertSql = queryRaw.mock.calls[1][0].join(' ');
+    const insertSql = sqlCalls(queryRaw)[1][0].join(' ');
     expect(insertSql).toContain('INSERT INTO public.simulations');
     expect(insertSql).toContain('party_id');
     expect(insertSql).toContain('simulation_result');
     expect(insertSql).toContain('tac_amount');
-    expect(queryRaw.mock.calls[1]).toContain(product.max_tac_rate);
+    expect(sqlCalls(queryRaw)[1]).toContain(product.max_tac_rate);
     expect(simulateRequestedAmount).toHaveBeenCalledWith({
       requestedAmount: 5000,
       interestRate: 0.0339,
@@ -400,8 +411,8 @@ describe('SimulationsService.simulate — criação', () => {
       tacRate: product.max_tac_rate,
       tacMinAmount: 0,
     });
-    expect(queryRaw.mock.calls[1]).toContain(JSON.stringify(celcoinResult));
-    expect(queryRaw.mock.calls[1]).toContain('+5511987654321');
+    expect(sqlCalls(queryRaw)[1]).toContain(JSON.stringify(celcoinResult));
+    expect(sqlCalls(queryRaw)[1]).toContain('+5511987654321');
     expect(resolveForSimulation).toHaveBeenCalledWith(
       {
         name: 'Maria Souza',
@@ -459,7 +470,7 @@ describe('SimulationsService.simulate — criação', () => {
       insuranceAmount: 189.9,
     });
 
-    const insertCall = queryRaw.mock.calls[1];
+    const insertCall = sqlCalls(queryRaw)[1];
     const insertSql = insertCall[0].join(' ');
     expect(insertSql).toContain('insurance_premium');
     expect(insertSql).toContain('installment_amount_with_insurance');
@@ -481,7 +492,7 @@ describe('SimulationsService.simulate — criação', () => {
 
     expect(result.eligible).toBe(true);
     expect(simulateRequestedAmount).toHaveBeenCalledTimes(1);
-    const insertCall = queryRaw.mock.calls[1];
+    const insertCall = sqlCalls(queryRaw)[1];
     expect(insertCall).toContain(null);
   });
 
@@ -536,7 +547,7 @@ describe('SimulationsService.simulate — criação', () => {
     await expect(service.simulate(actor, dto())).rejects.toThrow(
       ServiceUnavailableException,
     );
-    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(sqlCalls(queryRaw)).toHaveLength(1);
     expect(resolveForSimulation).not.toHaveBeenCalled();
   });
 
@@ -607,7 +618,7 @@ describe('SimulationsService.simulate — atualização', () => {
     expect(simulation).not.toHaveProperty('simulationResult');
     expect(simulation.createdAt).toBe('2026-08-26T12:00:00.000Z');
 
-    const updateCall = queryRaw.mock.calls[2];
+    const updateCall = sqlCalls(queryRaw)[2];
     const updateSql = updateCall[0].join(' ');
     expect(updateSql).toContain('UPDATE public.simulations');
     expect(updateSql).toContain('WHERE s.id =');
@@ -680,7 +691,7 @@ describe('SimulationsService.simulate — atualização', () => {
       service.simulate(actor, { ...dto(), simulationId: SIMULATION_ID }),
     ).rejects.toThrow(ConflictException);
 
-    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(sqlCalls(queryRaw)).toHaveLength(1);
     expect(resolveForSimulation).not.toHaveBeenCalled();
     expect(simulateRequestedAmount).not.toHaveBeenCalled();
   });
@@ -1079,14 +1090,17 @@ describe('SimulationsService — risco de crédito (Serasa)', () => {
   });
 
   it('consulta o Serasa só de consultor exclusivo ativo: confere o usuário que simula', async () => {
-    const { service, findUser } = buildService({ serasaScore: 500 });
+    const { service, findUser, queryRaw } = buildService({
+      serasaScore: 500,
+    });
 
     await service.simulate(actor, dto());
 
-    expect(findUser).toHaveBeenCalledWith({
-      where: { id: USER_ID, is_active: true, is_deleted: false },
-      select: { is_exclusive: true },
-    });
+    expect(findUser).toHaveBeenCalledTimes(1);
+    const userQuery = queryRaw.mock.calls.find((call) =>
+      call[0].join(' ').includes('FROM public.trigo_users'),
+    )!;
+    expect(userQuery).toContain(USER_ID);
   });
 
   it('não consulta o Serasa de quem não é consultor exclusivo e simula sem faixa', async () => {

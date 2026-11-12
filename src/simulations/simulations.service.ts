@@ -554,11 +554,20 @@ export class SimulationsService {
     );
   }
 
+  /**
+   * Lido por SQL, e não pelo modelo do Prisma, de propósito: um campo novo no
+   * modelo `trigo_users` entra em toda leitura sem `select` (login incluso) e
+   * derrubaria o Portal se o backend subir antes da migration da coluna.
+   */
   private async isExclusiveConsultant(userId: string): Promise<boolean> {
-    const user = await this.prisma.trigo_users.findFirst({
-      where: { id: userId, is_active: true, is_deleted: false },
-      select: { is_exclusive: true },
-    });
+    const [user] = await this.prisma.$queryRaw<{ is_exclusive: boolean }[]>`
+      SELECT is_exclusive
+      FROM public.trigo_users
+      WHERE id = ${userId}::uuid
+        AND is_active = true
+        AND is_deleted = false
+      LIMIT 1
+    `;
     return user?.is_exclusive === true;
   }
 
