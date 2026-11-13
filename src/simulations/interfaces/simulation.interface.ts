@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { CreditRiskBand } from '../../bureau/enums/credit-risk-band.enum';
 import { SimulationStatus } from '../enums/simulation-status.enum';
 
 /** Snapshot persistido da simulação. Campos em camelCase EN. */
@@ -64,4 +65,14 @@ export class SimulationSnapshot {
       'incluso. Ausente quando insurancePremium também está ausente.',
   })
   installmentAmountWithInsurance?: number;
+  @ApiProperty({
+    required: false,
+    enum: CreditRiskBand,
+    example: CreditRiskBand.MEDIUM,
+    description:
+      'Indicativo de risco de crédito do cliente, pela faixa do score do ' +
+      'Serasa. Ausente quando a consulta não trouxe dado. O score não é ' +
+      'exposto.',
+  })
+  creditRiskBand?: CreditRiskBand;
 }

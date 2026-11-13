@@ -9,6 +9,10 @@ import { Prisma } from '@prisma/client';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
+import {
+  CreditRiskConfigService,
+  DEFAULT_CREDIT_RISK_BANDS,
+} from '../bureau/credit-risk-config.service';
 import { BrazilState } from '../common/brazil-state.enum';
 import { PrismaService } from '../prisma/prisma.service';
 import { QuoteEventType } from '../quote-events/enums/quote-event-type.enum';
@@ -193,6 +197,7 @@ const financial: SaveQuoteFinancialDto = {
 
 const simulation = {
   id: SIMULATION_ID,
+  serasa_score: null as number | null,
   party_id: PARTY_ID,
   finance_product_id: PRODUCT_ID,
   client_name: 'Maria Souza',
@@ -278,8 +283,14 @@ async function build(options: BuildOptions = {}) {
     },
   );
   const queryRaw = jest.fn(
-    (strings: TemplateStringsArray): Promise<Array<{ id: string }>> => {
-      void strings;
+    (
+      strings: TemplateStringsArray,
+    ): Promise<Array<{ id: string } | { serasa_score: number | null }>> => {
+      if (strings.join(' ').includes('SELECT serasa_score')) {
+        return Promise.resolve([
+          { serasa_score: options.simulation?.serasa_score ?? null },
+        ]);
+      }
       return Promise.resolve([{ id: 'cabure-proposal-1' }]);
     },
   );
@@ -381,6 +392,12 @@ async function build(options: BuildOptions = {}) {
         provide: QuoteActivityPermissionsService,
         useValue: quoteActivityPermissions,
       },
+      {
+        provide: CreditRiskConfigService,
+        useValue: {
+          getBands: jest.fn().mockResolvedValue(DEFAULT_CREDIT_RISK_BANDS),
+        },
+      },
     ],
   }).compile();
 
@@ -443,6 +460,48 @@ describe('QuotesService.createDraftFromSimulation', () => {
     expect(createQuote.mock.calls[0][0].data.tac_min_amount).toEqual(
       tacMinAmount,
     );
+  });
+
+  it('recusa com 400 e código estável quando o score do Serasa é não elegível', async () => {
+    const { service, createQuote } = await build({
+      simulation: { ...simulation, serasa_score: 349 },
+    });
+
+    const erro = await service
+      .createDraftFromSimulation(SIMULATION_ID, actor())
+      .catch((e: unknown) => e);
+
+    expect(erro).toBeInstanceOf(BadRequestException);
+    expect((erro as BadRequestException).getResponse()).toMatchObject({
+      statusCode: 400,
+      code: 'CREDIT_RISK_INELIGIBLE',
+    });
+    expect(createQuote).not.toHaveBeenCalled();
+  });
+
+  it.each([350, 500, 650, 900])(
+    'score %i do Serasa não impede a proposta',
+    async (serasaScore) => {
+      const { service, createQuote } = await build({
+        simulation: { ...simulation, serasa_score: serasaScore },
+      });
+
+      await expect(
+        service.createDraftFromSimulation(SIMULATION_ID, actor()),
+      ).resolves.toMatchObject({ status: QuoteStatus.DRAFT });
+      expect(createQuote).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('sem score (consulta sem dado ou desligada) a proposta segue', async () => {
+    const { service, createQuote } = await build({
+      simulation: { ...simulation, serasa_score: null },
+    });
+
+    await expect(
+      service.createDraftFromSimulation(SIMULATION_ID, actor()),
+    ).resolves.toMatchObject({ status: QuoteStatus.DRAFT });
+    expect(createQuote).toHaveBeenCalledTimes(1);
   });
 
   it('grava a origem time_comercial explicitamente na proposta', async () => {
