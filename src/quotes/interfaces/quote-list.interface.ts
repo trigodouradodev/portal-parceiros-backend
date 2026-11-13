@@ -19,6 +19,12 @@ export class QuoteListItem {
   @ApiProperty()
   status: string;
 
+  @ApiProperty({
+    enum: ['time_comercial', 'canal_digital'],
+    description: 'De onde a proposta nasceu.',
+  })
+  origin: string;
+
   @ApiProperty()
   name: string;
 
@@ -68,6 +74,12 @@ export class QuoteListItem {
       'Indica se o usuário autenticado pode continuar editando a proposta.',
   })
   canEdit: boolean;
+
+  @ApiProperty({
+    description:
+      'Indica se o usuário autenticado pode recusar a proposta: rascunho criado pela Canal Digital, do próprio parceiro.',
+  })
+  canDecline: boolean;
 
   @ApiPropertyOptional({ nullable: true })
   createdAt: string | null;

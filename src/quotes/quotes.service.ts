@@ -16,6 +16,8 @@ import { CreditRiskBand } from '../bureau/enums/credit-risk-band.enum';
 import { PrismaService } from '../prisma/prisma.service';
 import { QuoteEventType } from '../quote-events/enums/quote-event-type.enum';
 import { QuoteEventsService } from '../quote-events/quote-events.service';
+import { DeclineDraftQuoteDto } from './dto/decline-draft-quote.dto';
+import { QuoteDeclineReason } from './enums/quote-decline-reason.enum';
 import { QuoteOrigin } from './enums/quote-origin.enum';
 import { QuoteStatus } from './enums/quote-status.enum';
 import { QuoteDraftStep } from './enums/quote-draft-step.enum';
@@ -384,6 +386,60 @@ export class QuotesService {
     });
   }
 
+  /**
+   * O parceiro responsável recusa um rascunho criado pela Canal Digital e
+   * informa o motivo. A proposta vira `declined` (terminal) e o motivo fica no
+   * evento `draft_declined`. Só rascunhos da Canal Digital: o update condicional
+   * garante status, origem e dono na mesma operação, e impede duas recusas
+   * concorrentes.
+   */
+  async declineDraft(
+    quoteId: string,
+    dto: DeclineDraftQuoteDto,
+    actor: JwtPayload,
+  ): Promise<QuoteStatusResponse> {
+    const note = dto.note?.trim() ?? '';
+    if (dto.reason === QuoteDeclineReason.OTHER && note.length < 3) {
+      throw new BadRequestException('Descreva o motivo da recusa.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updatedAt = new Date();
+      const isAdmin = actor.permissions.includes(PermissionKey.ROLE_ADMIN);
+
+      const result = await tx.quotes.updateMany({
+        where: {
+          id: quoteId,
+          quote_status: QuoteStatus.DRAFT,
+          origin: QuoteOrigin.DIGITAL_CHANNEL,
+          ...(isAdmin ? {} : { current_sales_agent_id: actor.sub }),
+        },
+        data: {
+          quote_status: QuoteStatus.DECLINED,
+          updated_at: updatedAt,
+        },
+      });
+
+      if (result.count === 0) {
+        await this.throwDeclineError(tx, quoteId, actor, isAdmin);
+      }
+
+      await this.quoteEvents.createWithinTransaction(tx, {
+        quoteId,
+        actorUserId: actor.sub,
+        type: QuoteEventType.DRAFT_DECLINED,
+        metadata: {
+          reasonCode: dto.reason,
+          ...(note ? { reasonText: note } : {}),
+          previousStatus: QuoteStatus.DRAFT,
+          newStatus: QuoteStatus.DECLINED,
+        },
+      });
+
+      return { id: quoteId, status: QuoteStatus.DECLINED, updatedAt };
+    });
+  }
+
   private async lockRegistrationsForSubmit(
     tx: Prisma.TransactionClient,
     quoteId: string,
@@ -438,6 +494,42 @@ export class QuotesService {
 
     throw new ConflictException(
       `A proposta não pode ser enviada para revisão a partir do status ${quote.quote_status}.`,
+    );
+  }
+
+  private async throwDeclineError(
+    tx: Prisma.TransactionClient,
+    quoteId: string,
+    actor: JwtPayload,
+    isAdmin: boolean,
+  ): Promise<never> {
+    const quote = await tx.quotes.findUnique({
+      where: { id: quoteId },
+      select: {
+        quote_status: true,
+        current_sales_agent_id: true,
+        origin: true,
+      },
+    });
+
+    if (!quote) {
+      throw new NotFoundException('Proposta não encontrada.');
+    }
+
+    if (!isAdmin && quote.current_sales_agent_id !== actor.sub) {
+      throw new ForbiddenException(
+        'Somente o parceiro responsável pode recusar esta proposta.',
+      );
+    }
+
+    if (quote.quote_status !== String(QuoteStatus.DRAFT)) {
+      throw new ConflictException(
+        `A proposta não pode ser recusada a partir do status ${quote.quote_status}.`,
+      );
+    }
+
+    throw new ConflictException(
+      'Só é possível recusar propostas criadas pela Canal Digital.',
     );
   }
 }
