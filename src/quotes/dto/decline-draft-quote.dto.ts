@@ -8,7 +8,7 @@ export const DECLINE_NOTE_MAX_LENGTH = 500;
 export class DeclineDraftQuoteDto {
   @ApiProperty({
     enum: QuoteDeclineReason,
-    example: QuoteDeclineReason.NO_CONTACT,
+    example: QuoteDeclineReason.NO_RESPONSE,
   })
   @IsEnum(QuoteDeclineReason, { message: 'Informe o motivo da recusa.' })
   reason: QuoteDeclineReason;
@@ -16,7 +16,8 @@ export class DeclineDraftQuoteDto {
   @ApiPropertyOptional({
     maxLength: DECLINE_NOTE_MAX_LENGTH,
     description:
-      'Complemento do motivo. Obrigatório quando o motivo é "other".',
+      'Complemento do motivo. Obrigatório quando o motivo é "other" ou ' +
+      '"product_criteria_not_met" (qual critério).',
   })
   @IsOptional()
   @IsString()

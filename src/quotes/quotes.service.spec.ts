@@ -24,7 +24,10 @@ import { SaveQuoteGuarantorDto } from './dto/save-quote-guarantor.dto';
 import { SaveQuoteIncomeDto } from './dto/save-quote-income.dto';
 import { SaveQuotePartnerOpinionDto } from './dto/save-quote-partner-opinion.dto';
 import { SaveQuoteRegistrationDto } from './dto/save-quote-registration.dto';
-import { QuoteDeclineReason } from './enums/quote-decline-reason.enum';
+import {
+  DECLINE_REASONS_REQUIRING_NOTE,
+  QuoteDeclineReason,
+} from './enums/quote-decline-reason.enum';
 import { QuoteDraftStep } from './enums/quote-draft-step.enum';
 import { QuoteOrigin } from './enums/quote-origin.enum';
 import {
@@ -2065,7 +2068,7 @@ describe('QuotesService.submitDraftForClientReview', () => {
 });
 describe('QuotesService.declineDraft (recusar proposta da Canal Digital)', () => {
   const dto = (overrides: Partial<DeclineDraftQuoteDto> = {}) => ({
-    reason: QuoteDeclineReason.NO_CONTACT,
+    reason: QuoteDeclineReason.NO_RESPONSE,
     ...overrides,
   });
 
@@ -2097,7 +2100,7 @@ describe('QuotesService.declineDraft (recusar proposta da Canal Digital)', () =>
       actorUserId: OWNER_ID,
       type: QuoteEventType.DRAFT_DECLINED,
       metadata: {
-        reasonCode: QuoteDeclineReason.NO_CONTACT,
+        reasonCode: QuoteDeclineReason.NO_RESPONSE,
         previousStatus: QuoteStatus.DRAFT,
         newStatus: QuoteStatus.DECLINED,
       },
@@ -2109,7 +2112,7 @@ describe('QuotesService.declineDraft (recusar proposta da Canal Digital)', () =>
     await withNote.service.declineDraft(
       QUOTE_ID,
       dto({
-        reason: QuoteDeclineReason.CLIENT_GAVE_UP,
+        reason: QuoteDeclineReason.GAVE_UP_NO_REASON,
         note: '  Cliente desistiu hoje  ',
       }),
       actor(),
@@ -2118,7 +2121,7 @@ describe('QuotesService.declineDraft (recusar proposta da Canal Digital)', () =>
       withNote.tx,
       expect.objectContaining({
         metadata: expect.objectContaining({
-          reasonCode: QuoteDeclineReason.CLIENT_GAVE_UP,
+          reasonCode: QuoteDeclineReason.GAVE_UP_NO_REASON,
           reasonText: 'Cliente desistiu hoje',
         }) as unknown,
       }),
@@ -2130,7 +2133,7 @@ describe('QuotesService.declineDraft (recusar proposta da Canal Digital)', () =>
       blank.tx,
       expect.objectContaining({
         metadata: {
-          reasonCode: QuoteDeclineReason.NO_CONTACT,
+          reasonCode: QuoteDeclineReason.NO_RESPONSE,
           previousStatus: QuoteStatus.DRAFT,
           newStatus: QuoteStatus.DECLINED,
         },
@@ -2156,6 +2159,63 @@ describe('QuotesService.declineDraft (recusar proposta da Canal Digital)', () =>
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('exige o critério quando o motivo é "não atende aos critérios do produto"', async () => {
+    const { service, prisma } = await build();
+
+    await expect(
+      service.declineDraft(
+        QUOTE_ID,
+        dto({ reason: QuoteDeclineReason.PRODUCT_CRITERIA_NOT_MET }),
+        actor(),
+      ),
+    ).rejects.toThrow('critério');
+    await expect(
+      service.declineDraft(
+        QUOTE_ID,
+        dto({
+          reason: QuoteDeclineReason.PRODUCT_CRITERIA_NOT_MET,
+          note: '  ',
+        }),
+        actor(),
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('aceita "não atende aos critérios do produto" com o critério informado', async () => {
+    const { service } = await build();
+
+    await expect(
+      service.declineDraft(
+        QUOTE_ID,
+        dto({
+          reason: QuoteDeclineReason.PRODUCT_CRITERIA_NOT_MET,
+          note: 'Faturamento abaixo do mínimo da linha',
+        }),
+        actor(),
+      ),
+    ).resolves.toMatchObject({ status: QuoteStatus.DECLINED });
+  });
+
+  it.each(
+    Object.values(QuoteDeclineReason).filter(
+      (reason) => !DECLINE_REASONS_REQUIRING_NOTE.includes(reason),
+    ),
+  )('o motivo %s não exige observação', async (reason) => {
+    const { service } = await build();
+
+    await expect(
+      service.declineDraft(QUOTE_ID, dto({ reason }), actor()),
+    ).resolves.toMatchObject({ status: QuoteStatus.DECLINED });
+  });
+
+  it('só "outro" e "critérios do produto" exigem observação', () => {
+    expect([...DECLINE_REASONS_REQUIRING_NOTE].sort()).toEqual([
+      QuoteDeclineReason.OTHER,
+      QuoteDeclineReason.PRODUCT_CRITERIA_NOT_MET,
+    ]);
   });
 
   it('aceita "outro" com observação', async () => {
