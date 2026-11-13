@@ -10,9 +10,18 @@ import type { Prisma } from '@prisma/client';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
+import { classifyCreditRisk } from '../bureau/credit-risk-band';
+import { CreditRiskConfigService } from '../bureau/credit-risk-config.service';
+import { CreditRiskBand } from '../bureau/enums/credit-risk-band.enum';
 import { PrismaService } from '../prisma/prisma.service';
 import { QuoteEventType } from '../quote-events/enums/quote-event-type.enum';
 import { QuoteEventsService } from '../quote-events/quote-events.service';
+import { DeclineDraftQuoteDto } from './dto/decline-draft-quote.dto';
+import {
+  DECLINE_NOTE_MIN_LENGTH,
+  DECLINE_REASONS_REQUIRING_NOTE,
+  QuoteDeclineReason,
+} from './enums/quote-decline-reason.enum';
 import { QuoteOrigin } from './enums/quote-origin.enum';
 import { QuoteStatus } from './enums/quote-status.enum';
 import { QuoteDraftStep } from './enums/quote-draft-step.enum';
@@ -40,6 +49,7 @@ export class QuotesService {
     private readonly quoteEvents: QuoteEventsService,
     private readonly quoteActivityPermissions: QuoteActivityPermissionsService,
     private readonly documentation: QuoteDraftDocumentationService,
+    private readonly creditRiskConfig: CreditRiskConfigService,
   ) {}
 
   /**
@@ -59,6 +69,9 @@ export class QuotesService {
         'Você possui ações de cobrança pendentes que impedem iniciar uma proposta.',
       );
     }
+
+    // Lidas fora da transação: é uma leitura de configuração com cache.
+    const creditRiskBands = await this.creditRiskConfig.getBands();
 
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -115,6 +128,32 @@ export class QuotesService {
           throw new NotFoundException(
             'Simulação não encontrada para o parceiro autenticado.',
           );
+        }
+
+        // Score do Serasa abaixo do mínimo: reprovação automática, sem proposta.
+        // Sem score (consulta sem dado, falha ou desligada) não há o que
+        // classificar, e a proposta segue para a análise de crédito normal.
+        // Lido por SQL, e não pelo modelo do Prisma, para que o campo novo não
+        // entre em toda leitura de `simulations` antes da migration.
+        const [scoreRow] = await tx.$queryRaw<
+          { serasa_score: number | null }[]
+        >`
+          SELECT serasa_score
+          FROM public.simulations
+          WHERE id = ${simulationId}::uuid
+        `;
+        if (
+          classifyCreditRisk(
+            scoreRow?.serasa_score ?? null,
+            creditRiskBands,
+          ) === CreditRiskBand.INELIGIBLE
+        ) {
+          throw new BadRequestException({
+            statusCode: 400,
+            code: 'CREDIT_RISK_INELIGIBLE',
+            message:
+              'Cliente não elegível pelo score de crédito (reprovação automática): não é possível gerar proposta.',
+          });
         }
 
         const existing = await tx.quotes.findUnique({
@@ -298,6 +337,8 @@ export class QuotesService {
       const updatedAt = new Date();
       const isAdmin = actor.permissions.includes(PermissionKey.ROLE_ADMIN);
 
+      await this.lockRegistrationsForSubmit(tx, quoteId);
+
       const result = await tx.quotes.updateMany({
         where: {
           id: quoteId,
@@ -349,6 +390,95 @@ export class QuotesService {
     });
   }
 
+  /**
+   * O parceiro responsável recusa um rascunho criado pela Canal Digital e
+   * informa o motivo. A proposta vira `declined` (terminal) e o motivo fica no
+   * evento `draft_declined`. Só rascunhos da Canal Digital: o update condicional
+   * garante status, origem e dono na mesma operação, e impede duas recusas
+   * concorrentes.
+   */
+  async declineDraft(
+    quoteId: string,
+    dto: DeclineDraftQuoteDto,
+    actor: JwtPayload,
+  ): Promise<QuoteStatusResponse> {
+    const note = dto.note?.trim() ?? '';
+    if (
+      DECLINE_REASONS_REQUIRING_NOTE.includes(dto.reason) &&
+      note.length < DECLINE_NOTE_MIN_LENGTH
+    ) {
+      throw new BadRequestException(
+        dto.reason === QuoteDeclineReason.PRODUCT_CRITERIA_NOT_MET
+          ? 'Informe o critério do produto que o cliente não atende.'
+          : 'Descreva o motivo da recusa.',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updatedAt = new Date();
+      const isAdmin = actor.permissions.includes(PermissionKey.ROLE_ADMIN);
+
+      const result = await tx.quotes.updateMany({
+        where: {
+          id: quoteId,
+          quote_status: QuoteStatus.DRAFT,
+          origin: QuoteOrigin.DIGITAL_CHANNEL,
+          ...(isAdmin ? {} : { current_sales_agent_id: actor.sub }),
+        },
+        data: {
+          quote_status: QuoteStatus.DECLINED,
+          updated_at: updatedAt,
+        },
+      });
+
+      if (result.count === 0) {
+        await this.throwDeclineError(tx, quoteId, actor, isAdmin);
+      }
+
+      await this.quoteEvents.createWithinTransaction(tx, {
+        quoteId,
+        actorUserId: actor.sub,
+        type: QuoteEventType.DRAFT_DECLINED,
+        metadata: {
+          reasonCode: dto.reason,
+          ...(note ? { reasonText: note } : {}),
+          previousStatus: QuoteStatus.DRAFT,
+          newStatus: QuoteStatus.DECLINED,
+        },
+      });
+
+      return { id: quoteId, status: QuoteStatus.DECLINED, updatedAt };
+    });
+  }
+
+  private async lockRegistrationsForSubmit(
+    tx: Prisma.TransactionClient,
+    quoteId: string,
+  ): Promise<void> {
+    const [quote] = await tx.$queryRaw<
+      Array<{ document: string | null; guarantor_document: string | null }>
+    >`
+      SELECT document, guarantor->>'document' AS guarantor_document
+      FROM public.quotes
+      WHERE id = ${quoteId}::uuid
+      FOR UPDATE
+    `;
+    const taxIds = [quote?.document, quote?.guarantor_document]
+      .map((document) => (document ?? '').replace(/\D/g, ''))
+      .filter(Boolean)
+      .sort();
+
+    for (const taxId of new Set(taxIds)) {
+      await tx.$queryRaw`
+        SELECT id
+        FROM public.clients
+        WHERE regexp_replace(tax_id, '[^0-9]', '', 'g') = ${taxId}
+        ORDER BY created_at ASC, id ASC
+        FOR UPDATE
+      `;
+    }
+  }
+
   private async throwSubmitError(
     tx: Prisma.TransactionClient,
     quoteId: string,
@@ -375,6 +505,42 @@ export class QuotesService {
 
     throw new ConflictException(
       `A proposta não pode ser enviada para revisão a partir do status ${quote.quote_status}.`,
+    );
+  }
+
+  private async throwDeclineError(
+    tx: Prisma.TransactionClient,
+    quoteId: string,
+    actor: JwtPayload,
+    isAdmin: boolean,
+  ): Promise<never> {
+    const quote = await tx.quotes.findUnique({
+      where: { id: quoteId },
+      select: {
+        quote_status: true,
+        current_sales_agent_id: true,
+        origin: true,
+      },
+    });
+
+    if (!quote) {
+      throw new NotFoundException('Proposta não encontrada.');
+    }
+
+    if (!isAdmin && quote.current_sales_agent_id !== actor.sub) {
+      throw new ForbiddenException(
+        'Somente o parceiro responsável pode recusar esta proposta.',
+      );
+    }
+
+    if (quote.quote_status !== String(QuoteStatus.DRAFT)) {
+      throw new ConflictException(
+        `A proposta não pode ser recusada a partir do status ${quote.quote_status}.`,
+      );
+    }
+
+    throw new ConflictException(
+      'Só é possível recusar propostas criadas pela Canal Digital.',
     );
   }
 }

@@ -598,6 +598,7 @@ export class CollectionsService {
         party: true,
         automatic_action: true,
         expected_result: true,
+        overdue_reason: true,
         payment_forecast: true,
         created_at: true,
         trigo_users: { select: { id: true, full_name: true } },
@@ -701,6 +702,7 @@ export class CollectionsService {
           party: f.party ?? undefined,
           automaticAction: f.automatic_action ?? undefined,
           expectedResult: f.expected_result ?? undefined,
+          overdueReason: f.overdue_reason ?? undefined,
           paymentForecast: f.payment_forecast ?? undefined,
           createdAt: f.created_at,
           author: {

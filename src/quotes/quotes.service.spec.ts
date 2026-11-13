@@ -9,17 +9,27 @@ import { Prisma } from '@prisma/client';
 import { QuoteActivityPermissionsService } from '../activities/quote-activity-permissions.service';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PermissionKey } from '../auth/permissions/permission-keys';
+import {
+  CreditRiskConfigService,
+  DEFAULT_CREDIT_RISK_BANDS,
+} from '../bureau/credit-risk-config.service';
 import { BrazilState } from '../common/brazil-state.enum';
 import { PrismaService } from '../prisma/prisma.service';
 import { QuoteEventType } from '../quote-events/enums/quote-event-type.enum';
 import { QuoteEventsService } from '../quote-events/quote-events.service';
+import { DeclineDraftQuoteDto } from './dto/decline-draft-quote.dto';
 import { SaveQuoteAddressDto } from './dto/save-quote-address.dto';
 import { SaveQuoteFinancialDto } from './dto/save-quote-financial.dto';
 import { SaveQuoteGuarantorDto } from './dto/save-quote-guarantor.dto';
 import { SaveQuoteIncomeDto } from './dto/save-quote-income.dto';
 import { SaveQuotePartnerOpinionDto } from './dto/save-quote-partner-opinion.dto';
 import { SaveQuoteRegistrationDto } from './dto/save-quote-registration.dto';
+import {
+  DECLINE_REASONS_REQUIRING_NOTE,
+  QuoteDeclineReason,
+} from './enums/quote-decline-reason.enum';
 import { QuoteDraftStep } from './enums/quote-draft-step.enum';
+import { QuoteOrigin } from './enums/quote-origin.enum';
 import {
   ExpenseCategory,
   LoanCategory,
@@ -193,6 +203,7 @@ const financial: SaveQuoteFinancialDto = {
 
 const simulation = {
   id: SIMULATION_ID,
+  serasa_score: null as number | null,
   party_id: PARTY_ID,
   finance_product_id: PRODUCT_ID,
   client_name: 'Maria Souza',
@@ -248,6 +259,7 @@ interface BuildOptions {
   quote?: {
     quote_status: string;
     current_sales_agent_id: string;
+    origin?: string;
   } | null;
   simulation?: typeof simulation | null;
   existingDraft?: { id: string } | null;
@@ -278,8 +290,14 @@ async function build(options: BuildOptions = {}) {
     },
   );
   const queryRaw = jest.fn(
-    (strings: TemplateStringsArray): Promise<Array<{ id: string }>> => {
-      void strings;
+    (
+      strings: TemplateStringsArray,
+    ): Promise<Array<{ id: string } | { serasa_score: number | null }>> => {
+      if (strings.join(' ').includes('SELECT serasa_score')) {
+        return Promise.resolve([
+          { serasa_score: options.simulation?.serasa_score ?? null },
+        ]);
+      }
       return Promise.resolve([{ id: 'cabure-proposal-1' }]);
     },
   );
@@ -381,6 +399,12 @@ async function build(options: BuildOptions = {}) {
         provide: QuoteActivityPermissionsService,
         useValue: quoteActivityPermissions,
       },
+      {
+        provide: CreditRiskConfigService,
+        useValue: {
+          getBands: jest.fn().mockResolvedValue(DEFAULT_CREDIT_RISK_BANDS),
+        },
+      },
     ],
   }).compile();
 
@@ -443,6 +467,48 @@ describe('QuotesService.createDraftFromSimulation', () => {
     expect(createQuote.mock.calls[0][0].data.tac_min_amount).toEqual(
       tacMinAmount,
     );
+  });
+
+  it('recusa com 400 e código estável quando o score do Serasa é não elegível', async () => {
+    const { service, createQuote } = await build({
+      simulation: { ...simulation, serasa_score: 349 },
+    });
+
+    const erro = await service
+      .createDraftFromSimulation(SIMULATION_ID, actor())
+      .catch((e: unknown) => e);
+
+    expect(erro).toBeInstanceOf(BadRequestException);
+    expect((erro as BadRequestException).getResponse()).toMatchObject({
+      statusCode: 400,
+      code: 'CREDIT_RISK_INELIGIBLE',
+    });
+    expect(createQuote).not.toHaveBeenCalled();
+  });
+
+  it.each([350, 500, 650, 900])(
+    'score %i do Serasa não impede a proposta',
+    async (serasaScore) => {
+      const { service, createQuote } = await build({
+        simulation: { ...simulation, serasa_score: serasaScore },
+      });
+
+      await expect(
+        service.createDraftFromSimulation(SIMULATION_ID, actor()),
+      ).resolves.toMatchObject({ status: QuoteStatus.DRAFT });
+      expect(createQuote).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('sem score (consulta sem dado ou desligada) a proposta segue', async () => {
+    const { service, createQuote } = await build({
+      simulation: { ...simulation, serasa_score: null },
+    });
+
+    await expect(
+      service.createDraftFromSimulation(SIMULATION_ID, actor()),
+    ).resolves.toMatchObject({ status: QuoteStatus.DRAFT });
+    expect(createQuote).toHaveBeenCalledTimes(1);
   });
 
   it('grava a origem time_comercial explicitamente na proposta', async () => {
@@ -1889,6 +1955,44 @@ describe('QuotesService.submitDraftForClientReview', () => {
     });
   });
 
+  it('trava a proposta e os cadastros do cliente e do avalista antes de mudar o status', async () => {
+    const { service, tx } = await build();
+    const calls: string[] = [];
+    tx.$queryRaw.mockImplementation(
+      (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sql = strings.join('?');
+        if (sql.includes('FROM public.quotes')) {
+          calls.push('quote');
+          return Promise.resolve([
+            {
+              document: '987.654.321-00',
+              guarantor_document: '123.456.789-09',
+            },
+          ] as unknown as Array<{ id: string }>);
+        }
+        calls.push(`clients:${String(values[0])}`);
+        return Promise.resolve([]);
+      },
+    );
+    tx.quotes.updateMany.mockImplementation(() => {
+      calls.push('update');
+      return Promise.resolve({ count: 1 });
+    });
+
+    await service.submitDraftForClientReview(QUOTE_ID, actor());
+
+    expect(calls).toEqual([
+      'quote',
+      'clients:12345678909',
+      'clients:98765432100',
+      'update',
+    ]);
+    const sql = tx.$queryRaw.mock.calls
+      .map(([strings]) => strings.join('?'))
+      .join('\n');
+    expect(sql.match(/FOR UPDATE/g)).toHaveLength(3);
+  });
+
   it('permite que ROLE_ADMIN finalize qualquer draft', async () => {
     const { service, tx } = await build();
 
@@ -1960,5 +2064,250 @@ describe('QuotesService.submitDraftForClientReview', () => {
     await expect(
       service.submitDraftForClientReview(QUOTE_ID, actor()),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+describe('QuotesService.declineDraft (recusar proposta da Canal Digital)', () => {
+  const dto = (overrides: Partial<DeclineDraftQuoteDto> = {}) => ({
+    reason: QuoteDeclineReason.NO_RESPONSE,
+    ...overrides,
+  });
+
+  it('recusa o rascunho da Canal Digital do parceiro, vira declined e registra o motivo', async () => {
+    const { service, quoteEvents, tx } = await build();
+
+    await expect(
+      service.declineDraft(QUOTE_ID, dto(), actor()),
+    ).resolves.toEqual({
+      id: QUOTE_ID,
+      status: QuoteStatus.DECLINED,
+      updatedAt: expect.any(Date) as unknown,
+    });
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: QUOTE_ID,
+        quote_status: QuoteStatus.DRAFT,
+        origin: QuoteOrigin.DIGITAL_CHANNEL,
+        current_sales_agent_id: OWNER_ID,
+      },
+      data: {
+        quote_status: QuoteStatus.DECLINED,
+        updated_at: expect.any(Date) as unknown,
+      },
+    });
+    expect(quoteEvents.createWithinTransaction).toHaveBeenCalledWith(tx, {
+      quoteId: QUOTE_ID,
+      actorUserId: OWNER_ID,
+      type: QuoteEventType.DRAFT_DECLINED,
+      metadata: {
+        reasonCode: QuoteDeclineReason.NO_RESPONSE,
+        previousStatus: QuoteStatus.DRAFT,
+        newStatus: QuoteStatus.DECLINED,
+      },
+    });
+  });
+
+  it('grava a observação aparada e ignora observação em branco', async () => {
+    const withNote = await build();
+    await withNote.service.declineDraft(
+      QUOTE_ID,
+      dto({
+        reason: QuoteDeclineReason.GAVE_UP_NO_REASON,
+        note: '  Cliente desistiu hoje  ',
+      }),
+      actor(),
+    );
+    expect(withNote.quoteEvents.createWithinTransaction).toHaveBeenCalledWith(
+      withNote.tx,
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          reasonCode: QuoteDeclineReason.GAVE_UP_NO_REASON,
+          reasonText: 'Cliente desistiu hoje',
+        }) as unknown,
+      }),
+    );
+
+    const blank = await build();
+    await blank.service.declineDraft(QUOTE_ID, dto({ note: '   ' }), actor());
+    expect(blank.quoteEvents.createWithinTransaction).toHaveBeenCalledWith(
+      blank.tx,
+      expect.objectContaining({
+        metadata: {
+          reasonCode: QuoteDeclineReason.NO_RESPONSE,
+          previousStatus: QuoteStatus.DRAFT,
+          newStatus: QuoteStatus.DECLINED,
+        },
+      }),
+    );
+  });
+
+  it('exige a observação quando o motivo é "outro"', async () => {
+    const { service, prisma } = await build();
+
+    await expect(
+      service.declineDraft(
+        QUOTE_ID,
+        dto({ reason: QuoteDeclineReason.OTHER }),
+        actor(),
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.declineDraft(
+        QUOTE_ID,
+        dto({ reason: QuoteDeclineReason.OTHER, note: ' a ' }),
+        actor(),
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('exige o critério quando o motivo é "não atende aos critérios do produto"', async () => {
+    const { service, prisma } = await build();
+
+    await expect(
+      service.declineDraft(
+        QUOTE_ID,
+        dto({ reason: QuoteDeclineReason.PRODUCT_CRITERIA_NOT_MET }),
+        actor(),
+      ),
+    ).rejects.toThrow('critério');
+    await expect(
+      service.declineDraft(
+        QUOTE_ID,
+        dto({
+          reason: QuoteDeclineReason.PRODUCT_CRITERIA_NOT_MET,
+          note: '  ',
+        }),
+        actor(),
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('aceita "não atende aos critérios do produto" com o critério informado', async () => {
+    const { service } = await build();
+
+    await expect(
+      service.declineDraft(
+        QUOTE_ID,
+        dto({
+          reason: QuoteDeclineReason.PRODUCT_CRITERIA_NOT_MET,
+          note: 'Faturamento abaixo do mínimo da linha',
+        }),
+        actor(),
+      ),
+    ).resolves.toMatchObject({ status: QuoteStatus.DECLINED });
+  });
+
+  it.each(
+    Object.values(QuoteDeclineReason).filter(
+      (reason) => !DECLINE_REASONS_REQUIRING_NOTE.includes(reason),
+    ),
+  )('o motivo %s não exige observação', async (reason) => {
+    const { service } = await build();
+
+    await expect(
+      service.declineDraft(QUOTE_ID, dto({ reason }), actor()),
+    ).resolves.toMatchObject({ status: QuoteStatus.DECLINED });
+  });
+
+  it('só "outro" e "critérios do produto" exigem observação', () => {
+    expect([...DECLINE_REASONS_REQUIRING_NOTE].sort()).toEqual([
+      QuoteDeclineReason.OTHER,
+      QuoteDeclineReason.PRODUCT_CRITERIA_NOT_MET,
+    ]);
+  });
+
+  it('aceita "outro" com observação', async () => {
+    const { service } = await build();
+
+    await expect(
+      service.declineDraft(
+        QUOTE_ID,
+        dto({
+          reason: QuoteDeclineReason.OTHER,
+          note: 'Cliente mudou de cidade',
+        }),
+        actor(),
+      ),
+    ).resolves.toMatchObject({ status: QuoteStatus.DECLINED });
+  });
+
+  it('permite que ROLE_ADMIN recuse o rascunho de qualquer parceiro', async () => {
+    const { service, tx } = await build();
+
+    await service.declineDraft(
+      QUOTE_ID,
+      dto(),
+      actor(OTHER_ID, [PermissionKey.ROLE_ADMIN]),
+    );
+
+    expect(tx.quotes.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: QUOTE_ID,
+          quote_status: QuoteStatus.DRAFT,
+          origin: QuoteOrigin.DIGITAL_CHANNEL,
+        },
+      }),
+    );
+  });
+
+  it('devolve 404 quando a proposta não existe', async () => {
+    const { service, quoteEvents } = await build({
+      updateCount: 0,
+      quote: null,
+    });
+
+    await expect(
+      service.declineDraft(QUOTE_ID, dto(), actor()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(quoteEvents.createWithinTransaction).not.toHaveBeenCalled();
+  });
+
+  it('devolve 403 quando a proposta é de outro parceiro', async () => {
+    const { service } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OTHER_ID,
+        origin: QuoteOrigin.DIGITAL_CHANNEL,
+      },
+    });
+
+    await expect(
+      service.declineDraft(QUOTE_ID, dto(), actor()),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('devolve 409 quando a proposta já saiu de rascunho', async () => {
+    const { service, quoteEvents } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.CLIENT_REVIEW,
+        current_sales_agent_id: OWNER_ID,
+        origin: QuoteOrigin.DIGITAL_CHANNEL,
+      },
+    });
+
+    await expect(
+      service.declineDraft(QUOTE_ID, dto(), actor()),
+    ).rejects.toThrow('a partir do status client_review');
+    expect(quoteEvents.createWithinTransaction).not.toHaveBeenCalled();
+  });
+
+  it('devolve 409 quando o rascunho não é da Canal Digital', async () => {
+    const { service } = await build({
+      updateCount: 0,
+      quote: {
+        quote_status: QuoteStatus.DRAFT,
+        current_sales_agent_id: OWNER_ID,
+        origin: QuoteOrigin.COMMERCIAL_TEAM,
+      },
+    });
+
+    await expect(
+      service.declineDraft(QUOTE_ID, dto(), actor()),
+    ).rejects.toThrow('Canal Digital');
   });
 });

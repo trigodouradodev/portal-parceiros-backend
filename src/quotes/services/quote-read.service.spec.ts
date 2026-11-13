@@ -28,6 +28,7 @@ function listRow(overrides: Record<string, unknown> = {}) {
     id: QUOTE_ID,
     simulation_id: SIMULATION_ID,
     quote_status: QuoteStatus.DRAFT,
+    origin: 'time_comercial',
     client_name: 'Maria Souza',
     document: '52998224725',
     finance_product_id: '55555555-5555-4555-8555-555555555555',
@@ -530,5 +531,80 @@ describe('QuoteReadService.findById', () => {
     await expect(service.findById(QUOTE_ID, actor())).rejects.toThrow(
       NotFoundException,
     );
+  });
+});
+
+describe('QuoteReadService — canDecline (recusar proposta da Canal Digital)', () => {
+  const digital = { origin: 'canal_digital' };
+
+  it('permite recusar o rascunho da Canal Digital do próprio parceiro, na lista e no detalhe', async () => {
+    const { service, prisma } = build();
+    prisma.quotes.findMany.mockResolvedValue([listRow(digital)]);
+    prisma.quotes.count.mockResolvedValue(1);
+    prisma.quotes.findFirst.mockResolvedValue(detailRow(digital));
+
+    const list = await service.list(actor());
+    const detail = await service.findById(QUOTE_ID, actor());
+
+    expect(list.items[0].canDecline).toBe(true);
+    expect(detail.canDecline).toBe(true);
+  });
+
+  it('não permite recusar rascunho do time comercial', async () => {
+    const { service, prisma } = build();
+    prisma.quotes.findFirst.mockResolvedValue(detailRow());
+
+    await expect(service.findById(QUOTE_ID, actor())).resolves.toMatchObject({
+      canEdit: true,
+      canDecline: false,
+    });
+  });
+
+  it('não permite recusar fora de rascunho nem proposta de subordinado', async () => {
+    const { service, prisma } = build();
+    prisma.quotes.findFirst
+      .mockResolvedValueOnce(
+        detailRow({ ...digital, quote_status: 'client_review' }),
+      )
+      .mockResolvedValueOnce(
+        detailRow({ ...digital, current_sales_agent_id: CHILD_ID }),
+      );
+
+    await expect(service.findById(QUOTE_ID, actor())).resolves.toMatchObject({
+      canDecline: false,
+    });
+    await expect(service.findById(QUOTE_ID, actor())).resolves.toMatchObject({
+      canDecline: false,
+    });
+  });
+
+  it('ROLE_ADMIN pode recusar o rascunho da Canal Digital de qualquer parceiro', async () => {
+    const { service, prisma } = build();
+    prisma.quotes.findFirst.mockResolvedValue(
+      detailRow({ ...digital, current_sales_agent_id: CHILD_ID }),
+    );
+
+    await expect(
+      service.findById(QUOTE_ID, actor(OWNER_ID, [PermissionKey.ROLE_ADMIN])),
+    ).resolves.toMatchObject({ canDecline: true });
+  });
+
+  it('devolve a origem da proposta na lista e no detalhe', async () => {
+    const { service, prisma } = build();
+    prisma.quotes.findMany.mockResolvedValue([
+      listRow({ id: 'a', origin: 'canal_digital' }),
+      listRow({ id: 'b' }),
+    ]);
+    prisma.quotes.count.mockResolvedValue(2);
+    prisma.quotes.findFirst.mockResolvedValue(detailRow(digital));
+
+    const list = await service.list(actor());
+    const detail = await service.findById(QUOTE_ID, actor());
+
+    expect(list.items.map((item) => item.origin)).toEqual([
+      'canal_digital',
+      'time_comercial',
+    ]);
+    expect(detail.origin).toBe('canal_digital');
   });
 });

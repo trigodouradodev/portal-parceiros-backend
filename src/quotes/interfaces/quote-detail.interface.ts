@@ -224,8 +224,20 @@ export class QuoteDetail {
   @ApiProperty()
   status: string;
 
+  @ApiProperty({
+    enum: ['time_comercial', 'canal_digital'],
+    description: 'De onde a proposta nasceu.',
+  })
+  origin: string;
+
   @ApiProperty()
   canEdit: boolean;
+
+  @ApiProperty({
+    description:
+      'Indica se o usuário autenticado pode recusar a proposta: rascunho criado pela Canal Digital, do próprio parceiro.',
+  })
+  canDecline: boolean;
 
   @ApiProperty({ type: QuoteConsultantSummary })
   consultant: QuoteConsultantSummary;
