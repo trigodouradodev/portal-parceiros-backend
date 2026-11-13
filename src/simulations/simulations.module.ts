@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ActivitiesModule } from '../activities/activities.module';
+import { BureauModule } from '../bureau/bureau.module';
 import { CabureModule } from '../cabure/cabure.module';
 import { CelcoinModule } from '../celcoin/celcoin.module';
 import { EligibilityModule } from '../eligibility/eligibility.module';
@@ -10,6 +11,7 @@ import { SimulationsService } from './simulations.service';
 @Module({
   imports: [
     ActivitiesModule,
+    BureauModule,
     CabureModule,
     CelcoinModule,
     EligibilityModule,

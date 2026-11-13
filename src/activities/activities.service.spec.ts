@@ -23,6 +23,8 @@ import {
   ActivityTaskType,
 } from './enums/activity.enums';
 import { RegisterInteractionDto } from './dto/register-interaction.dto';
+import { requiresOverdueReason } from '../common/overdue-reason.util';
+import { OverdueReason } from '../common/overdue-reason.enum';
 import { LockedTaskRow } from './interfaces/activity-row.interface';
 
 const TASK_ID = 'task-1';
@@ -472,6 +474,11 @@ function interactionDto(
     channel: ActivityChannel.CALL,
     recipientType: ActivityRecipientType.CLIENT,
     result: ActivityInteractionResult.NO_RESPONSE,
+    ...(requiresOverdueReason(
+      overrides.result ?? ActivityInteractionResult.NO_RESPONSE,
+    )
+      ? { overdueReason: OverdueReason.OTHER }
+      : {}),
     ...overrides,
   };
 }
@@ -674,7 +681,10 @@ describe('registerInteraction', () => {
     [
       'sem previsão',
       lockedTask(),
-      interactionDto({ result: ActivityInteractionResult.NO_FORECAST }),
+      interactionDto({
+        result: ActivityInteractionResult.NO_FORECAST,
+        overdueReason: OverdueReason.OTHER,
+      }),
       'no_forecast',
     ],
     [
@@ -1099,6 +1109,9 @@ describe('registerInteraction — contexto financeiro no instante da execução'
       interactionDto({
         result,
         observation: 'Resultado informado',
+        ...(result === ActivityInteractionResult.NO_FORECAST
+          ? { overdueReason: OverdueReason.OTHER }
+          : {}),
         promiseDate: '2026-08-05',
         ...(result === ActivityInteractionResult.RENEGOTIATION
           ? { expectedAgreementDate: '2026-08-05' }

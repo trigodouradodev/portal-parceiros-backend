@@ -42,6 +42,7 @@ import {
   requiresProfession,
   ResidenceDuration,
 } from '../enums/quote-registration.enum';
+import { QuoteOrigin } from '../enums/quote-origin.enum';
 import { QuoteStatus } from '../enums/quote-status.enum';
 import { QuoteDetail } from '../interfaces/quote-detail.interface';
 import {
@@ -58,6 +59,7 @@ const LIST_SELECT = {
   id: true,
   simulation_id: true,
   quote_status: true,
+  origin: true,
   client_name: true,
   document: true,
   finance_product_id: true,
@@ -235,6 +237,7 @@ export class QuoteReadService {
       id: row.id,
       simulationId: row.simulation_id,
       status: row.quote_status,
+      origin: row.origin,
       name: row.client_name,
       document: row.document,
       productId: row.finance_product_id,
@@ -256,6 +259,7 @@ export class QuoteReadService {
       },
       completedSteps: mapCompletedSteps(row.quote_draft_steps),
       canEdit: canEdit(row, actor),
+      canDecline: canDecline(row, actor),
       createdAt: toIso(row.created_at),
       updatedAt: toIso(row.updated_at),
     };
@@ -378,6 +382,19 @@ function canEdit(
   return (
     actor.permissions.includes(PermissionKey.QUOTE_CREATE) &&
     row.current_sales_agent_id === actor.sub
+  );
+}
+
+/**
+ * O parceiro pode recusar o rascunho que veio da Canal Digital: mesma regra de
+ * quem edita o rascunho, restrita à origem.
+ */
+function canDecline(
+  row: { quote_status: string; current_sales_agent_id: string; origin: string },
+  actor: JwtPayload,
+): boolean {
+  return (
+    row.origin === String(QuoteOrigin.DIGITAL_CHANNEL) && canEdit(row, actor)
   );
 }
 

@@ -66,6 +66,44 @@ describe('PartiesService.findDataByCpf', () => {
   });
 });
 
+describe('PartiesService.hasDisbursedContract', () => {
+  it('é true quando o CPF tem contrato desembolsado ou quitado', async () => {
+    const { service, queryRaw } = buildService([[{ has_contract: true }]]);
+
+    await expect(service.hasDisbursedContract('529.982.247-25')).resolves.toBe(
+      true,
+    );
+
+    const [strings, document, statuses] = queryRaw.mock.calls[0] as [
+      TemplateStringsArray,
+      string,
+      Prisma.Sql,
+    ];
+    const sql = strings.join(' ');
+    expect(sql).toContain('FROM public.contracts c');
+    expect(sql).toContain('JOIN public.parties p');
+    expect(document).toBe('52998224725');
+    expect(statuses.values).toEqual(['disbursed', 'closed']);
+  });
+
+  it('é false para cliente sem contrato desembolsado ou quitado', async () => {
+    const { service } = buildService([[{ has_contract: false }]]);
+
+    await expect(service.hasDisbursedContract('52998224725')).resolves.toBe(
+      false,
+    );
+  });
+
+  it('rejeita CPF estruturalmente inválido antes de consultar o banco', async () => {
+    const { service, queryRaw } = buildService();
+
+    await expect(
+      service.hasDisbursedContract('111.111.111-11'),
+    ).rejects.toThrow(BadRequestException);
+    expect(queryRaw).not.toHaveBeenCalled();
+  });
+});
+
 describe('PartiesService.findFormDataByCpf', () => {
   it('retorna dados cadastrais e o endereço prioritário sem expor o ID', async () => {
     const { service, queryRaw } = buildService([

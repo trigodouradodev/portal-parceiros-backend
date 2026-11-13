@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { OverdueReason } from '../../common/overdue-reason.enum';
 import {
   IsDateString,
   IsEnum,
@@ -100,6 +101,15 @@ export class RegisterInteractionDto {
   })
   @IsEnum(ActivityInteractionResult)
   result: ActivityInteractionResult;
+
+  @ApiPropertyOptional({
+    enum: OverdueReason,
+    description:
+      'Motivo do atraso obrigatório em todos os resultados, exceto deceased e other.',
+  })
+  @IsOptional()
+  @IsEnum(OverdueReason)
+  overdueReason?: OverdueReason;
 
   @ApiPropertyOptional({
     maxLength: 2000,
