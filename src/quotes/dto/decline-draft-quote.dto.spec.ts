@@ -37,12 +37,12 @@ describe('DeclineDraftQuoteDto', () => {
     ['sem motivo', {}],
     ['motivo fora da lista', { reason: 'porque_sim' }],
     ['motivo vazio', { reason: '' }],
-    ['observação que não é texto', { reason: 'no_contact', note: 123 }],
+    ['observação que não é texto', { reason: 'no_response', note: 123 }],
     [
       'observação acima do limite',
-      { reason: 'no_contact', note: 'x'.repeat(DECLINE_NOTE_MAX_LENGTH + 1) },
+      { reason: 'no_response', note: 'x'.repeat(DECLINE_NOTE_MAX_LENGTH + 1) },
     ],
-    ['campo desconhecido', { reason: 'no_contact', status: 'approved' }],
+    ['campo desconhecido', { reason: 'no_response', status: 'approved' }],
   ])('rejeita %s', async (_label, body) => {
     await expect(validate(body)).rejects.toBeInstanceOf(BadRequestException);
   });
@@ -50,7 +50,7 @@ describe('DeclineDraftQuoteDto', () => {
   it('aceita a observação no limite exato', async () => {
     await expect(
       validate({
-        reason: 'no_contact',
+        reason: 'no_response',
         note: 'x'.repeat(DECLINE_NOTE_MAX_LENGTH),
       }),
     ).resolves.toBeDefined();

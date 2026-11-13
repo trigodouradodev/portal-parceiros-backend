@@ -17,7 +17,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { QuoteEventType } from '../quote-events/enums/quote-event-type.enum';
 import { QuoteEventsService } from '../quote-events/quote-events.service';
 import { DeclineDraftQuoteDto } from './dto/decline-draft-quote.dto';
-import { QuoteDeclineReason } from './enums/quote-decline-reason.enum';
+import {
+  DECLINE_NOTE_MIN_LENGTH,
+  DECLINE_REASONS_REQUIRING_NOTE,
+  QuoteDeclineReason,
+} from './enums/quote-decline-reason.enum';
 import { QuoteOrigin } from './enums/quote-origin.enum';
 import { QuoteStatus } from './enums/quote-status.enum';
 import { QuoteDraftStep } from './enums/quote-draft-step.enum';
@@ -399,8 +403,15 @@ export class QuotesService {
     actor: JwtPayload,
   ): Promise<QuoteStatusResponse> {
     const note = dto.note?.trim() ?? '';
-    if (dto.reason === QuoteDeclineReason.OTHER && note.length < 3) {
-      throw new BadRequestException('Descreva o motivo da recusa.');
+    if (
+      DECLINE_REASONS_REQUIRING_NOTE.includes(dto.reason) &&
+      note.length < DECLINE_NOTE_MIN_LENGTH
+    ) {
+      throw new BadRequestException(
+        dto.reason === QuoteDeclineReason.PRODUCT_CRITERIA_NOT_MET
+          ? 'Informe o critério do produto que o cliente não atende.'
+          : 'Descreva o motivo da recusa.',
+      );
     }
 
     return this.prisma.$transaction(async (tx) => {
