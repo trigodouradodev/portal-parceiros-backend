@@ -23,6 +23,11 @@ import { EligibilityService } from '../eligibility/eligibility.service';
 import { PartiesService } from '../parties/parties.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SimulateDto } from './dto/simulate.dto';
+import {
+  addUtcDays,
+  businessToday,
+  FIRST_INSTALLMENT_MIN_DAYS,
+} from './first-installment-rule';
 import { SimulationStatus } from './enums/simulation-status.enum';
 import { SimulationsService } from './simulations.service';
 
@@ -63,17 +68,16 @@ const product = {
 };
 
 function futureDueDate(day = 10): string {
-  const today = new Date();
-  const date = new Date(
-    Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()),
-  );
-  for (let offset = 1; offset <= 45; offset += 1) {
-    const candidate = new Date(date.getTime() + offset * 24 * 60 * 60 * 1000);
+  const today = businessToday();
+  for (let offset = FIRST_INSTALLMENT_MIN_DAYS; offset <= 45; offset += 1) {
+    const candidate = addUtcDays(today, offset);
     if (candidate.getUTCDate() === day) {
       return candidate.toISOString().slice(0, 10);
     }
   }
-  return date.toISOString().slice(0, 10);
+  return addUtcDays(today, FIRST_INSTALLMENT_MIN_DAYS)
+    .toISOString()
+    .slice(0, 10);
 }
 
 function dto(overrides: Partial<SimulateDto> = {}): SimulateDto {
@@ -551,27 +555,17 @@ describe('SimulationsService.simulate — criação', () => {
     expect(resolveForSimulation).not.toHaveBeenCalled();
   });
 
-  it('rejeita vencimento fora dos dias 5/10/15/20', async () => {
+  it('rejeita vencimento antes do prazo mínimo, com a janela na mensagem', async () => {
     const { service } = buildService();
-    const today = new Date();
-    const tomorrow = new Date(
-      Date.UTC(
-        today.getUTCFullYear(),
-        today.getUTCMonth(),
-        today.getUTCDate() + 1,
-      ),
-    );
-    const day = tomorrow.getUTCDate();
-    const invalidDay = [5, 10, 15, 20].includes(day)
-      ? new Date(tomorrow.getTime() + 24 * 60 * 60 * 1000)
-      : tomorrow;
+    const tooSoon = addUtcDays(businessToday(), FIRST_INSTALLMENT_MIN_DAYS - 1)
+      .toISOString()
+      .slice(0, 10);
 
     await expect(
-      service.simulate(
-        actor,
-        dto({ firstInstallmentDate: invalidDay.toISOString().slice(0, 10) }),
-      ),
-    ).rejects.toThrow(BadRequestException);
+      service.simulate(actor, dto({ firstInstallmentDate: tooSoon })),
+    ).rejects.toThrow(
+      /A primeira parcela deve cair entre \d{2}\/\d{2}\/\d{4} e \d{2}\/\d{2}\/\d{4}, em um dia de 1 a 20/,
+    );
   });
 });
 
@@ -1259,5 +1253,76 @@ describe('SimulationsService — risco de crédito (Serasa)', () => {
     });
 
     expect(lookupSerasaScore).not.toHaveBeenCalled();
+  });
+});
+
+describe('SimulationsService.previewFinancialForDraft — data da 1ª parcela (AUREA-721)', () => {
+  const baseInput = {
+    productId: PRODUCT_ID,
+    amount: 5000,
+    installments: 10,
+    birthDate: new Date('1990-05-20T00:00:00.000Z'),
+  };
+  const cabureQuote = {
+    id: 'cabure-quote-1',
+    premium: 189.9,
+    productCode: 'credito-pessoal-21',
+  };
+
+  function isoInDays(days: number): string {
+    return addUtcDays(businessToday(), days).toISOString().slice(0, 10);
+  }
+
+  it('rascunho antigo com a data a menos de 20 dias segue editável se a data não mudou', async () => {
+    const { service, simulateRequestedAmount } = buildService({ cabureQuote });
+    simulateRequestedAmount.mockResolvedValue(celcoinResult);
+    // Dia 3 nunca foi permitido na regra antiga, e 10 dias é menos que o mínimo.
+    const stored = isoInDays(10);
+
+    await expect(
+      service.previewFinancialForDraft(actor, {
+        ...baseInput,
+        firstInstallmentDate: stored,
+        storedFirstInstallmentDate: stored,
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it('data igual à gravada, mas já no passado, continua recusada', async () => {
+    const { service } = buildService({ cabureQuote });
+    const stored = isoInDays(-3);
+
+    await expect(
+      service.previewFinancialForDraft(actor, {
+        ...baseInput,
+        firstInstallmentDate: stored,
+        storedFirstInstallmentDate: stored,
+      }),
+    ).rejects.toThrow('A data da primeira parcela deve ser hoje ou futura.');
+  });
+
+  it('data trocada por outra fora da regra nova é recusada, mesmo que o rascunho seja antigo', async () => {
+    const { service } = buildService({ cabureQuote });
+
+    await expect(
+      service.previewFinancialForDraft(actor, {
+        ...baseInput,
+        firstInstallmentDate: isoInDays(10),
+        storedFirstInstallmentDate: isoInDays(12),
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('data trocada por outra dentro da regra nova é aceita', async () => {
+    const { service, simulateRequestedAmount } = buildService({ cabureQuote });
+    simulateRequestedAmount.mockResolvedValue(celcoinResult);
+
+    await expect(
+      service.previewFinancialForDraft(actor, {
+        ...baseInput,
+        firstInstallmentDate: futureDueDate(),
+        storedFirstInstallmentDate: isoInDays(10),
+      }),
+    ).resolves.toBeDefined();
   });
 });
