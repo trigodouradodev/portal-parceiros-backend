@@ -55,6 +55,10 @@ export class QuoteDraftSimulationService {
       amount: dto.amount,
       installments: dto.installments,
       firstInstallmentDate: dto.firstInstallmentDate,
+      // Rascunho antigo segue editável: a regra nova da data (AUREA-721) só
+      // vale se o parceiro trocar a data.
+      storedFirstInstallmentDate:
+        quote.first_installment_date?.toISOString().slice(0, 10) ?? null,
       birthDate: quote.birth_date,
       // Mesmo produto: a proposta mantém a TAC e o piso com que foi feita.
       // Produto diferente: valem as condições vigentes dele.
@@ -195,6 +199,7 @@ export class QuoteDraftSimulationService {
         birth_date: true,
         party_id: true,
         finance_product_id: true,
+        first_installment_date: true,
         tac_amount: true,
         tac_rate: true,
         tac_min_amount: true,
