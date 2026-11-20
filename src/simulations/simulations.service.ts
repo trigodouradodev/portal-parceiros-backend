@@ -27,12 +27,14 @@ import { PartiesService } from '../parties/parties.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ListSimulationsQueryDto } from './dto/list-simulations-query.dto';
 import { SimulateDto } from './dto/simulate.dto';
+import {
+  businessToday,
+  firstInstallmentRuleViolation,
+} from './first-installment-rule';
 import { SimulationStatus } from './enums/simulation-status.enum';
 import { SimulationSnapshot } from './interfaces/simulation.interface';
 import { SimulateResult } from './interfaces/simulate-result.interface';
 
-const ALLOWED_DUE_DAYS = [5, 10, 15, 20];
-const FIRST_INSTALLMENT_MAX_DAYS = 45;
 const MIN_AGE = 18;
 const MAX_AGE = 120;
 
@@ -163,6 +165,13 @@ export type FinancialSimulationInput = Pick<
    * propostas antigas não pegam as condições novas do produto.
    */
   ownTac?: { rate: number; minAmount: number };
+  /**
+   * Só na edição de um rascunho: a data da 1ª parcela hoje gravada na proposta
+   * (YYYY-MM-DD). Se o parceiro não mexeu nela, a regra nova (AUREA-721) não
+   * se aplica, e a proposta antiga segue editável: só se exige que a data não
+   * esteja no passado, como antes.
+   */
+  storedFirstInstallmentDate?: string | null;
 };
 
 @Injectable()
@@ -599,7 +608,10 @@ export class SimulationsService {
       dto.firstInstallmentDate,
       'Data da primeira parcela',
     );
-    this.assertAllowedDueDate(firstInstallmentDate);
+    this.assertAllowedDueDate(
+      firstInstallmentDate,
+      dto.storedFirstInstallmentDate,
+    );
 
     const product = await this.findLinkedProduct(user.sub, dto.productId);
     if (!product || !product.enabled) {
@@ -897,26 +909,25 @@ export class SimulationsService {
     }
   }
 
-  private assertAllowedDueDate(dueDate: Date): void {
-    if (!ALLOWED_DUE_DAYS.includes(dueDate.getUTCDate())) {
-      throw new BadRequestException(
-        'A primeira parcela deve cair no dia 5, 10, 15 ou 20.',
-      );
+  private assertAllowedDueDate(
+    dueDate: Date,
+    storedDueDate?: string | null,
+  ): void {
+    const today = businessToday();
+    const unchanged =
+      storedDueDate != null && toSqlDate(dueDate) === storedDueDate;
+
+    if (unchanged) {
+      if (dueDate.getTime() < today.getTime()) {
+        throw new BadRequestException(
+          'A data da primeira parcela deve ser hoje ou futura.',
+        );
+      }
+      return;
     }
 
-    const today = utcToday();
-    if (dueDate.getTime() < today.getTime()) {
-      throw new BadRequestException(
-        'A data da primeira parcela deve ser hoje ou futura.',
-      );
-    }
-
-    const maxDate = addUtcDays(today, FIRST_INSTALLMENT_MAX_DAYS);
-    if (dueDate.getTime() > maxDate.getTime()) {
-      throw new BadRequestException(
-        `A primeira parcela deve estar em até ${FIRST_INSTALLMENT_MAX_DAYS} dias.`,
-      );
-    }
+    const violation = firstInstallmentRuleViolation(dueDate, today);
+    if (violation) throw new BadRequestException(violation);
   }
 }
 
@@ -932,16 +943,6 @@ function utcToday(): Date {
   const now = new Date();
   return new Date(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-  );
-}
-
-function addUtcDays(date: Date, days: number): Date {
-  return new Date(
-    Date.UTC(
-      date.getUTCFullYear(),
-      date.getUTCMonth(),
-      date.getUTCDate() + days,
-    ),
   );
 }
 

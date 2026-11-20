@@ -65,6 +65,7 @@ function quoteRow(overrides: Record<string, unknown> = {}) {
     current_sales_agent_id: USER_ID,
     simulation_id: SIMULATION_ID,
     birth_date: new Date('1990-05-20T00:00:00.000Z'),
+    first_installment_date: new Date('2026-12-05T00:00:00.000Z'),
     party_id: PARTY_ID,
     ...overrides,
   };
@@ -138,6 +139,8 @@ describe('QuoteDraftSimulationService.update (AUREA-701)', () => {
       amount: 8000,
       installments: 12,
       firstInstallmentDate: '2026-12-10',
+      // A data gravada vai junto: a regra nova da data só vale se ela mudar.
+      storedFirstInstallmentDate: '2026-12-05',
       birthDate: new Date('1990-05-20T00:00:00.000Z'),
     });
     expect(

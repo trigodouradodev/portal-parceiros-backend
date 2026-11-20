@@ -16,6 +16,10 @@ import { CreditRiskBand } from '../bureau/enums/credit-risk-band.enum';
 import { PrismaService } from '../prisma/prisma.service';
 import { QuoteEventType } from '../quote-events/enums/quote-event-type.enum';
 import { QuoteEventsService } from '../quote-events/quote-events.service';
+import {
+  businessToday,
+  firstInstallmentRuleViolation,
+} from '../simulations/first-installment-rule';
 import { DeclineDraftQuoteDto } from './dto/decline-draft-quote.dto';
 import {
   DECLINE_NOTE_MIN_LENGTH,
@@ -154,6 +158,22 @@ export class QuotesService {
             message:
               'Cliente não elegível pelo score de crédito (reprovação automática): não é possível gerar proposta.',
           });
+        }
+
+        // Regra do primeiro vencimento (AUREA-721). A simulação foi validada
+        // com a regra da época em que foi salva, e uma salva antes de a regra
+        // mudar (ou há muitos dias) pode ter data fora da janela de hoje. Sem
+        // esta checagem ela viraria proposta nova com a data antiga, e a
+        // exceção de "data igual à gravada" (reservada a rascunhos que já
+        // existiam) a deixaria editável. O parceiro refaz a simulação.
+        const dueDateViolation = firstInstallmentRuleViolation(
+          simulation.first_installment_date,
+          businessToday(),
+        );
+        if (dueDateViolation) {
+          throw new BadRequestException(
+            `${dueDateViolation} Esta simulação está fora da regra atual: refaça a simulação com uma data de vencimento válida.`,
+          );
         }
 
         const existing = await tx.quotes.findUnique({

@@ -425,6 +425,63 @@ async function build(options: BuildOptions = {}) {
 }
 
 describe('QuotesService.createDraftFromSimulation', () => {
+  // Hoje = 17/08/2026: a janela do primeiro vencimento (AUREA-721) vai de
+  // 06/09 a 01/10, e a simulação de teste (10/09) fica dentro dela.
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-17T12:00:00.000Z'));
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it.each(['2026-09-06', '2026-10-01'])(
+    'aceita o vencimento nos limites da janela: %s',
+    async (date) => {
+      const { service, createQuote } = await build({
+        simulation: {
+          ...simulation,
+          first_installment_date: new Date(`${date}T00:00:00.000Z`),
+        },
+      });
+
+      await expect(
+        service.createDraftFromSimulation(SIMULATION_ID, actor()),
+      ).resolves.toMatchObject({ status: QuoteStatus.DRAFT });
+      expect(createQuote).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([
+    ['2026-08-20', 'só 3 dias à frente, de uma simulação da regra antiga'],
+    ['2026-09-05', 'um dia antes do limite de hoje+20'],
+    ['2026-10-02', 'um dia depois do limite de hoje+45'],
+    ['2026-09-21', 'dentro da janela, mas dia do mês maior que 20'],
+    ['2026-08-10', 'data já no passado'],
+  ])(
+    'recusa com 400 e não cria proposta se o vencimento da simulação está fora da regra: %s (%s)',
+    async (date) => {
+      const { service, createQuote } = await build({
+        simulation: {
+          ...simulation,
+          first_installment_date: new Date(`${date}T00:00:00.000Z`),
+        },
+      });
+
+      const erro = await service
+        .createDraftFromSimulation(SIMULATION_ID, actor())
+        .catch((e: unknown) => e);
+
+      expect(erro).toBeInstanceOf(BadRequestException);
+      expect((erro as BadRequestException).message).toContain(
+        'A primeira parcela deve cair entre 06/09/2026 e 01/10/2026',
+      );
+      expect((erro as BadRequestException).message).toContain(
+        'refaça a simulação',
+      );
+      expect(createQuote).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(['0', '0.07'])(
     'copia a TAC persistida na simulação para a proposta: %s',
     async (rate) => {
